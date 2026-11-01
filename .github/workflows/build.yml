@@ -1,0 +1,96 @@
+name: Build DIVINITY
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: macOS (Universal: Apple Silicon + Intel) - VST3 / AU / Standalone
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Build plugin + tests
+        run: cmake --build build --config Release --target DIVINITY_VST3 DIVINITY_AU DIVINITY_Standalone DivinityTests -- -quiet
+
+      - name: Run DIVINITY tests
+        run: ./build/DivinityTests_artefacts/Release/DivinityTests test-output
+
+      - name: Validate AU with auval
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "build/DIVINITY_artefacts/Release/AU/DIVINITY.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aumu Dvnt T7au
+
+      - name: Validate VST3 with pluginval
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 10 --validate-in-process "build/DIVINITY_artefacts/Release/VST3/DIVINITY.vst3"
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp -R build/DIVINITY_artefacts/Release/VST3/DIVINITY.vst3 dist/
+          cp -R build/DIVINITY_artefacts/Release/AU/DIVINITY.component dist/
+          cp -R build/DIVINITY_artefacts/Release/Standalone/DIVINITY.app dist/
+          cd dist && zip -qr ../DIVINITY-macOS-Universal.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DIVINITY-macOS-Universal
+          path: DIVINITY-macOS-Universal.zip
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-output-macOS
+          path: test-output
+
+  windows:
+    name: Windows x64 - VST3 / Standalone
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build plugin + tests
+        run: cmake --build build --config Release --target DIVINITY_VST3 DIVINITY_Standalone DivinityTests
+
+      - name: Run DIVINITY tests
+        run: .\build\DivinityTests_artefacts\Release\DivinityTests.exe test-output
+
+      - name: Validate VST3 with pluginval
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pluginval.zip
+          Expand-Archive pluginval.zip -DestinationPath pv
+          .\pv\pluginval.exe --strictness-level 10 --validate-in-process "build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item -Recurse build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3 dist\
+          Copy-Item build\DIVINITY_artefacts\Release\Standalone\DIVINITY.exe dist\
+          Compress-Archive -Path dist\* -DestinationPath DIVINITY-Windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DIVINITY-Windows-x64
+          path: DIVINITY-Windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-output-Windows
+          path: test-output

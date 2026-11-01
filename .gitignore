@@ -1,0 +1,5 @@
+build/
+JUCE/
+test-output/
+*.zip
+.DS_Store
