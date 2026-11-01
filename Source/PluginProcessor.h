@@ -83,6 +83,9 @@ public:
     const WavetableBank& getWavetables() const noexcept { return *bank; }
     int getActiveVoices() const noexcept { return engine.getActiveVoiceCount(); }
     float getLfoValue (int i) const noexcept { return engine.getLfoValue (i); }
+    float getSoulX() const noexcept { return engine.getSoul().getEffectiveX(); }
+    float getSoulY() const noexcept { return engine.getSoul().getEffectiveY(); }
+    float getDivineAmount() const noexcept { return engine.getSoul().getEffectiveDivine(); }
     const FXChain::Display& getFxDisplay() const noexcept { return fx.display; }
 
     // UI preference (not part of the sound): workspace & scale are stored with the session.

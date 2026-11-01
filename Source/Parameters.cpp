@@ -1,4 +1,5 @@
 #include "Parameters.h"
+#include "DSP/SoulEngine.h"
 
 namespace divinity
 {
@@ -13,7 +14,7 @@ juce::StringArray modSourceNames()
 {
     return { "-", "LFO 1", "LFO 2", "LFO 3", "LFO 4", "ENV 1", "ENV 2", "ENV 3",
              "Velocity", "Mod Wheel", "Aftertouch", "Pitch Bend", "Note",
-             "Macro 1", "Macro 2", "Macro 3", "Macro 4" };
+             "Macro 1", "Macro 2", "Macro 3", "Macro 4", "Soul X", "Soul Y" };
 }
 
 juce::StringArray modDestNames()
@@ -30,7 +31,8 @@ juce::StringArray modDestNames()
              "Filter 2 Cutoff", "Filter 2 Res", "Filter 2 Drive",
              "Amp", "Pan",
              "LFO 1 Rate", "LFO 2 Rate", "LFO 3 Rate", "LFO 4 Rate",
-             "Saturation", "Chorus Depth", "Delay Mix", "Reverb Mix" };
+             "Saturation", "Chorus Depth", "Delay Mix", "Reverb Mix",
+             "Soul X", "Soul Y", "Divine Amount" };
 }
 
 juce::StringArray wavetableNames()
@@ -75,7 +77,8 @@ juce::StringArray subModeNames()
 bool isGlobalDest (ModDest d)
 {
     return d == ModDest::SatDrive || d == ModDest::ChorusDepth || d == ModDest::DelayMix || d == ModDest::ReverbMix
-        || d == ModDest::Lfo1Rate || d == ModDest::Lfo2Rate || d == ModDest::Lfo3Rate || d == ModDest::Lfo4Rate;
+        || d == ModDest::Lfo1Rate || d == ModDest::Lfo2Rate || d == ModDest::Lfo3Rate || d == ModDest::Lfo4Rate
+        || d == ModDest::SoulX || d == ModDest::SoulY || d == ModDest::DivineAmount;
 }
 
 //==============================================================================
@@ -335,6 +338,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         layout.add (std::move (group));
     }
 
+    addSoulParameters (layout);
     return layout;
 }
 
@@ -400,6 +404,21 @@ juce::String helpTextFor (const juce::String& id)
     if (id == ids::macro (1)) return "MOVEMENT: increases LFO motion and adds chorus shimmer.";
     if (id == ids::macro (2)) return "TEXTURE: adds harmonic grit with wavefolding and saturation.";
     if (id == ids::macro (3)) return "SPACE: adds reverb, delay and stereo width.";
+    if (id == ids::soulX)         return "SOUL ENGINE horizontal axis: left is SOFT, right is AGGRESSIVE. Centre leaves the patch untouched.";
+    if (id == ids::soulY)         return "SOUL ENGINE vertical axis: down is MELANCHOLY, up is EUPHORIA. Centre leaves the patch untouched.";
+    if (id == ids::soulIntensity) return "Soul Intensity: how strongly the XY position changes the sound.";
+    if (id == ids::soulCurve)     return "Soul Curve: negative reacts strongly near the centre, positive keeps the centre calm and saves the drama for the edges.";
+    if (id == ids::soulSmooth)    return "Soul Smoothing: how long the sound takes to follow the XY pad. Longer = slow emotional morphs.";
+    if (id == ids::divineAmount)  return "DIVINE INTERVENTION: at 0% the patch is untouched; at 100% the selected transformation is fully active.";
+    if (id == ids::divineMode)    return "Divine Mode: which transformation Divine Intervention performs.";
+    if (id.startsWith ("soul_"))
+        for (int t = 0; t < kNumSoulTargets; ++t)
+        {
+            const auto& tg = soulTargets()[(size_t) t];
+            if (id == ids::soul (t, "on")) return juce::String (tg.name) + ": include this target in the SOUL ENGINE. " + tg.help;
+            if (id == ids::soul (t, "x"))  return juce::String (tg.name) + " amount toward AGGRESSIVE (negative = toward SOFT). " + tg.help;
+            if (id == ids::soul (t, "y"))  return juce::String (tg.name) + " amount toward EUPHORIA (negative = toward MELANCHOLY). " + tg.help;
+        }
     if (id == ids::subOn)      return "Turns the sub oscillator on or off.";
     if (id == ids::noiseOn)    return "Turns the noise layer on or off.";
     if (id == ids::satOn)      return "Turns the saturation effect on or off.";

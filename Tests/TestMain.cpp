@@ -399,6 +399,113 @@ static void testMidi (DivinityProcessor& p)
     CHECK (legatoMax == 1, "legato mode stays monophonic");
 }
 
+/** Brightness proxy: RMS of the first difference over RMS of the signal (tracks spectral centroid). */
+static double zeroCrossRate (const juce::AudioBuffer<float>& b, int from, int len)
+{
+    double d = 0, s = 0;
+    for (int i = from + 1; i < from + len; ++i)
+    {
+        const double x = b.getSample (0, i), dx = x - b.getSample (0, i - 1);
+        d += dx * dx; s += x * x;
+    }
+    return s > 0 ? std::sqrt (d / s) : 0.0;
+}
+
+static void testSoul (DivinityProcessor& p)
+{
+    std::cout << "\n== SOUL ENGINE + Divine Intervention\n";
+    const std::vector<Note> chord { { 0.0, 1.5, 48, 0.9f }, { 0.0, 1.5, 55, 0.9f }, { 0.0, 1.5, 60, 0.9f } };
+
+    // neutral pad + Divine 0 must leave the patch bit-identical to a reference render
+    p.presets.loadPreset (0);
+    auto ref = render (p, 48000, 256, 1.0, chord);
+    setP (p, ids::soulX, 0.5f); setP (p, ids::soulY, 0.5f); setP (p, ids::divineAmount, 0.0f);
+    setP (p, ids::soulIntensity, 0.37f); setChoice (p, ids::divineMode, "Shatter");   // irrelevant at neutral / 0%
+    auto same = render (p, 48000, 256, 1.0, chord);
+    float diff = 0;
+    for (int i = 0; i < ref.getNumSamples(); ++i) diff = std::max (diff, std::abs (ref.getSample (0, i) - same.getSample (0, i)));
+    CHECK (diff < 1.0e-6f, "neutral XY + Divine 0% leaves the sound untouched (max diff " << diff << ")");
+
+    // AGGRESSIVE is brighter than SOFT (Classic mapping)
+    cleanPatch (p);
+    setChoice (p, ids::osc (0, "engine"), "Analog"); setChoice (p, ids::osc (0, "wave"), "Saw");
+    setChoice (p, ids::filt (0, "type"), "Low Pass 12"); setP (p, ids::filt (0, "cutoff"), 1500.0f);
+    setP (p, ids::soulSmooth, 0.0f);
+    setP (p, ids::soulX, 0.0f);
+    auto soft = render (p, 48000, 256, 1.0, { { 0.0, 2.0, 45, 0.9f } });
+    setP (p, ids::soulX, 1.0f);
+    auto aggr = render (p, 48000, 256, 1.0, { { 0.0, 2.0, 45, 0.9f } });
+    const double zs = zeroCrossRate (soft, 24000, 20000), za = zeroCrossRate (aggr, 24000, 20000);
+    CHECK (za > zs * 1.5, "AGGRESSIVE brighter than SOFT (slope/level ratio " << za << " vs " << zs << ")");
+
+    // MELANCHOLY gives longer tails than EUPHORIA
+    auto tailLevel = [&] (float yv)
+    {
+        setP (p, ids::soulX, 0.5f); setP (p, ids::soulY, yv);
+        setP (p, ids::env (0, "release"), 0.3f);
+        auto b = render (p, 48000, 256, 1.5, { { 0.0, 0.4, 57, 0.9f } });
+        return rmsDb (b, (int) (0.75 * 48000), 4800);
+    };
+    const float tm = tailLevel (0.0f), te = tailLevel (1.0f);
+    CHECK (tm > te + 6.0f, "MELANCHOLY tail louder 0.35 s after release than EUPHORIA (" << tm << " vs " << te << " dB)");
+
+    // exclusions: with every target switched off, a hard-AGGRESSIVE pad must sound exactly like neutral
+    setP (p, ids::soulX, 0.5f); setP (p, ids::soulY, 0.5f);
+    auto neutral = render (p, 48000, 256, 1.0, { { 0.0, 2.0, 45, 0.9f } });
+    for (int t = 0; t < kNumSoulTargets; ++t) setP (p, ids::soul (t, "on"), 0);
+    setP (p, ids::soulX, 1.0f);
+    auto off = render (p, 48000, 256, 1.0, { { 0.0, 2.0, 45, 0.9f } });
+    float offDiff = 0;
+    for (int i = 0; i < off.getNumSamples(); ++i) offDiff = std::max (offDiff, std::abs (off.getSample (0, i) - neutral.getSample (0, i)));
+    CHECK (offDiff < 1.0e-6f, "excluding every target removes the SOUL effect (diff " << offDiff << ")");
+    for (int t = 0; t < kNumSoulTargets; ++t) setP (p, ids::soul (t, "on"), 1);
+
+    // smoothing: a full jump of the pad with 300 ms smoothing creates no clicks
+    cleanPatch (p);
+    setChoice (p, ids::osc (0, "engine"), "Analog"); setChoice (p, ids::osc (0, "wave"), "Sine");
+    setP (p, ids::soulSmooth, 0.3f);
+    setP (p, ids::soulX, 0.0f); setP (p, ids::soulY, 0.0f);
+    auto jump = render (p, 48000, 128, 1.5, { { 0.0, 2.0, 57, 0.9f } }, [&] (int blk)
+    {
+        if (blk == 180) { setP (p, ids::soulX, 1.0f); setP (p, ids::soulY, 1.0f); }
+    });
+    // reference: the same patch already sitting at the target corner (its own steepest slope)
+    auto target = render (p, 48000, 128, 1.5, { { 0.0, 2.0, 57, 0.9f } });
+    float maxStep = 0, refStep = 0;
+    for (int i = 22000; i < jump.getNumSamples(); ++i) maxStep = std::max (maxStep, std::abs (jump.getSample (0, i) - jump.getSample (0, i - 1)));
+    for (int i = 22000; i < target.getNumSamples(); ++i) refStep = std::max (refStep, std::abs (target.getSample (0, i) - target.getSample (0, i - 1)));
+    CHECK (maxStep <= refStep * 1.15f, "XY jump with smoothing is click-free (max step " << maxStep << " vs settled target " << refStep << ")");
+
+    // every Divine mode changes the sound, stays finite and under the ceiling
+    p.presets.loadPreset (0);
+    auto base = render (p, 48000, 256, 1.5, chord);
+    for (int mode = 0; mode < 5; ++mode)
+    {
+        p.presets.loadPreset (0);
+        setChoice (p, ids::divineMode, divineModeNames()[mode]);
+        setP (p, ids::divineAmount, 1.0f);
+        auto b = render (p, 48000, 256, 1.5, chord);
+        float d = 0;
+        for (int i = 0; i < b.getNumSamples(); ++i) d = std::max (d, std::abs (b.getSample (0, i) - base.getSample (0, i)));
+        const float pk = juce::Decibels::gainToDecibels (b.getMagnitude (0, b.getNumSamples()));
+        CHECK (allFinite (b) && d > 0.01f && pk <= -0.2f, "Divine " << divineModeNames()[mode] << ": changes sound (diff " << d << "), peak " << pk << " dBFS");
+    }
+
+    // mod matrix can drive the pad
+    cleanPatch (p);
+    setChoice (p, ids::mod (0, "src"), "Macro 1"); setChoice (p, ids::mod (0, "dst"), "Soul X"); setP (p, ids::mod (0, "amt"), 1.0f);
+    setP (p, ids::macro (0), 1.0f); setP (p, ids::soulSmooth, 0.0f);
+    render (p, 48000, 256, 0.3, { { 0.0, 0.3, 60, 0.9f } });
+    CHECK (p.getSoulX() > 0.95f, "Macro 1 -> Soul X moves the effective pad position (" << p.getSoulX() << ")");
+
+    // mapping weights recall with the patch
+    p.presets.loadPreset (0);
+    setP (p, ids::soul (3, "y"), -0.83f);
+    juce::MemoryBlock st; p.getStateInformation (st);
+    DivinityProcessor q; q.setStateInformation (st.getData(), (int) st.getSize());
+    CHECK (std::abs (q.apvts.getRawParameterValue (ids::soul (3, "y"))->load() + 0.83f) < 1.0e-3f, "custom emotion mapping recalls with the session");
+}
+
 static void testFuzzAndExtremes (DivinityProcessor& p)
 {
     std::cout << "\n== Extreme / random parameter fuzzing + rapid automation\n";
@@ -567,6 +674,12 @@ static void snapshotEditor (DivinityProcessor& p, const juce::File& dir)
     ed->setSize (DivinityEditor::kBaseWidth, DivinityEditor::kBaseHeight);
     for (int i = 0; i < 3; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil (60);
     writePng ("ui_create.png");
+    p.uiWorkspace = "SOUL";
+    setP (p, ids::soulX, 0.78f); setP (p, ids::soulY, 0.7f); setP (p, ids::divineAmount, 0.45f);
+    ed.reset (p.createEditor());
+    ed->setSize (DivinityEditor::kBaseWidth, DivinityEditor::kBaseHeight);
+    for (int i = 0; i < 3; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil (60);
+    writePng ("ui_soul.png");
     ed->setSize ((int) (DivinityEditor::kBaseWidth * 0.7f), (int) (DivinityEditor::kBaseHeight * 0.7f));
     CHECK (ed->getWidth() == (int) (DivinityEditor::kBaseWidth * 0.7f), "editor resizes to 70%");
     ed.reset();
@@ -593,6 +706,7 @@ int main (int argc, char** argv)
         testStateRoundTrip (p);
         testPresetFiles (p);
         testMidi (p);
+        testSoul (p);
         testFuzzAndExtremes (p);
         testRatesAndBuffers (p);
         testLongNotesAndSilence (p);

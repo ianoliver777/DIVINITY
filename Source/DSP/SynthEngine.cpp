@@ -94,7 +94,7 @@ void EngineParamRefs::read (EngineSnapshot& s) const noexcept
 
 //==============================================================================
 SynthEngine::SynthEngine (juce::AudioProcessorValueTreeState& apvts, const WavetableBank& b)
-    : refs (apvts), bank (b)
+    : refs (apvts), soul (apvts), bank (b)
 {
     heldNotes.reserve (128);
     refs.read (snap);
@@ -139,6 +139,8 @@ void SynthEngine::reset()
     lastGlobalDest.fill (0.0f);
     heldNotes.clear();
     sustainPedal = false;
+    soul.reset();
+    perf = {};
     pitchBend = modWheel = channelPressure = 0.0f;
     lastNotePitch = -1.0;
     activeVoiceCount = 0;
@@ -409,7 +411,7 @@ void SynthEngine::renderChunk (float* outL, float* outR, int n, const TransportI
         rate = juce::jlimit (0.0, 2000.0, rate);
         float raw = lfos[(size_t) i].advance (lp.shape, rate, seconds, lp.smooth, lp.phase, locked && std::isfinite (ppqNow), ppqNow / beats);
         if (! std::isfinite (raw)) { lfos[(size_t) i].reset (0xC0FFEEu + (uint32_t) i); raw = 0.0f; }
-        lfoValues[(size_t) i] = raw * lp.depth * (1.0f + 2.0f * movement);
+        lfoValues[(size_t) i] = raw * lp.depth * (1.0f + 2.0f * movement) * juce::jmax (0.1f, 1.0f + perf.motion);
         lfoDisplay[(size_t) i].store (raw * lp.depth);
     }
 
@@ -419,6 +421,8 @@ void SynthEngine::renderChunk (float* outL, float* outR, int n, const TransportI
     globalSrc[(size_t) ModSource::Aftertouch] = channelPressure;
     globalSrc[(size_t) ModSource::PitchBend]  = pitchBend;
     for (int i = 0; i < kNumMacros; ++i) globalSrc[(size_t) ModSource::Macro1 + (size_t) i] = snap.macro[(size_t) i];
+    globalSrc[(size_t) ModSource::SoulX] = soul.getEffectiveX();
+    globalSrc[(size_t) ModSource::SoulY] = soul.getEffectiveY();
 
     // ---- global (post-voice) destinations follow the newest sounding voice ----
     const Voice* newest = nullptr;
@@ -433,10 +437,14 @@ void SynthEngine::renderChunk (float* outL, float* outR, int n, const TransportI
         computeVoiceMods (silentVoice, globalSrc, gdest);
     }
     std::copy (gdest, gdest + (size_t) ModDest::NumDests, lastGlobalDest.begin());
-    globalMods.satDrive    = gdest[(size_t) ModDest::SatDrive];
-    globalMods.chorusDepth = gdest[(size_t) ModDest::ChorusDepth];
-    globalMods.delayMix    = gdest[(size_t) ModDest::DelayMix];
-    globalMods.reverbMix   = gdest[(size_t) ModDest::ReverbMix];
+    // SOUL ENGINE + Divine Intervention (the matrix can push the XY position and the Divine amount)
+    perf = soul.compute (seconds, gdest[(size_t) ModDest::SoulX], gdest[(size_t) ModDest::SoulY], gdest[(size_t) ModDest::DivineAmount]);
+    globalMods.satDrive    = gdest[(size_t) ModDest::SatDrive] + perf.drive;
+    globalMods.chorusDepth = gdest[(size_t) ModDest::ChorusDepth] + perf.detune * 0.3f;
+    globalMods.delayMix    = gdest[(size_t) ModDest::DelayMix] + perf.delay;
+    globalMods.reverbMix   = gdest[(size_t) ModDest::ReverbMix] + perf.reverb;
+    globalMods.reverbSize  = perf.reverbSize;
+    globalMods.width       = perf.width;
 
     for (auto& v : voices)
         if (v.active)
@@ -480,7 +488,17 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
     for (int e = 0; e < kNumEnvs; ++e)
     {
         const auto& ep = snap.env[(size_t) e];
-        v.env[(size_t) e].setParameters (ep.a, ep.d, ep.s, ep.r, ep.curve);
+        const float am = e == 0 ? std::pow (2.0f, juce::jlimit (-6.0f, 6.0f, perf.attackLog2)) : 1.0f;
+        const float rm = e == 0 ? std::pow (2.0f, juce::jlimit (-6.0f, 6.0f, perf.releaseLog2)) : 1.0f;
+        v.env[(size_t) e].setParameters (juce::jlimit (0.0005f, 30.0f, ep.a * am), ep.d, ep.s, juce::jlimit (0.001f, 40.0f, ep.r * rm), ep.curve);
+    }
+
+    // SOUL instability: slow random per-voice pitch wander
+    {
+        const float secs = (float) n / (float) sampleRate;
+        v.driftTimer -= secs;
+        if (v.driftTimer <= 0.0f) { v.driftTarget = v.rng.bipolar(); v.driftTimer = 0.25f + 0.35f * v.rng.unipolar(); }
+        v.drift += (1.0f - std::exp (-secs / 0.3f)) * (v.driftTarget - v.drift);
     }
     const float invN = 1.0f / (float) n;
 
@@ -494,7 +512,8 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
     else v.pitch = v.targetPitch;
 
     if (! std::isfinite (v.pitch)) v.pitch = v.targetPitch;
-    const double basePitch = v.pitch + snap.masterTune / 100.0 + pitchBend * snap.bendRange;
+    const double basePitch = v.pitch + snap.masterTune / 100.0 + pitchBend * snap.bendRange
+                           + (double) (v.drift * juce::jlimit (0.0f, 100.0f, perf.driftCents)) / 100.0;
 
     float* mixL = scratchL.data();
     float* mixR = scratchR.data();
@@ -509,10 +528,10 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
 
         const float levelT  = juce::jlimit (0.0f, 1.0f, op.level + dest[(size_t) ModDest::OscALevel + (size_t) o]);
         const float posT    = juce::jlimit (0.0f, 1.0f, op.pos + dest[(size_t) ModDest::OscAPos + (size_t) o]);
-        const float foldT   = juce::jlimit (0.0f, 1.0f, op.fold + dest[(size_t) ModDest::OscAFold + (size_t) o] + texture * 0.4f);
+        const float foldT   = juce::jlimit (0.0f, 1.0f, op.fold + dest[(size_t) ModDest::OscAFold + (size_t) o] + texture * 0.4f + perf.fold);
         const float pw      = juce::jlimit (0.03f, 0.97f, op.pw + dest[(size_t) ModDest::OscAPwm + (size_t) o] * 0.45f);
-        const float detune  = juce::jlimit (0.0f, 1.0f, op.detune + dest[(size_t) ModDest::OscADetune + (size_t) o]);
-        const float width   = juce::jlimit (0.0f, 1.0f, op.width + space * 0.3f);
+        const float detune  = juce::jlimit (0.0f, 1.0f, op.detune + dest[(size_t) ModDest::OscADetune + (size_t) o] + perf.detune);
+        const float width   = juce::jlimit (0.0f, 1.0f, op.width + space * 0.3f + perf.width);
         const double oscPitch = basePitch + op.oct * 12 + op.semi + op.fine / 100.0
                               + dest[(size_t) ModDest::OscAPitch + (size_t) o] * 12.0;
 
@@ -621,10 +640,10 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
         const auto cutDest = f == 0 ? ModDest::Filter1Cutoff : ModDest::Filter2Cutoff;
         const auto resDest = f == 0 ? ModDest::Filter1Res : ModDest::Filter2Res;
         const auto drvDest = f == 0 ? ModDest::Filter1Drive : ModDest::Filter2Drive;
-        const double octaves = D (cutDest) * 6.0 + tone * 4.0 + fp.keytrack * (v.note - 60) / 12.0;
+        const double octaves = D (cutDest) * 6.0 + tone * 4.0 + fp.keytrack * (v.note - 60) / 12.0 + perf.brightOct;
         const float cutoff = juce::jlimit (16.0f, (float) (sampleRate * 0.45), (float) (fp.cutoff * std::pow (2.0, octaves)));
         const float res = juce::jlimit (0.0f, 1.0f, fp.res + D (resDest));
-        drives[f] = juce::jlimit (0.0f, 1.0f, fp.drive + D (drvDest));
+        drives[f] = juce::jlimit (0.0f, 1.0f, fp.drive + D (drvDest) + juce::jmax (0.0f, perf.drive) * 0.4f);
         mixes[f]  = juce::jlimit (0.0f, 1.0f, fp.mix);
         cEnd[f]   = makeCoeffs (cutoff, res, sampleRate);
         cStart[f] = v.rampsValid ? v.lastCoeffs[(size_t) f] : cEnd[f];

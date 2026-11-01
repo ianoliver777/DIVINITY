@@ -108,10 +108,19 @@ void PresetBrowser::resized()
 }
 
 //==============================================================================
-CreateView::CreateView (DivinityProcessor& p) : proc (p), browser (p), scope (p), macros (p, true)
+CreateView::CreateView (DivinityProcessor& p) : proc (p), browser (p), scope (p), soulPad (p, true), macros (p, true)
 {
     addAndMakeVisible (browser);
     addAndMakeVisible (scope);
+    addAndMakeVisible (soulPad);
+    divineSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    divineSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    divineSlider.setVelocityModeParameters (0.12, 1, 0.0, true, juce::ModifierKeys::shiftModifier);
+    divineSlider.setDoubleClickReturnValue (true, 0.0);
+    divineSlider.setTooltip (helpTextFor (ids::divineAmount) + "\n\nChoose the transformation on the SOUL page.");
+    divineSlider.onValueChange = [this] { repaint (775, 330, 220, 20); };
+    divineAttach = std::make_unique<APVTS::SliderAttachment> (p.apvts, ids::divineAmount, divineSlider);
+    addAndMakeVisible (divineSlider);
     addAndMakeVisible (macros);
 
     auto& s = p.apvts;
@@ -166,6 +175,16 @@ void CreateView::paint (juce::Graphics& g)
     g.drawFittedText (info.description.isNotEmpty() ? info.description : juce::String ("Play the keyboard below, then shape the sound with the macros."),
                       sound.getX() + 24, 80, sound.getWidth() - 48, 36, juce::Justification::topLeft, 2);
 
+    // SOUL quick controls
+    g.setFont (font (10.5f, Weight::Medium, 0.25f));
+    g.setColour (textDim);
+    g.drawText ("SOUL", 778, 118, 100, 14, juce::Justification::centredLeft);
+    const int mode = juce::roundToInt (proc.apvts.getRawParameterValue (ids::divineMode)->load());
+    const int amt = juce::roundToInt (proc.apvts.getRawParameterValue (ids::divineAmount)->load() * 100.0f);
+    g.drawText ("DIVINE  /  " + divineModeNames()[mode].toUpperCase(), 778, 332, 170, 14, juce::Justification::centredLeft);
+    g.setColour (amt > 0 ? accent : textFaint);
+    g.drawText (juce::String (amt) + "%", 940, 332, 52, 14, juce::Justification::centredRight);
+
     // performance panel
     auto perf = juce::Rectangle<int> (365, 405, 1125, 305);
     drawPanelBackground (g, perf.toFloat());
@@ -184,7 +203,9 @@ void CreateView::paint (juce::Graphics& g)
 void CreateView::resized()
 {
     browser.setBounds (0, 0, 350, 710);
-    scope.setBounds (385, 128, 605, 248);
+    scope.setBounds (385, 128, 372, 248);
+    soulPad.setBounds (774, 134, 222, 190);
+    divineSlider.setBounds (774, 350, 222, 20);
     macros.setBounds (1025, 0, 465, 390);
     const auto perf = juce::Rectangle<int> (365, 405, 1125, 305);
     const int colW = perf.getWidth() / 8;

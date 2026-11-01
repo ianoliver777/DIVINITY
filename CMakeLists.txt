@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(DIVINITY VERSION 0.1.0 LANGUAGES C CXX)
+project(DIVINITY VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -62,13 +62,15 @@ set(DIVINITY_CORE_SOURCES
     Source/DSP/Wavetables.cpp
     Source/DSP/SynthEngine.cpp
     Source/DSP/FXChain.cpp
+    Source/DSP/SoulEngine.cpp
     Source/Presets/PresetManager.cpp
     Source/Presets/FactoryPresets.cpp
     Source/PluginEditor.cpp
     Source/UI/DivinityLookAndFeel.cpp
     Source/UI/Components.cpp
     Source/UI/Panels.cpp
-    Source/UI/CreateView.cpp)
+    Source/UI/CreateView.cpp
+    Source/UI/SoulView.cpp)
 
 target_sources(DIVINITY PRIVATE ${DIVINITY_CORE_SOURCES})
 target_include_directories(DIVINITY PRIVATE Source)

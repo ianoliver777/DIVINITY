@@ -2,6 +2,7 @@
 
 #include "DSPCore.h"
 #include "Wavetables.h"
+#include "SoulEngine.h"
 #include "../Parameters.h"
 #include <array>
 #include <atomic>
@@ -80,9 +81,10 @@ public:
     float getLfoValue (int i) const noexcept  { return lfoDisplay[(size_t) i].load(); }
 
     /** Global values of the post-voice (FX) destinations computed for the last block. */
-    struct GlobalMods { float satDrive = 0, chorusDepth = 0, delayMix = 0, reverbMix = 0; };
+    struct GlobalMods { float satDrive = 0, chorusDepth = 0, delayMix = 0, reverbMix = 0, reverbSize = 0, width = 0; };
     GlobalMods getGlobalMods() const noexcept { return globalMods; }
     const EngineSnapshot& getSnapshot() const noexcept { return snap; }
+    const SoulEngine& getSoul() const noexcept { return soul; }
 
 private:
     //--------------------------------------------------------------------------
@@ -108,6 +110,7 @@ private:
         std::array<float, kNumOscs> lastLevel {}, lastPos {}, lastFold {};
         std::array<dsp::FilterCoeffs, 2> lastCoeffs {};
         float lastPanL = 1, lastPanR = 1, lastSub = 0, lastNoise = 0;
+        float drift = 0, driftTarget = 0, driftTimer = 0;   // SOUL instability state
         bool  rampsValid = false;
     };
 
@@ -124,6 +127,8 @@ private:
 
     //--------------------------------------------------------------------------
     EngineParamRefs refs;
+    SoulEngine soul;
+    PerformanceMods perf;
     const WavetableBank& bank;
     EngineSnapshot snap;
 

@@ -190,9 +190,9 @@ void FXChain::process (juce::AudioBuffer<float>& buffer, double bpm, const Synth
         {
             if (! reverbWasActive) reverb.reset();
             juce::dsp::Reverb::Parameters rp;
-            rp.roomSize = juce::jlimit (0.0f, 1.0f, revSize->load() + space * 0.2f);
+            rp.roomSize = juce::jlimit (0.0f, 1.0f, revSize->load() + space * 0.2f + mods.reverbSize);
             rp.damping = revDamp->load();
-            rp.width = revWidth->load();
+            rp.width = juce::jlimit (0.0f, 1.0f, revWidth->load() + mods.width);
             rp.wetLevel = 1.0f; rp.dryLevel = 0.0f; rp.freezeMode = 0.0f;
             reverb.setParameters (rp);
             for (int ch = 0; ch < 2; ++ch) wet.copyFrom (ch, 0, buffer, ch, start, n);

@@ -1,4 +1,5 @@
 #include "PresetManager.h"
+#include "../DSP/SoulEngine.h"
 
 namespace divinity
 {
@@ -316,6 +317,22 @@ std::vector<FactoryPreset> createFactoryPresets()
         list.push_back (p);
     }
 
+    // SOUL ENGINE character per category: emotion mapping + Divine Intervention mode
+    struct SoulStyle { const char* cat; int mapping; const char* divine; };
+    const SoulStyle styles[] = {
+        { "Pad", 1, "Bloom" }, { "Ambient", 3, "Abyss" }, { "Vocal Texture", 3, "Ascension" },
+        { "Bass", 2, "Shatter" }, { "808", 2, "Collapse" }, { "Experimental", 0, "Shatter" },
+        { "Lead", 0, "Ascension" }, { "Pluck", 0, "Bloom" }, { "Bell", 1, "Ascension" }, { "Keys", 4, "Bloom" },
+        { "Arpeggio", 0, "Shatter" }, { "Percussion", 2, "Collapse" }, { "Cinematic", 1, "Abyss" }, { "FX", 1, "Collapse" } };
+    for (auto& p : list)
+        for (auto& st : styles)
+            if (p.category == st.cat)
+            {
+                const auto& m = soulMappingPresets()[(size_t) st.mapping];
+                for (int t = 0; t < kNumSoulTargets; ++t)
+                    p.set (ids::soul (t, "x"), m.w[t][0]).set (ids::soul (t, "y"), m.w[t][1]);
+                p.choice (ids::divineMode, st.divine);
+            }
     return list;
 }
 

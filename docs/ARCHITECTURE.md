@@ -1,6 +1,6 @@
 # DIVINITY — Engineering Notes (Phase 1)
 
-TRIPLE SEVEN AUDIO · v0.1.0 · Phase 1 "Core Foundation"
+TRIPLE SEVEN AUDIO · v0.2.0 · Phase 1 complete + Phase 2 SOUL ENGINE / Divine Intervention
 
 ---
 
@@ -19,6 +19,7 @@ Source/
 ├─ Parameters.h/.cpp        Parameter layout (stable IDs), enums, value formatting, help text
 ├─ PluginProcessor.h/.cpp   AudioProcessor: owns APVTS, engine, FX, presets; state save/restore
 ├─ DSP/
+│  ├─ SoulEngine.h/.cpp     SOUL ENGINE emotion mapping + Divine Intervention (control-rate offsets)
 │  ├─ DSPCore.h             Envelope, LFO, ZDF SVF, ZDF ladder, comb, noise, PolyBLEP, RNG
 │  ├─ Wavetables.h/.cpp     Factory wavetable bank, band-limited mipmaps (shared across instances)
 │  ├─ SynthEngine.h/.cpp    Voices, unison, glide/legato, mod matrix, sample-accurate MIDI
@@ -31,7 +32,8 @@ Source/
    ├─ DivinityLookAndFeel   Palette, typography, knob/combobox/menu/tooltip rendering
    ├─ Components            Knob, Selector, ChoiceBox, NumberBox, TabRow, displays, meters
    ├─ Panels                Oscillators, filter, envelope, LFO, matrix, macros, FX, global, keyboard
-   └─ CreateView            CREATE workspace (preset browser, scope, macros, 8 musical controls)
+   ├─ CreateView            CREATE workspace (preset browser, scope, mini SOUL pad, Divine, macros, 8 controls)
+   └─ SoulView              SOUL page: XY pad, emotion mapping editor, Divine Intervention
 Tests/TestMain.cpp          Automated test runner (72 checks) + offscreen UI snapshots + WAV demos
 ```
 
@@ -67,8 +69,8 @@ Each milestone ships only when its acceptance criteria pass.
 - M6 Presets, undo/redo, scalable UI matching the mockup → *user preset round-trip; offscreen UI renders.* ✅
 
 **Phase 2 — Signature identity**
-- M7 SOUL ENGINE: XY pad + editable emotion mapping groups, curves, smoothing, per-patch recall.
-- M8 Divine Intervention macro with transformation presets.
+- M7 SOUL ENGINE: XY pad + editable emotion mapping, curves, smoothing, per-patch recall → *neutral = bit-identical; aggressive brighter; melancholy longer tails; exclusions; click-free jumps; recall.* ✅ (v0.2.0)
+- M8 Divine Intervention macro with 5 transformation modes → *0% = untouched; every mode audibly different, finite, under the ceiling.* ✅ (v0.2.0)
 - M9 Liquid Oscillator: control-point waveform editor → rendered into a user wavetable on a worker thread.
 - M10 Infinity Field prototype (seeded evolving layer). M11 oversampled wavefold + quality modes.
 
@@ -93,12 +95,23 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 - **Presets:** 20 factory presets across all categories; user save/import/export; favourites; search; modified indicator.
 - **UI:** CREATE + DESIGN workspaces, side nav, tooltips with plain-English help on every parameter, double-click reset, shift-drag fine adjust, right-click value entry, mod rings on modulated knobs, undo/redo (Cmd/Ctrl+Z), 60–160% scaling.
 
+### SOUL ENGINE (v0.2.0)
+- XY pad: SOFT ↔ AGGRESSIVE, MELANCHOLY ↔ EUPHORIA; centre = patch untouched (tested bit-identical).
+- 10 targets: Brightness, Drive, Attack, Tail, Detune, Width, Space, Instability, Movement, Harmonics. Each has an on/off switch and a bipolar weight per axis — fully editable and saved with the patch.
+- 5 mapping presets (Classic, Cinematic, Bass Pressure, Dream, Subtle); factory presets pick one by category.
+- Intensity, response curve and transition smoothing (one-pole glide, 0–2 s). X, Y and Divine amount are host-automatable and are mod-matrix sources/destinations.
+- Applied as control-rate offsets on top of the patch (filters, envelopes, unison, fold, LFO depth, per-voice drift, FX sends) — no allocation, no locks.
+
+### Divine Intervention (v0.2.0)
+- One 0–100% control (smoothed) with 5 modes: Ascension, Collapse, Shatter, Bloom, Abyss — each moves brightness, drive, envelope times, detune, width, space, delay, instability, movement and harmonics differently, so it reshapes the sound rather than just adding distortion.
+
 ### Known limitations (honest list)
 - Wavefold isn't oversampled yet → some aliasing at high fold on high notes (Phase 2, M11).
 - FX order is fixed (sat → chorus → delay → reverb → limiter); drag-reorder comes with the full rack in Phase 4.
 - Reverb is JUCE's Freeverb-style reverb — fine for Phase 1, will be replaced by a custom design.
 - Filter display draws the analog prototype response (very close, not bit-exact above ~10 kHz).
 - No MIDI learn or MPE yet. AU and Windows builds are produced by CI and haven't been run in a real DAW by us.
+- Windows: all audio/state/automation pluginval tests pass; the GUI editor-automation test crashes on GitHub's headless Windows runner with no crash output. GUI tests pass on macOS and Linux. Needs confirming on a real Windows machine.
 
 ---
 

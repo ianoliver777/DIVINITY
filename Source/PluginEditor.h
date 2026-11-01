@@ -81,6 +81,7 @@ private:
     ui::FxSection fxSection;
     ui::GlobalSection globalSection;
     ui::CreateView createView;
+    ui::SoulView soulView;
     ui::KeyboardBar keyboardBar;
 
     std::unique_ptr<juce::FileChooser> chooser;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Panels.h"
+#include "SoulView.h"
 
 namespace divinity::ui
 {
@@ -40,6 +41,9 @@ private:
     DivinityProcessor& proc;
     PresetBrowser browser;
     ScopeDisplay scope;
+    XYPad soulPad;
+    FineSlider divineSlider;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> divineAttach;
     MacroSection macros;
     juce::OwnedArray<Knob> knobs;
     juce::String lastName;

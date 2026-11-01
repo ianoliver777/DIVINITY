@@ -111,6 +111,7 @@ void DivinityProcessor::setStateInformation (const void* data, int sizeInBytes)
     }
 
     uiWorkspace = xml->getStringAttribute ("uiWorkspace", "DESIGN");
+    if (uiWorkspace != "CREATE" && uiWorkspace != "SOUL") uiWorkspace = "DESIGN";
     uiScale = (float) juce::jlimit (0.6, 2.0, xml->getDoubleAttribute ("uiScale", 1.0));
     presets.setCurrentFromState (xml->getStringAttribute ("presetName", "Init"), xml->getBoolAttribute ("presetModified", false));
     undo.clearUndoHistory();

@@ -38,7 +38,7 @@ void SideNav::paint (juce::Graphics& g)
     for (int i = 0; i < 6; ++i)
     {
         auto r = juce::Rectangle<int> (8, kTop + i * kItemHeight, getWidth() - 16, kItemHeight - 6);
-        const bool disabled = i >= 4;
+        const bool disabled = i >= 5;
         if (i == selected)
         {
             juce::ColourGradient grad (juce::Colour (0xff3b3456), (float) r.getX(), 0, juce::Colour (0x00221f30), (float) r.getRight(), 0, false);
@@ -61,7 +61,7 @@ void SideNav::paint (juce::Graphics& g)
         if (disabled)
         {
             g.setFont (font (9.0f, Weight::Medium, 0.15f));
-            g.drawText (i == 4 ? "PHASE 2" : "PHASE 3", r.getX() + 56, r.getY() + 38, 90, 12, juce::Justification::centredLeft);
+            g.drawText ("PHASE 3", r.getX() + 56, r.getY() + 38, 90, 12, juce::Justification::centredLeft);
         }
     }
     g.setColour (border);
@@ -74,7 +74,7 @@ void SideNav::mouseMove (const juce::MouseEvent& e)
     if (h != hover)
     {
         hover = h;
-        setTooltip (h == 4 ? "SOUL ENGINE, DNA Fusion, Time Fracture and Divine Intervention arrive in Phase 2-3."
+        setTooltip (h == 4 ? "SOUL: the SOUL ENGINE emotion pad and Divine Intervention."
                   : h == 5 ? "LAB (wavetable, spectral and granular editors, Mutation Lab) arrives in Phase 3." : juce::String());
         repaint();
     }
@@ -83,7 +83,7 @@ void SideNav::mouseMove (const juce::MouseEvent& e)
 void SideNav::mouseUp (const juce::MouseEvent& e)
 {
     const int i = itemAt (e.y);
-    if (i >= 0 && i < 4 && onSelect) onSelect (i);
+    if (i >= 0 && i < 5 && onSelect) onSelect (i);
 }
 
 //==============================================================================
@@ -94,7 +94,7 @@ DivinityEditor::DivinityEditor (DivinityProcessor& p)
       menu ("Preset options", dots(), true), panic ("MIDI panic: silence all notes", ring()), settings ("Settings", icons::gear()),
       topMeter (p, false),
       oscSection (p), filterSection (p), envSection (p), lfoSection (p), matrixSection (p), macroSection (p),
-      fxSection (p), globalSection (p), createView (p), keyboardBar (p)
+      fxSection (p), globalSection (p), createView (p), soulView (p), keyboardBar (p)
 {
     setLookAndFeel (&lnf);
     tooltips.setLookAndFeel (&lnf);
@@ -139,7 +139,7 @@ DivinityEditor::DivinityEditor (DivinityProcessor& p)
     nav.onSelect = [this] (int i) { navSelected (i); };
 
     for (auto* c : std::initializer_list<juce::Component*> { &oscSection, &filterSection, &envSection, &lfoSection, &matrixSection,
-                                                             &macroSection, &fxSection, &globalSection, &createView, &keyboardBar })
+                                                             &macroSection, &fxSection, &globalSection, &createView, &soulView, &keyboardBar })
         content.addAndMakeVisible (c);
 
     proc.presets.addChangeListener (this);
@@ -195,6 +195,7 @@ void DivinityEditor::resized()
     fxSection.setBounds (170, 668, 1062, 132);
     globalSection.setBounds (1244, 668, 416, 132);
     createView.setBounds (170, 90, 1490, 710);
+    soulView.setBounds (170, 90, 1490, 710);
     keyboardBar.setBounds (12, 812, 1648, 118);
 }
 
@@ -255,22 +256,25 @@ void DivinityEditor::updatePresetDisplay()
 //==============================================================================
 void DivinityEditor::setWorkspace (const juce::String& ws)
 {
-    const bool create = ws == "CREATE";
-    proc.uiWorkspace = create ? "CREATE" : "DESIGN";
+    const bool create = ws == "CREATE", soul = ws == "SOUL";
+    proc.uiWorkspace = create ? "CREATE" : (soul ? "SOUL" : "DESIGN");
     workspaceButtons[0]->setToggleState (create, juce::dontSendNotification);
     workspaceButtons[1]->setToggleState (! create, juce::dontSendNotification);
     for (auto* c : std::initializer_list<juce::Component*> { &oscSection, &filterSection, &envSection, &lfoSection,
                                                              &matrixSection, &macroSection, &fxSection, &globalSection })
-        c->setVisible (! create);
+        c->setVisible (! create && ! soul);
     createView.setVisible (create);
-    nav.setSelected (create ? 0 : 1);
-    navSelected (create ? 0 : 1);
+    soulView.setVisible (soul);
+    const int item = create ? 0 : (soul ? 4 : 1);
+    nav.setSelected (item);
+    navSelected (item);
 }
 
 void DivinityEditor::navSelected (int i)
 {
     if (i == 0 && proc.uiWorkspace != "CREATE") { setWorkspace ("CREATE"); return; }
-    if (i > 0 && proc.uiWorkspace == "CREATE") { setWorkspace ("DESIGN"); }
+    if (i == 4 && proc.uiWorkspace != "SOUL") { setWorkspace ("SOUL"); return; }
+    if (i >= 1 && i <= 3 && proc.uiWorkspace != "DESIGN") { setWorkspace ("DESIGN"); }
     nav.setSelected (i);
     oscSection.setHighlighted (i == 1);
     filterSection.setHighlighted (i == 1);
@@ -407,7 +411,7 @@ void DivinityEditor::showSettingsMenu()
     m.addSubMenu ("Interface size", size);
     m.addItem (2, "MIDI panic (all notes off)");
     m.addSeparator();
-    m.addItem (3, "DIVINITY 0.1.0  -  Phase 1 foundation", false);
+    m.addItem (3, "DIVINITY 0.2.0  -  SOUL ENGINE", false);
     m.addItem (4, "TRIPLE SEVEN AUDIO  -  triple7.world");
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&settings), [this, scales] (int r)
     {

@@ -39,6 +39,7 @@ namespace divinity
         Env1, Env2, Env3,
         Velocity, ModWheel, Aftertouch, PitchBend, NoteNumber,
         Macro1, Macro2, Macro3, Macro4,
+        SoulX, SoulY,                    // appended in 0.2.0 (choice indices only ever grow)
         NumSources
     };
 
@@ -57,6 +58,7 @@ namespace divinity
         Amp, Pan,
         Lfo1Rate, Lfo2Rate, Lfo3Rate, Lfo4Rate,
         SatDrive, ChorusDepth, DelayMix, ReverbMix,
+        SoulX, SoulY, DivineAmount,      // appended in 0.2.0
         NumDests
     };
 
