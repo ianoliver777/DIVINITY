@@ -7,7 +7,7 @@ on:
 
 jobs:
   macos:
-    name: macOS (Universal: Apple Silicon + Intel) - VST3 / AU / Standalone
+    name: "macOS Universal (Apple Silicon + Intel) - VST3 / AU / Standalone"
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +54,7 @@ jobs:
           path: test-output
 
   windows:
-    name: Windows x64 - VST3 / Standalone
+    name: "Windows x64 - VST3 / Standalone"
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
