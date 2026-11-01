@@ -68,6 +68,17 @@ jobs:
       - name: Run DIVINITY tests
         run: .\build\DivinityTests_artefacts\Release\DivinityTests.exe test-output
 
+      - name: Crash diagnostics (pluginval under cdb)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pv-diag.zip
+          Expand-Archive pv-diag.zip -DestinationPath pvd
+          $cdb = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe" -ErrorAction SilentlyContinue
+          if (-not $cdb) { Write-Host "cdb not found"; exit 0 }
+          $sym = "$PWD\build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3\Contents\x86_64-win;$PWD\build\DIVINITY_artefacts\Release;$PWD\build"
+          & $cdb.FullName -g -G -lines -y "$sym" -c "sxe -c `".echo === CRASH ===;.ecxr;kpn 40;q`" av;sxe -c `".echo === CRASH ===;.ecxr;kpn 40;q`" c0000409;g;q" .\pvd\pluginval.exe --strictness-level 10 --validate-in-process --skip-gui-tests "build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3" 2>&1 | Select-String -Pattern "=== CRASH ===|DIVINITY|divinity|juce::|ExceptionCode|Starting tests|SUCCESS|FAILED" -Context 0,2 | Select-Object -Last 80
+
       - name: Validate VST3 with pluginval
         shell: pwsh
         run: |

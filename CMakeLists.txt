@@ -83,6 +83,12 @@ set(DIVINITY_COMMON_DEFS
 
 target_compile_definitions(DIVINITY PUBLIC ${DIVINITY_COMMON_DEFS})
 
+# Release builds keep debug symbols on MSVC so crash stacks are readable (PDBs aren't shipped).
+if(MSVC)
+    target_compile_options(DIVINITY PUBLIC $<$<CONFIG:Release>:/Zi>)
+    target_link_options(DIVINITY PUBLIC $<$<CONFIG:Release>:/DEBUG /OPT:REF /OPT:ICF>)
+endif()
+
 set(DIVINITY_JUCE_MODULES
     juce::juce_audio_utils
     juce::juce_audio_processors
