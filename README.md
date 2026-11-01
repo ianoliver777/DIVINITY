@@ -25,9 +25,9 @@ Unsigned builds downloaded from CI need the quarantine flag removed once:
 xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/DIVINITY.vst3 ~/Library/Audio/Plug-Ins/Components/DIVINITY.component
 ```
 
-### Windows (Visual Studio 2022)
+### Windows (Visual Studio 2022 or newer)
 ```bat
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake -S . -B build -A x64
 cmake --build build --config Release --target DIVINITY_VST3 DIVINITY_Standalone
 ```
 Copy `DIVINITY.vst3` to `C:\Program Files\Common Files\VST3\`.
