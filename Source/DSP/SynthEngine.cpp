@@ -384,6 +384,9 @@ void SynthEngine::computeVoiceMods (const Voice& v, const float* globalSrc, floa
             continue;
         dest[slot.dst] += src[slot.src] * slot.amt;
     }
+    // never let a non-finite value reach pitch / index maths
+    for (size_t d = 0; d < (size_t) ModDest::NumDests; ++d)
+        if (! std::isfinite (dest[d])) dest[d] = 0.0f;
 }
 
 void SynthEngine::renderChunk (float* outL, float* outR, int n, const TransportInfo& tr, int sampleOffset)
@@ -402,7 +405,10 @@ void SynthEngine::renderChunk (float* outL, float* outR, int n, const TransportI
         rate *= std::pow (2.0, (double) lastGlobalDest[(size_t) ModDest::Lfo1Rate + (size_t) i] * 3.0);
         const bool locked = lp.sync && tr.isPlaying && tr.hasPpq;
         const double ppqNow = tr.ppqAtBlockStart + ((double) (sampleOffset + n) / sampleRate) * tr.bpm / 60.0;
-        const float raw = lfos[(size_t) i].advance (lp.shape, rate, seconds, lp.smooth, lp.phase, locked, ppqNow / beats);
+        if (! std::isfinite (rate)) rate = 1.0;
+        rate = juce::jlimit (0.0, 2000.0, rate);
+        float raw = lfos[(size_t) i].advance (lp.shape, rate, seconds, lp.smooth, lp.phase, locked && std::isfinite (ppqNow), ppqNow / beats);
+        if (! std::isfinite (raw)) { lfos[(size_t) i].reset (0xC0FFEEu + (uint32_t) i); raw = 0.0f; }
         lfoValues[(size_t) i] = raw * lp.depth * (1.0f + 2.0f * movement);
         lfoDisplay[(size_t) i].store (raw * lp.depth);
     }
@@ -487,6 +493,7 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
     }
     else v.pitch = v.targetPitch;
 
+    if (! std::isfinite (v.pitch)) v.pitch = v.targetPitch;
     const double basePitch = v.pitch + snap.masterTune / 100.0 + pitchBend * snap.bendRange;
 
     float* mixL = scratchL.data();
@@ -538,14 +545,14 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
                 for (int s = 0; s < n; ++s)
                 {
                     const float t = (float) s * invN;
-                    const float fpos = (pos0 + (posT - pos0) * t) * (WavetableBank::kFrames - 1);
-                    const int f0 = juce::jmin ((int) fpos, WavetableBank::kFrames - 1);
+                    const float fpos = juce::jlimit (0.0f, (float) (WavetableBank::kFrames - 1), (pos0 + (posT - pos0) * t) * (WavetableBank::kFrames - 1));
+                    const int f0 = juce::jlimit (0, WavetableBank::kFrames - 1, (int) fpos);
                     const int f1 = juce::jmin (f0 + 1, WavetableBank::kFrames - 1);
                     const float fr = fpos - (float) f0;
                     const float* A = bank.getFrame (table, f0, lvl);
                     const float* B = bank.getFrame (table, f1, lvl);
                     const double idx = ph * WavetableBank::kSize;
-                    const int i0 = (int) idx;
+                    const int i0 = juce::jlimit (0, WavetableBank::kSize - 1, (int) idx);
                     const float frac = (float) (idx - i0);
                     const float a = A[i0] + frac * (A[i0 + 1] - A[i0]);
                     const float b = B[i0] + frac * (B[i0 + 1] - B[i0]);

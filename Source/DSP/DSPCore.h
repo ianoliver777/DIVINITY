@@ -253,10 +253,11 @@ struct CombState
     float tick (float x, float delaySamples, float feedback) noexcept
     {
         const int size = (int) buffer.size();
+        if (! std::isfinite (delaySamples)) delaySamples = 1.0f;
         delaySamples = juce::jlimit (1.0f, (float) (size - 2), delaySamples);
         float readPos = (float) writePos - delaySamples;
         if (readPos < 0) readPos += (float) size;
-        const int i0 = (int) readPos;
+        const int i0 = juce::jlimit (0, size - 1, (int) readPos);
         const int i1 = (i0 + 1) % size;
         const float frac = readPos - (float) i0;
         const float delayed = buffer[(size_t) i0] + frac * (buffer[(size_t) i1] - buffer[(size_t) i0]);

@@ -73,7 +73,7 @@ jobs:
         run: |
           Invoke-WebRequest -Uri https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pluginval.zip
           Expand-Archive pluginval.zip -DestinationPath pv
-          .\pv\pluginval.exe --strictness-level 10 --validate-in-process "build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3"
+          .\pv\pluginval.exe --strictness-level 10 --verbose --output-dir pluginval-logs "build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3"
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Package
@@ -93,4 +93,6 @@ jobs:
         if: always()
         with:
           name: test-output-Windows
-          path: test-output
+          path: |
+            test-output
+            pluginval-logs

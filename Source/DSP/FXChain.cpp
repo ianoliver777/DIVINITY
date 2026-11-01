@@ -31,7 +31,7 @@ void StereoDelay::process (float* L, float* R, int n, float delaySeconds, float 
     auto read = [size] (const std::vector<float>& b, float pos)
     {
         if (pos < 0) pos += (float) size;
-        const int i0 = (int) pos;
+        const int i0 = juce::jlimit (0, size - 1, (int) pos);
         const int i1 = (i0 + 1) % size;
         const float f = pos - (float) i0;
         return b[(size_t) i0] + f * (b[(size_t) i1] - b[(size_t) i0]);
