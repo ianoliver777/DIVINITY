@@ -76,15 +76,18 @@ jobs:
           Expand-Archive pv-diag.zip -DestinationPath pvd
           $dbg = "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64"
           # 1) plain run: show the real exit code
-          .\pvd\pluginval.exe --strictness-level 10 --validate-in-process --skip-gui-tests "build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3" | Select-Object -Last 3
-          Write-Host ("PLAIN EXIT CODE: 0x{0:X8} ({0})" -f $LASTEXITCODE)
+          foreach ($seed in @("0x5cfd3aa", "0x571fde1", "0x3593b69")) {
+            .\pvd\pluginval.exe --strictness-level 10 --validate-in-process --skip-gui-tests --random-seed $seed "build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3" > "plain-$seed.txt" 2>&1
+            Write-Host ("SEED {0} EXIT CODE: 0x{1:X8} ({1})" -f $seed, $LASTEXITCODE)
+            Get-Content "plain-$seed.txt" | Select-Object -Last 4
+          }
           if (-not (Test-Path "$dbg\cdb.exe")) { Write-Host "cdb not found"; exit 0 }
           # 2) full page heap + no debug heap, under cdb: break on the faulting write
           & "$dbg\gflags.exe" /p /enable pluginval.exe /full
           $env:_NO_DEBUG_HEAP = "1"
           $sym = "$PWD\build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3\Contents\x86_64-win;$PWD\build\DIVINITY_artefacts\Release;$PWD\build"
           $cmds = 'sxe -c ".echo === CRASH ===;.ecxr;kpn 40;q" av;sxe -c ".echo === CRASH ===;.ecxr;kpn 40;q" c0000374;sxe -c ".echo === CRASH ===;.ecxr;kpn 40;q" c0000409;sxe -c ".echo === CRASH ===;kpn 40;q" vs;g;.echo === EXITED ===;q'
-          & "$dbg\cdb.exe" -g -G -lines -y "$sym" -c $cmds .\pvd\pluginval.exe --strictness-level 10 --validate-in-process --skip-gui-tests "build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3" 2>&1 | Out-File cdb.txt
+          & "$dbg\cdb.exe" -g -G -lines -y "$sym" -c $cmds .\pvd\pluginval.exe --strictness-level 10 --validate-in-process --skip-gui-tests --random-seed 0x5cfd3aa "build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3" 2>&1 | Out-File cdb.txt
           Select-String -Path cdb.txt -Pattern "=== CRASH ===" -Context 0,60 | Select-Object -First 1
           Select-String -Path cdb.txt -Pattern "=== EXITED|SUCCESS|FAILED|Starting tests|exited with code|ExitProcess" | Select-Object -Last 12
           & "$dbg\gflags.exe" /p /disable pluginval.exe
@@ -96,7 +99,9 @@ jobs:
           Expand-Archive pluginval.zip -DestinationPath pv
           # Gate: every audio / state / automation / threading test at max strictness.
           .\pv\pluginval.exe --strictness-level 10 --skip-gui-tests --validate-in-process "build\DIVINITY_artefacts\Release\VST3\DIVINITY.vst3"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $code = $LASTEXITCODE
+          Write-Host ("GATE EXIT CODE: 0x{0:X8} ({0})" -f $code)
+          if ($code -ne 0) { exit 1 }
 
       - name: pluginval GUI tests (informational - headless runner)
         continue-on-error: true
