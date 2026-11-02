@@ -1,36 +1,18 @@
 #pragma once
 
 #include "PluginProcessor.h"
-#include "UI/Panels.h"
-#include "UI/CreateView.h"
+#include "UI/Pages.h"
+#include "UI/GuardianPanel.h"
 
 namespace divinity
 {
-//==============================================================================
-/** Left navigation: PLAY / SYNTH / MOTION / FX / SOUL / LAB. */
-class SideNav : public juce::Component, public juce::SettableTooltipClient
-{
-public:
-    SideNav();
-    void paint (juce::Graphics&) override;
-    void mouseUp (const juce::MouseEvent&) override;
-    void mouseMove (const juce::MouseEvent&) override;
-    void mouseExit (const juce::MouseEvent&) override { hover = -1; repaint(); }
-    void setSelected (int i) { selected = i; repaint(); }
-    std::function<void (int)> onSelect;
-    static constexpr int kItemHeight = 65, kTop = 34;
-private:
-    int itemAt (int y) const { const int i = (y - kTop) / kItemHeight; return juce::isPositiveAndBelow (i, 6) ? i : -1; }
-    int selected = 1, hover = -1;
-};
-
 //==============================================================================
 class DivinityEditor : public juce::AudioProcessorEditor,
                        private juce::Timer,
                        private juce::ChangeListener
 {
 public:
-    static constexpr int kBaseWidth = 1672, kBaseHeight = 940;
+    static constexpr int kBaseWidth = 1536, kBaseHeight = 1024;
 
     explicit DivinityEditor (DivinityProcessor&);
     ~DivinityEditor() override;
@@ -38,6 +20,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     bool keyPressed (const juce::KeyPress&) override;
+
+    void showTab (const juce::String& tab);
 
 private:
     class Content : public juce::Component
@@ -48,44 +32,56 @@ private:
         DivinityEditor& owner;
     };
 
+    /** Explain mode: captures the next click and asks Guardian Angel to explain the control underneath. */
+    class ExplainOverlay : public juce::Component
+    {
+    public:
+        explicit ExplainOverlay (DivinityEditor& e) : owner (e) { setWantsKeyboardFocus (true); }
+        void paint (juce::Graphics&) override;
+        void mouseDown (const juce::MouseEvent&) override;
+        bool keyPressed (const juce::KeyPress&) override;
+        DivinityEditor& owner;
+    };
+
     void timerCallback() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override { updatePresetDisplay(); }
-
-    void setWorkspace (const juce::String& ws);
-    void navSelected (int index);
     void updatePresetDisplay();
-    void showPresetMenu();
-    void showFileMenu();
-    void showSettingsMenu();
+    void stepPreset (int delta);
+    void showPresetMenu (juce::Component& target);
+    void showCategoryMenu();
+    void showMainMenu();
     void savePresetDialog();
+    void importPreset();
     void setUiScale (float s);
+    juce::Array<int> presetsInCategory() const;
 
     DivinityProcessor& proc;
     ui::DivinityLookAndFeel lnf;
     Content content { *this };
     juce::TooltipWindow tooltips { &content, 600 };
 
-    // top bar
-    juce::OwnedArray<juce::TextButton> workspaceButtons;
-    ui::IconButton prevPreset, nextPreset, heart, save, menu, panic, settings;
+    // header
+    ui::IconButton menu, prevPreset, nextPreset, savePlus;
     juce::TextButton presetName;
-    ui::LevelMeter topMeter;
+    juce::OwnedArray<juce::TextButton> tabs;
 
-    SideNav nav;
-    ui::OscillatorSection oscSection;
-    ui::FilterSection filterSection;
-    ui::EnvelopeSection envSection;
-    ui::LfoSection lfoSection;
-    ui::ModMatrixSection matrixSection;
-    ui::MacroSection macroSection;
-    ui::FxSection fxSection;
-    ui::GlobalSection globalSection;
-    ui::CreateView createView;
-    ui::SoulView soulView;
-    ui::KeyboardBar keyboardBar;
+    // pages + angel
+    ui::CreatePage createPage;
+    ui::EffectsPage effectsPage;
+    ui::PlayPage playPage;
+    ui::SoulView soulPage;
+    ui::LabPage labPage;
+    ui::GuardianPanel angel;
+    ExplainOverlay explainOverlay { *this };
+
+    // bottom bar
+    ui::IconButton settings, folder, save, undo, redo;
+    juce::TextButton presetCount, category;
+    ui::NumberBox voices, glide;
 
     std::unique_ptr<juce::FileChooser> chooser;
-    juce::String cpuText, voiceText;
+    juce::String categoryFilter { "ALL" };
+    juce::String statusText;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DivinityEditor)
 };

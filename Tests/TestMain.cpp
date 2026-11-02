@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "DSP/DSPCore.h"
+#include "Assistant/GuardianBrain.h"
 #include <chrono>
 #include <random>
 
@@ -650,41 +651,93 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
 
 static void snapshotEditor (DivinityProcessor& p, const juce::File& dir)
 {
-    std::cout << "\n== Editor (offscreen)\n";
+    std::cout << "\n== Editor (offscreen, every tab)\n";
     p.presets.loadPreset (0);
-    p.keyboardState.reset();   // earlier tests leave host notes held on the on-screen keyboard
-    std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
-    ed->setSize (DivinityEditor::kBaseWidth, DivinityEditor::kBaseHeight);
-    // feed a little audio so meters/scope have content
+    p.keyboardState.reset();
     render (p, 48000, 512, 0.6, { { 0.0, 1.0, 60, 0.8f }, { 0.0, 1.0, 64, 0.8f }, { 0.0, 1.0, 67, 0.8f } });
-    for (int i = 0; i < 3; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil (60);
-    auto writePng = [&] (const juce::String& name)
+    for (auto tab : { "CREATE", "EFFECTS", "PLAY", "SOUL", "LAB" })
     {
+        p.uiWorkspace = tab;
+        std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+        ed->setSize (DivinityEditor::kBaseWidth, DivinityEditor::kBaseHeight);
+        ed->setVisible (true);   // hosts make the editor visible; visualisers only run when visible
+        // keep audio flowing so meters / analyzers have content
+        for (int i = 0; i < 4; ++i)
+        {
+            render (p, 48000, 512, 0.15, { { 0.0, 1.0, 60, 0.8f }, { 0.0, 1.0, 67, 0.8f } });
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        }
         auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
         juce::PNGImageFormat png;
-        auto f = dir.getChildFile (name);
+        auto f = dir.getChildFile ("ui_" + juce::String (tab).toLowerCase() + ".png");
         f.deleteFile();
         juce::FileOutputStream os (f);
         png.writeImageToStream (img, os);
-        INFO ("wrote " << f.getFullPathName());
-    };
-    writePng ("ui_design.png");
-    p.uiWorkspace = "CREATE";
-    ed.reset (p.createEditor());
-    ed->setSize (DivinityEditor::kBaseWidth, DivinityEditor::kBaseHeight);
-    for (int i = 0; i < 3; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil (60);
-    writePng ("ui_create.png");
-    p.uiWorkspace = "SOUL";
-    setP (p, ids::soulX, 0.78f); setP (p, ids::soulY, 0.7f); setP (p, ids::divineAmount, 0.45f);
-    ed.reset (p.createEditor());
-    ed->setSize (DivinityEditor::kBaseWidth, DivinityEditor::kBaseHeight);
-    for (int i = 0; i < 3; ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil (60);
-    writePng ("ui_soul.png");
-    ed->setSize ((int) (DivinityEditor::kBaseWidth * 0.7f), (int) (DivinityEditor::kBaseHeight * 0.7f));
-    CHECK (ed->getWidth() == (int) (DivinityEditor::kBaseWidth * 0.7f), "editor resizes to 70%");
+        INFO ("wrote " << f.getFileName());
+    }
+    std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+    ed->setSize ((int) (DivinityEditor::kBaseWidth * 0.6f), (int) (DivinityEditor::kBaseHeight * 0.6f));
+    CHECK (ed->getWidth() == (int) (DivinityEditor::kBaseWidth * 0.6f), "editor resizes to 60%");
     ed.reset();
-    p.uiWorkspace = "DESIGN";
-    CHECK (true, "editor constructs, paints and destroys in both workspaces");
+    p.uiWorkspace = "CREATE";
+    CHECK (true, "editor constructs, paints and destroys on every tab");
+}
+
+static void testGuardianAngel (DivinityProcessor& p)
+{
+    std::cout << "\n== Guardian Angel brain\n";
+    GuardianBrain brain (p);
+    p.presets.loadPreset (0);
+
+    auto r = brain.ask ("what does the soul engine do?");
+    CHECK (r.text.contains ("XY"), "answers a feature question (SOUL ENGINE)");
+    r = brain.ask ("what does fold do");
+    CHECK (r.text.containsIgnoreCase ("fold"), "answers a control question from the parameter help: " << r.text.substring (0, 60));
+    r = brain.ask ("how do I undo");
+    CHECK (r.text.contains ("Ctrl+Z"), "answers how-to questions");
+
+    r = brain.ask ("make me a dark aggressive bass");
+    CHECK (p.presets.getCurrentName() == "Reese Bass" && p.apvts.getRawParameterValue (ids::soulX)->load() > 0.6f
+           && p.apvts.getRawParameterValue (ids::soulY)->load() < 0.4f, "\"dark aggressive bass\" builds from Reese Bass, pushed aggressive + dark");
+    r = brain.createSound ("dreamy evolving wide pad");
+    CHECK (p.presets.getCurrentName() == "Celestial Pad" && p.apvts.getRawParameterValue (ids::macro (1))->load() > 0.3f
+           && p.apvts.getRawParameterValue (ids::divineAmount)->load() > 0.2f, "\"dreamy evolving wide pad\" adds movement + Divine");
+    r = brain.createSound ("something cool");
+    CHECK (r.actionLabel.isEmpty() && r.text.contains ("pad"), "unknown sound type asks for a clearer description");
+
+    const float tone0 = p.apvts.getRawParameterValue (ids::macro (0))->load();
+    brain.ask ("make it brighter");
+    CHECK (p.apvts.getRawParameterValue (ids::macro (0))->load() > tone0, "\"make it brighter\" raises TONE");
+
+    int applied = 0;
+    for (int i = 0; i < 6; ++i)
+    {
+        auto idea = brain.suggestIdea();
+        if (idea.action) { idea.action(); ++applied; }
+    }
+    CHECK (applied >= 4, "suggests and applies one-click ideas (" << applied << ")");
+
+    bool safe = true; float worst = -120.0f;
+    for (int i = 0; i < 25; ++i)
+    {
+        brain.randomize();
+        auto b = render (p, 48000, 256, 0.6, { { 0.0, 0.5, 48, 1.0f }, { 0.0, 0.5, 55, 1.0f }, { 0.0, 0.5, 60, 1.0f } });
+        const float pk = juce::Decibels::gainToDecibels (b.getMagnitude (0, b.getNumSamples()), -120.0f);
+        worst = juce::jmax (worst, pk);
+        safe &= allFinite (b) && pk <= -0.2f && b.getRMSLevel (0, 0, b.getNumSamples()) > 1.0e-4f;
+    }
+    CHECK (safe, "25 random patches: all audible, finite and under the ceiling (worst peak " << worst << " dBFS)");
+
+    p.undo.clearUndoHistory();
+    p.presets.loadPreset (0);
+    const float before = p.apvts.getRawParameterValue (ids::osc (0, "pos"))->load();
+    p.undo.beginNewTransaction();
+    brain.randomize();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil (300);   // APVTS flushes to the undoable tree on a timer
+    p.undo.undo();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+    CHECK (std::abs (p.apvts.getRawParameterValue (ids::osc (0, "pos"))->load() - before) < 1.0e-4f, "randomize is undoable");
+    CHECK (brain.explain ("Cutoff help.\n\nShift-drag: fine").text == "Cutoff help.", "explain strips the shortcut footer");
 }
 
 //==============================================================================
@@ -707,6 +760,7 @@ int main (int argc, char** argv)
         testPresetFiles (p);
         testMidi (p);
         testSoul (p);
+        testGuardianAngel (p);
         testFuzzAndExtremes (p);
         testRatesAndBuffers (p);
         testLongNotesAndSilence (p);

@@ -23,16 +23,24 @@ juce::Font font (float height, Weight w, float tracking)
 
 void drawPanelBackground (juce::Graphics& g, juce::Rectangle<float> r, bool highlighted)
 {
-    juce::ColourGradient grad (colours::panel.brighter (0.04f), r.getX(), r.getY(), colours::panel, r.getX(), r.getBottom(), false);
+    juce::ColourGradient grad (juce::Colour (0xff0c1729), r.getX(), r.getY(), juce::Colour (0xff070e1a), r.getX(), r.getBottom(), false);
     g.setGradientFill (grad);
-    g.fillRoundedRectangle (r, 8.0f);
-    g.setColour (highlighted ? colours::accentStrong.withAlpha (0.7f) : colours::border);
-    g.drawRoundedRectangle (r.reduced (0.5f), 8.0f, highlighted ? 1.2f : 1.0f);
+    g.fillRoundedRectangle (r, 7.0f);
+    if (highlighted)
+    {
+        g.setColour (colours::accent.withAlpha (0.18f));
+        g.drawRoundedRectangle (r.expanded (1.5f), 8.5f, 3.0f);
+    }
+    g.setColour (highlighted ? colours::accent.withAlpha (0.8f) : colours::border);
+    g.drawRoundedRectangle (r.reduced (0.5f), 7.0f, 1.0f);
+    // faint top sheen
+    g.setColour (juce::Colours::white.withAlpha (0.035f));
+    g.drawHorizontalLine ((int) r.getY() + 1, r.getX() + 8.0f, r.getRight() - 8.0f);
 }
 
 void drawCardBackground (juce::Graphics& g, juce::Rectangle<float> r, bool active)
 {
-    juce::ColourGradient grad (colours::card.brighter (0.05f), r.getX(), r.getY(), colours::card.darker (0.1f), r.getX(), r.getBottom(), false);
+    juce::ColourGradient grad (colours::card.brighter (0.06f), r.getX(), r.getY(), colours::card.darker (0.25f), r.getX(), r.getBottom(), false);
     g.setGradientFill (grad);
     g.fillRoundedRectangle (r, 6.0f);
     g.setColour (active ? colours::borderBright.withAlpha (0.8f) : colours::border.withAlpha (0.6f));
@@ -41,8 +49,8 @@ void drawCardBackground (juce::Graphics& g, juce::Rectangle<float> r, bool activ
 
 void drawSectionTitle (juce::Graphics& g, juce::Rectangle<int> area, const juce::String& text)
 {
-    g.setColour (colours::text.withAlpha (0.92f));
-    g.setFont (font (13.5f, Weight::Medium, 0.32f));
+    g.setColour (colours::text);
+    g.setFont (font (16.0f, Weight::SemiBold, 0.03f));
     g.drawText (text, area, juce::Justification::centredLeft, false);
 }
 
@@ -118,6 +126,11 @@ void DivinityLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int
     {
         juce::Path arc;
         arc.addCentredArc (c.x, c.y, trackR, trackR, 0.0f, juce::jmin (from, angle), juce::jmax (from, angle), true);
+        if (enabled)
+        {
+            g.setColour (accent.withAlpha (0.22f));
+            g.strokePath (arc, juce::PathStrokeType (6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
         g.setColour ((enabled ? accent : textFaint).withAlpha (0.95f));
         g.strokePath (arc, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
@@ -140,10 +153,10 @@ void DivinityLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int
     auto body = juce::Rectangle<float> (bodyR * 2.0f, bodyR * 2.0f).withCentre (c);
     g.setColour (juce::Colours::black.withAlpha (0.45f));
     g.fillEllipse (body.translated (0.0f, 1.5f).expanded (1.0f));
-    juce::ColourGradient grad (juce::Colour (0xff30333b), c.x - bodyR * 0.5f, c.y - bodyR, juce::Colour (0xff121418), c.x + bodyR * 0.4f, c.y + bodyR, true);
+    juce::ColourGradient grad (juce::Colour (0xff27303f), c.x - bodyR * 0.5f, c.y - bodyR, juce::Colour (0xff070b12), c.x + bodyR * 0.4f, c.y + bodyR, true);
     g.setGradientFill (grad);
     g.fillEllipse (body);
-    juce::ColourGradient rim (juce::Colour (0xff6a6f7b).withAlpha (0.9f), c.x, body.getY(), juce::Colour (0xff1c1e23), c.x, body.getBottom(), false);
+    juce::ColourGradient rim (juce::Colour (0xff6f86a8).withAlpha (0.9f), c.x, body.getY(), juce::Colour (0xff141b27), c.x, body.getBottom(), false);
     g.setGradientFill (rim);
     g.drawEllipse (body.reduced (0.6f), 1.1f);
 
@@ -312,11 +325,13 @@ void DivinityLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button&
     const float corner = (float) (double) b.getProperties().getWithDefault ("corner", 4.0);
     if (on)
     {
-        juce::ColourGradient grad (juce::Colour (0xff4e4470), r.getX(), r.getY(), juce::Colour (0xff3a3358), r.getX(), r.getBottom(), false);
+        g.setColour (colours::accent.withAlpha (0.16f));
+        g.drawRoundedRectangle (r.expanded (1.0f), corner + 1.0f, 3.0f);
+        juce::ColourGradient grad (juce::Colour (0xff12407a), r.getX(), r.getY(), juce::Colour (0xff0a2547), r.getX(), r.getBottom(), false);
         g.setGradientFill (grad);
         g.fillRoundedRectangle (r, corner);
-        g.setColour (colours::accent.withAlpha (0.35f));
-        g.drawRoundedRectangle (r, corner, 1.0f);
+        g.setColour (colours::accent.withAlpha (0.85f));
+        g.drawRoundedRectangle (r, corner, 1.2f);
     }
     else
     {

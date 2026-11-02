@@ -770,12 +770,14 @@ void KeyboardBar::paint (juce::Graphics& g)
 
 void KeyboardBar::resized()
 {
+    const int w = getWidth();
     pitch.setBounds (50, 12, 24, getHeight() - 40);
     mod.setBounds (104, 12, 24, getHeight() - 40);
-    keyboard.setBounds (178, 10, 1196, getHeight() - 20);
-    keyboard.setKeyWidth (1196.0f / 36.0f);
-    master.setBounds (1470, 12, 76, getHeight() - 20);
-    meter.setBounds (1598, 12, 22, getHeight() - 24);
+    const int kbW = w - 178 - 200;
+    keyboard.setBounds (178, 10, kbW, getHeight() - 20);
+    keyboard.setKeyWidth ((float) kbW / 36.0f);
+    master.setBounds (w - 178, 12, 90, getHeight() - 20);
+    meter.setBounds (w - 58, 12, 22, getHeight() - 24);
 }
 
 } // namespace divinity::ui

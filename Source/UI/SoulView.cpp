@@ -248,7 +248,7 @@ int SoulView::matchingMapping() const
 void SoulView::timerCallback()
 {
     const int m = matchingMapping();
-    repaint (940, 660, 520, 16);   // live Divine amount bar
+    repaint (770, 636, 460, 12);   // live Divine amount bar
     if (m != lastMatch)
     {
         lastMatch = m;
@@ -260,53 +260,51 @@ void SoulView::timerCallback()
 
 void SoulView::paint (juce::Graphics& g)
 {
-    // panels
-    drawPanelBackground (g, { 0.0f, 0.0f, 700.0f, 710.0f });
-    drawSectionTitle (g, { 16, 8, 400, 26 }, "SOUL ENGINE");
+    drawPanelBackground (g, { 0.0f, 0.0f, 560.0f, 682.0f });
+    drawSectionTitle (g, { 16, 10, 300, 24 }, "SOUL ENGINE");
     g.setColour (textDim);
     g.setFont (font (12.0f));
-    g.drawText ("Drag to feel. Double-click to return to neutral.", 300, 10, 384, 22, juce::Justification::centredRight);
+    g.drawText ("Drag to feel. Double-click for neutral.", 230, 12, 314, 22, juce::Justification::centredRight);
 
-    drawPanelBackground (g, { 715.0f, 0.0f, 775.0f, 470.0f });
-    drawSectionTitle (g, { 731, 8, 300, 26 }, "EMOTION MAPPING");
-    g.setFont (font (10.5f, Weight::Medium, 0.12f));
+    drawPanelBackground (g, { 572.0f, 0.0f, 676.0f, 446.0f });
+    drawSectionTitle (g, { 588, 10, 300, 24 }, "EMOTION MAPPING");
+    g.setFont (font (10.5f, Weight::Medium, 0.1f));
     g.setColour (textDim);
-    g.drawText ("TARGET", 760, 52, 120, 16, juce::Justification::centredLeft);
-    g.drawText (juce::String (juce::CharPointer_UTF8 ("SOFT  \xe2\x86\x90  \xe2\x86\x92  AGGRESSIVE")), 905, 52, 270, 16, juce::Justification::centred);
-    g.drawText (juce::String (juce::CharPointer_UTF8 ("MELANCHOLY  \xe2\x86\x90  \xe2\x86\x92  EUPHORIA")), 1195, 52, 270, 16, juce::Justification::centred);
+    g.drawText ("TARGET", 614, 50, 110, 16, juce::Justification::centredLeft);
+    g.drawText (juce::String (juce::CharPointer_UTF8 ("SOFT \xe2\x86\x90  \xe2\x86\x92 AGGRESSIVE")), 735, 50, 195, 16, juce::Justification::centred);
+    g.drawText (juce::String (juce::CharPointer_UTF8 ("MELANCHOLY \xe2\x86\x90  \xe2\x86\x92 EUPHORIA")), 985, 50, 195, 16, juce::Justification::centred);
 
     auto& s = proc.apvts;
     for (int t = 0; t < kNumSoulTargets; ++t)
     {
-        const int y = 78 + t * 38;
+        const int y = 76 + t * 36;
         const bool on = s.getRawParameterValue (ids::soul (t, "on"))->load() > 0.5f;
         g.setFont (font (13.0f, Weight::Medium));
         g.setColour (on ? text : textFaint);
-        g.drawText (soulTargets()[(size_t) t].name, 760, y, 140, 26, juce::Justification::centredLeft);
+        g.drawText (soulTargets()[(size_t) t].name, 614, y, 120, 26, juce::Justification::centredLeft);
         g.setFont (font (11.0f));
         for (int axis = 0; axis < 2; ++axis)
         {
             const float v = s.getRawParameterValue (ids::soul (t, axis == 0 ? "x" : "y"))->load();
             const int n = juce::roundToInt (v * 100.0f);
-            g.setColour (on && n != 0 ? text.withAlpha (0.8f) : textFaint);
-            g.drawText ((n > 0 ? "+" : "") + juce::String (n), axis == 0 ? 1140 : 1430, y, 44, 26, juce::Justification::centredRight);
+            g.setColour (on && n != 0 ? text.withAlpha (0.85f) : textFaint);
+            g.drawText ((n > 0 ? "+" : "") + juce::String (n), axis == 0 ? 932 : 1182, y, 40, 26, juce::Justification::centredRight);
         }
         g.setColour (border.withAlpha (0.5f));
-        g.drawHorizontalLine (y + 32, 735.0f, 1470.0f);
+        g.drawHorizontalLine (y + 31, 586.0f, 1234.0f);
     }
 
-    drawPanelBackground (g, { 715.0f, 485.0f, 775.0f, 225.0f });
-    drawSectionTitle (g, { 731, 493, 400, 26 }, "DIVINE INTERVENTION");
+    drawPanelBackground (g, { 572.0f, 458.0f, 676.0f, 224.0f });
+    drawSectionTitle (g, { 588, 466, 400, 24 }, "DIVINE INTERVENTION");
     const int mode = juce::roundToInt (s.getRawParameterValue (ids::divineMode)->load());
     const float amt = proc.getDivineAmount();
     g.setColour (text);
     g.setFont (font (22.0f, Weight::Medium, 0.04f));
-    g.drawText (divineModeNames()[mode].toUpperCase(), 940, 585, 520, 30, juce::Justification::centredLeft);
+    g.drawText (divineModeNames()[mode].toUpperCase(), 770, 546, 460, 30, juce::Justification::centredLeft);
     g.setColour (textDim);
     g.setFont (font (13.0f));
-    g.drawFittedText (divineModeDescription (mode), 940, 618, 520, 40, juce::Justification::topLeft, 2);
-    // live amount bar
-    auto bar = juce::Rectangle<float> (940.0f, 668.0f, 520.0f, 4.0f);
+    g.drawFittedText (divineModeDescription (mode), 770, 578, 460, 40, juce::Justification::topLeft, 2);
+    auto bar = juce::Rectangle<float> (770.0f, 640.0f, 460.0f, 4.0f);
     g.setColour (border);
     g.fillRoundedRectangle (bar, 2.0f);
     g.setGradientFill (juce::ColourGradient (accentStrong, bar.getX(), 0, accent, bar.getRight(), 0, false));
@@ -315,20 +313,20 @@ void SoulView::paint (juce::Graphics& g)
 
 void SoulView::resized()
 {
-    pad.setBounds (20, 44, 660, 540);
-    intensity.setBounds (120, 600, 110, 96);
-    curve.setBounds (295, 600, 110, 96);
-    smooth.setBounds (470, 600, 110, 96);
-    mappingBox.setBounds (1270, 10, 200, 28);
+    pad.setBounds (16, 44, 528, 520);
+    intensity.setBounds (60, 574, 110, 100);
+    curve.setBounds (225, 574, 110, 100);
+    smooth.setBounds (390, 574, 110, 100);
+    mappingBox.setBounds (1036, 9, 196, 28);
     for (int t = 0; t < kNumSoulTargets; ++t)
     {
-        const int y = 78 + t * 38;
-        rows[(size_t) t].on->setBounds (731, y + 2, 24, 22);
-        rows[(size_t) t].x->setBounds (905, y + 4, 230, 18);
-        rows[(size_t) t].y->setBounds (1195, y + 4, 230, 18);
+        const int y = 76 + t * 36;
+        rows[(size_t) t].on->setBounds (586, y + 2, 24, 22);
+        rows[(size_t) t].x->setBounds (735, y + 4, 195, 18);
+        rows[(size_t) t].y->setBounds (985, y + 4, 195, 18);
     }
-    divine.setBounds (745, 525, 170, 175);
-    divineMode.setBounds (940, 535, 520, 34);
+    divine.setBounds (590, 492, 160, 182);
+    divineMode.setBounds (770, 500, 460, 32);
 }
 
 } // namespace divinity::ui

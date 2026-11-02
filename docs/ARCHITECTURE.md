@@ -1,6 +1,6 @@
 # DIVINITY — Engineering Notes (Phase 1)
 
-TRIPLE SEVEN AUDIO · v0.2.0 · Phase 1 complete + Phase 2 SOUL ENGINE / Divine Intervention
+TRIPLE SEVEN AUDIO · v0.3.0 · core synth + SOUL ENGINE + new UI with full-page tabs + Guardian Angel
 
 ---
 
@@ -24,6 +24,8 @@ Source/
 │  ├─ Wavetables.h/.cpp     Factory wavetable bank, band-limited mipmaps (shared across instances)
 │  ├─ SynthEngine.h/.cpp    Voices, unison, glide/legato, mod matrix, sample-accurate MIDI
 │  └─ FXChain.h/.cpp        Saturation (ADAA), chorus, delay, reverb, limiter, master
+├─ Assistant/
+│  └─ GuardianBrain.h/.cpp  Guardian Angel's offline brain: knowledge base, sound recipes, ideas, safe randomiser
 ├─ Presets/
 │  ├─ PresetManager.h/.cpp  Versioned XML presets, user folder, import/export, favourites, dirty flag
 │  └─ FactoryPresets.cpp    Factory library defined as overrides on top of defaults
@@ -33,7 +35,9 @@ Source/
    ├─ Components            Knob, Selector, ChoiceBox, NumberBox, TabRow, displays, meters
    ├─ Panels                Oscillators, filter, envelope, LFO, matrix, macros, FX, global, keyboard
    ├─ CreateView            CREATE workspace (preset browser, scope, mini SOUL pad, Divine, macros, 8 controls)
-   └─ SoulView              SOUL page: XY pad, emotion mapping editor, Divine Intervention
+   ├─ SoulView              SOUL page: XY pad, emotion mapping editor, Divine Intervention
+   ├─ Pages                 CREATE / EFFECTS / PLAY / LAB full-page tabs, spectrum analyzer
+   └─ GuardianPanel         Guardian Angel character (vector, animated), speech bubble, actions, ask box
 Tests/TestMain.cpp          Automated test runner (72 checks) + offscreen UI snapshots + WAV demos
 ```
 
@@ -105,13 +109,20 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 ### Divine Intervention (v0.2.0)
 - One 0–100% control (smoothed) with 5 modes: Ascension, Collapse, Shatter, Bloom, Abyss — each moves brightness, drive, envelope times, detune, width, space, delay, instability, movement and harmonics differently, so it reshapes the sound rather than just adding distortion.
 
+### v0.3.0 interface
+- 1536x1024 design grid (scales 50-160%), "celestial blue" theme, TRIPLE SEVEN emblem, full-page tabs: CREATE (engine), EFFECTS (chain + output + spectrum), PLAY (presets, macros, performance, keyboard), SOUL, LAB (matrix, deep osc settings, filters, LFOs, global).
+- Bottom bar: settings, import, save, undo/redo, category-filtered preset navigation, voices, glide.
+
+### Guardian Angel (v0.3.0)
+- Fully offline. Answers questions from a knowledge base + every parameter's help text; builds sounds from plain-English descriptions (type + vibe words → factory base + SOUL/macro/mod adjustments); suggests one idea at a time with one-click DO IT; musically-safe randomiser (all outputs tested audible, finite and under the ceiling); explain mode (click any control); "make it brighter / wider / grittier..." tweaks. Every change is undoable.
+
 ### Known limitations (honest list)
 - Wavefold isn't oversampled yet → some aliasing at high fold on high notes (Phase 2, M11).
 - FX order is fixed (sat → chorus → delay → reverb → limiter); drag-reorder comes with the full rack in Phase 4.
 - Reverb is JUCE's Freeverb-style reverb — fine for Phase 1, will be replaced by a custom design.
 - Filter display draws the analog prototype response (very close, not bit-exact above ~10 kHz).
 - No MIDI learn or MPE yet. AU and Windows builds are produced by CI and haven't been run in a real DAW by us.
-- Windows: all audio/state/automation pluginval tests pass; the GUI editor-automation test crashes on GitHub's headless Windows runner with no crash output. GUI tests pass on macOS and Linux. Needs confirming on a real Windows machine.
+- Windows CI earlier reported pluginval "crashes": that was the CI script not waiting for pluginval.exe (a GUI-subsystem app), not the plugin. Fixed in v0.3.0 with Start-Process -Wait.
 
 ---
 

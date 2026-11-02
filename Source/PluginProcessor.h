@@ -89,8 +89,9 @@ public:
     const FXChain::Display& getFxDisplay() const noexcept { return fx.display; }
 
     // UI preference (not part of the sound): workspace & scale are stored with the session.
-    juce::String uiWorkspace { "DESIGN" };
-    float uiScale = 1.0f;
+    juce::String uiWorkspace { "CREATE" };   // CREATE / EFFECTS / PLAY / SOUL / LAB
+    float uiScale = 0.9f;
+    bool uiAngelTips = true;
 
 private:
     juce::SharedResourcePointer<WavetableBank> bank;

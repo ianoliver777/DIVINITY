@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(DIVINITY VERSION 0.2.0 LANGUAGES C CXX)
+project(DIVINITY VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -70,7 +70,10 @@ set(DIVINITY_CORE_SOURCES
     Source/UI/Components.cpp
     Source/UI/Panels.cpp
     Source/UI/CreateView.cpp
-    Source/UI/SoulView.cpp)
+    Source/UI/SoulView.cpp
+    Source/UI/Pages.cpp
+    Source/UI/GuardianPanel.cpp
+    Source/Assistant/GuardianBrain.cpp)
 
 target_sources(DIVINITY PRIVATE ${DIVINITY_CORE_SOURCES})
 target_include_directories(DIVINITY PRIVATE Source)

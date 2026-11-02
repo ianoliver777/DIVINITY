@@ -776,6 +776,7 @@ ScopeDisplay::ScopeDisplay (DivinityProcessor& p) : proc (p)
 
 void ScopeDisplay::timerCallback()
 {
+    if (! visibleInTree (*this)) return;   // the scope feed has one reader at a time
     const int n = proc.scope.pull (pullBuf.data(), (int) pullBuf.size());
     for (int i = 0; i < n; ++i)
     {

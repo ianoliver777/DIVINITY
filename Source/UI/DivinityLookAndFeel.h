@@ -6,19 +6,20 @@ namespace divinity::ui
 {
 namespace colours
 {
-    const juce::Colour background   { 0xff090a0c };
-    const juce::Colour panel        { 0xff111317 };
-    const juce::Colour card         { 0xff16181d };
-    const juce::Colour panel2       { 0xff1d2026 };
-    const juce::Colour border       { 0xff2a2e36 };
-    const juce::Colour borderBright { 0xff3a3f4a };
-    const juce::Colour text         { 0xfff1f1f1 };
-    const juce::Colour textDim      { 0xff9a9da5 };
-    const juce::Colour textFaint    { 0xff5d616b };
-    const juce::Colour accent       { 0xffc9b8f2 };   // violet-white
-    const juce::Colour accentStrong { 0xff9b84dc };
-    const juce::Colour accentDeep   { 0xff4a3d78 };
-    const juce::Colour modulation   { 0xffb89cff };
+    // v0.3 "celestial blue" palette
+    const juce::Colour background   { 0xff04080f };
+    const juce::Colour panel        { 0xff09111f };
+    const juce::Colour card         { 0xff0c1628 };
+    const juce::Colour panel2       { 0xff0f1c31 };
+    const juce::Colour border       { 0xff1a2a44 };
+    const juce::Colour borderBright { 0xff2c4c7c };
+    const juce::Colour text         { 0xffeaf3ff };
+    const juce::Colour textDim      { 0xff8fa5c7 };
+    const juce::Colour textFaint    { 0xff4b5f80 };
+    const juce::Colour accent       { 0xff58c0ff };   // electric sky blue
+    const juce::Colour accentStrong { 0xff2f8cff };
+    const juce::Colour accentDeep   { 0xff113a6c };
+    const juce::Colour modulation   { 0xff8fe3ff };
 }
 
 enum class Weight { Regular, Medium, SemiBold };
@@ -56,7 +57,11 @@ public:
     void drawPopupMenuSectionHeader (juce::Graphics&, const juce::Rectangle<int>&, const juce::String&) override;
 
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool over, bool down) override;
-    juce::Font getTextButtonFont (juce::TextButton&, int) override { return font (12.5f, Weight::Medium, 0.04f); }
+    juce::Font getTextButtonFont (juce::TextButton& b, int) override
+    {
+        const double size = b.getProperties().getWithDefault ("fontSize", 12.5);
+        return font ((float) size, Weight::Medium, size > 15.0 ? 0.02f : 0.04f);
+    }
 
     void drawTooltip (juce::Graphics&, const juce::String& text, int w, int h) override;
     juce::Rectangle<int> getTooltipBounds (const juce::String& text, juce::Point<int> pos, juce::Rectangle<int> parent) override;

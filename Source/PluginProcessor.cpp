@@ -80,6 +80,7 @@ void DivinityProcessor::getStateInformation (juce::MemoryBlock& destData)
     root.setAttribute ("presetModified", presets.isModified());
     root.setAttribute ("uiWorkspace", uiWorkspace);
     root.setAttribute ("uiScale", (double) uiScale);
+    root.setAttribute ("uiAngelTips", uiAngelTips);
     if (auto params = apvts.copyState().createXml())
         root.addChildElement (params.release());
     copyXmlToBinary (root, destData);
@@ -110,9 +111,10 @@ void DivinityProcessor::setStateInformation (const void* data, int sizeInBytes)
         rp->setValueNotifyingHost (norm);
     }
 
-    uiWorkspace = xml->getStringAttribute ("uiWorkspace", "DESIGN");
-    if (uiWorkspace != "CREATE" && uiWorkspace != "SOUL") uiWorkspace = "DESIGN";
-    uiScale = (float) juce::jlimit (0.6, 2.0, xml->getDoubleAttribute ("uiScale", 1.0));
+    uiWorkspace = xml->getStringAttribute ("uiWorkspace", "CREATE");
+    if (! juce::StringArray { "CREATE", "EFFECTS", "PLAY", "SOUL", "LAB" }.contains (uiWorkspace)) uiWorkspace = "CREATE";
+    uiScale = (float) juce::jlimit (0.5, 2.0, xml->getDoubleAttribute ("uiScale", 0.9));
+    uiAngelTips = xml->getBoolAttribute ("uiAngelTips", true);
     presets.setCurrentFromState (xml->getStringAttribute ("presetName", "Init"), xml->getBoolAttribute ("presetModified", false));
     undo.clearUndoHistory();
 }

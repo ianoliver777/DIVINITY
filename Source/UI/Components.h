@@ -15,6 +15,14 @@ namespace divinity::ui
 {
 using APVTS = juce::AudioProcessorValueTreeState;
 
+/** True when this component and all its parents are visible (works off-screen too, unlike isShowing). */
+inline bool visibleInTree (const juce::Component& c)
+{
+    for (auto* p = &c; p != nullptr; p = p->getParentComponent())
+        if (! p->isVisible()) return false;
+    return true;
+}
+
 /** Sum of mod-matrix amounts currently routed to `dest` (ignores empty sources). */
 float modAmountFor (APVTS& apvts, ModDest dest);
 

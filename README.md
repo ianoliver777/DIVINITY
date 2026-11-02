@@ -3,7 +3,7 @@
 **TRIPLE SEVEN AUDIO — Engineered to Feel.**
 Hybrid software synthesizer · VST3 / AU / Standalone · macOS (Apple Silicon + Intel) & Windows · JUCE / C++17
 
-Current version: **0.2.0 — core synth + SOUL ENGINE + Divine Intervention**. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
+Current version: **0.3.0 — new interface, full-page tabs, Guardian Angel**. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
 
 ---
 
@@ -53,8 +53,9 @@ Push to GitHub and `.github/workflows/build.yml` builds a **universal macOS** zi
 ---
 
 ## Using it
-- **CREATE** — browse/search presets, play, and shape with TONE · MOVEMENT · TEXTURE · SPACE plus envelope, brightness, intensity and depth.
-- **DESIGN** — the full synth: 3 oscillators + sub + noise, 2 filters, 3 envelopes, 4 LFOs, 8-slot mod matrix, FX chain, global voice settings.
+- **CREATE** — the engine: oscillators, sub, noise, filter, amp envelope, LFO, macros, all envelopes/LFOs/matrix, quick FX + spectrum.
+- **EFFECTS** — the full effect chain and output. **PLAY** — preset browser, macros, performance controls, keyboard. **LAB** — matrix and deep settings.
+- **Guardian Angel** (right side) — ask questions, describe a sound to build, get ideas, explain any control, randomize.
 - **SOUL** — drag the emotion pad (soft ↔ aggressive, melancholy ↔ euphoria), edit how each target responds, and hit **Divine Intervention** (Ascension / Collapse / Shatter / Bloom / Abyss).
 - Every control: hover for help · double-click to reset · shift-drag for fine · right-click to type a value.
 - Click a waveform display to change wavetable / wave. Drag the envelope points. `…` on a card opens all its settings.
