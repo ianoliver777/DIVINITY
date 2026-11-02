@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "DivinityAssets.h"
 
 namespace divinity
 {
@@ -29,25 +30,6 @@ namespace
         p.startNewSubPath (4, 10); p.cubicTo (12, 10, 20, 10, 20, 16); p.lineTo (20, 19);
         if (redo) p.applyTransform (juce::AffineTransform::scale (-1.0f, 1.0f).translated (24.0f, 0.0f));
         return p;
-    }
-
-    /** TRIPLE SEVEN AUDIO emblem: ring + three interlocked sevens. */
-    void drawEmblem (juce::Graphics& g, juce::Rectangle<float> r)
-    {
-        const auto c = r.getCentre();
-        const float rad = r.getWidth() * 0.5f;
-        g.setColour (accent.withAlpha (0.15f));
-        g.drawEllipse (r.expanded (2.0f), 4.0f);
-        g.setColour (text);
-        g.drawEllipse (r.reduced (1.0f), 2.2f);
-        juce::Path seven;
-        seven.startNewSubPath (-0.42f, -0.36f); seven.lineTo (0.36f, -0.36f); seven.lineTo (-0.08f, 0.46f);
-        for (int i = 0; i < 3; ++i)
-        {
-            juce::Path s (seven);
-            s.applyTransform (juce::AffineTransform::scale (rad * 0.8f).rotated (juce::MathConstants<float>::twoPi * (float) i / 3.0f).translated (c));
-            g.strokePath (s, juce::PathStrokeType (3.2f, juce::PathStrokeType::mitered, juce::PathStrokeType::square));
-        }
     }
 }
 
@@ -144,28 +126,30 @@ void DivinityEditor::resized()
     content.setBounds (0, 0, kBaseWidth, kBaseHeight);
     proc.uiScale = s;
 
-    menu.setBounds (26, 48, 40, 40);
-    prevPreset.setBounds (1180, 60, 36, 36);
-    nextPreset.setBounds (1430, 60, 36, 36);
-    presetName.setBounds (1218, 60, 210, 36);
-    savePlus.setBounds (1479, 59, 38, 38);
-    for (int i = 0; i < tabs.size(); ++i) tabs[i]->setBounds (213 + i * 223, 118, 215, 44);
+    // header: logo left, title centre, menu + status right
+    menu.setBounds (1478, 26, 40, 40);
 
-    const juce::Rectangle<int> page (14, 180, 1248, 682);
+    // control strip under SYNTHESIZER: file actions | preset count | preset browser | category | voices / glide
+    constexpr int rowY = 116, rowH = 42;
+    int x = 24;
+    for (auto* b : std::initializer_list<juce::Component*> { &settings, &folder, &save, &undo, &redo })
+        { b->setBounds (x, rowY, 42, rowH); x += 47; }
+    presetCount.setBounds (276, rowY, 210, rowH);
+    prevPreset.setBounds (536, rowY + 3, 36, 36);
+    presetName.setBounds (574, rowY + 3, 388, 36);
+    nextPreset.setBounds (964, rowY + 3, 36, 36);
+    savePlus.setBounds (1012, rowY, 42, rowH);
+    category.setBounds (1066, rowY, 196, rowH);
+    voices.setBounds (1330, rowY + 2, 64, 38);
+    glide.setBounds (1442, rowY + 2, 80, 38);
+
+    for (int i = 0; i < tabs.size(); ++i) tabs[i]->setBounds (213 + i * 223, 172, 215, 44);
+
+    const juce::Rectangle<int> page (14, 240, 1248, 682);
     for (auto* c : std::initializer_list<juce::Component*> { &createPage, &effectsPage, &playPage, &soulPage, &labPage })
         c->setBounds (page);
-    angel.setBounds (1272, 180, 250, 682);
+    angel.setBounds (1272, 240, 250, 682);
     explainOverlay.setBounds (0, 0, 1266, kBaseHeight);
-
-    settings.setBounds (38, 925, 42, 42);
-    folder.setBounds (106, 925, 42, 42);
-    save.setBounds (174, 925, 42, 42);
-    undo.setBounds (242, 925, 42, 42);
-    redo.setBounds (310, 925, 42, 42);
-    presetCount.setBounds (417, 925, 330, 42);
-    category.setBounds (772, 925, 320, 42);
-    voices.setBounds (1222, 927, 80, 38);
-    glide.setBounds (1392, 927, 96, 38);
 }
 
 //==============================================================================
@@ -184,16 +168,12 @@ void DivinityEditor::Content::paint (juce::Graphics& g)
     g.setColour (juce::Colours::white);
     g.fillEllipse (764.0f, 1.0f, 8.0f, 8.0f);
 
-    // brand block
-    drawEmblem (g, { 96.0f, 30.0f, 74.0f, 74.0f });
-    g.setColour (border);
-    g.drawVerticalLine (186, 34.0f, 100.0f);
-    g.setColour (text);
-    g.setFont (font (25.0f, Weight::SemiBold, 0.02f));
-    g.drawText ("TRIPLE", 202, 30, 160, 26, juce::Justification::centredLeft);
-    g.drawText ("SEVEN", 202, 54, 160, 26, juce::Justification::centredLeft);
-    g.setFont (font (13.0f, Weight::Medium, 0.9f));
-    g.drawText ("AUDIO", 204, 80, 160, 18, juce::Justification::centredLeft);
+    // brand block: TRIPLE SEVEN AUDIO logo
+    if (logo.isValid())
+    {
+        const auto area = juce::Rectangle<float> (22.0f, 14.0f, 270.0f, 270.0f * (float) logo.getHeight() / (float) logo.getWidth());
+        logo.draw (g, area);
+    }
 
     // title
     g.setFont (font (52.0f, Weight::Medium, 1.05f));
@@ -205,26 +185,33 @@ void DivinityEditor::Content::paint (juce::Graphics& g)
     g.setColour (textDim);
     g.drawText ("SYNTHESIZER", 440, 82, 660, 20, juce::Justification::centred);
 
-    // preset box
-    g.setColour (panel2.withAlpha (0.8f));
-    g.fillRoundedRectangle (1175.0f, 57.0f, 295.0f, 42.0f, 6.0f);
-    g.setColour (borderBright);
-    g.drawRoundedRectangle (1175.5f, 57.5f, 294.0f, 41.0f, 6.0f, 1.0f);
-    g.drawRoundedRectangle (1478.5f, 57.5f, 40.0f, 41.0f, 6.0f, 1.0f);
+    // status (top right)
     g.setColour (textFaint);
     g.setFont (font (11.5f, Weight::Medium, 0.05f));
-    g.drawText (owner.statusText, 1175, 102, 345, 14, juce::Justification::centredRight);
+    g.drawText (owner.statusText, 1110, 78, 408, 14, juce::Justification::centredRight);
+
+    // control strip
+    drawPanelBackground (g, { 14.0f, 110.0f, 1508.0f, 54.0f });
+    g.setColour (border);
+    for (int lx : { 262, 500, 1266 }) g.drawVerticalLine (lx, 120.0f, 154.0f);
+    g.setColour (panel2.withAlpha (0.8f));
+    g.fillRoundedRectangle (530.0f, 116.0f, 476.0f, 42.0f, 6.0f);
+    g.setColour (borderBright);
+    g.drawRoundedRectangle (530.5f, 116.5f, 475.0f, 41.0f, 6.0f, 1.0f);
+    g.drawRoundedRectangle (1012.5f, 116.5f, 41.0f, 41.0f, 6.0f, 1.0f);
+    g.setColour (text);
+    g.setFont (font (13.5f, Weight::Medium, 0.06f));
+    g.drawText ("VOICES", 1266, 118, 58, 38, juce::Justification::centredRight);
+    g.drawText ("GLIDE", 1396, 118, 42, 38, juce::Justification::centredRight);
 
     // header separator with glow
-    g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.0f), 0, 168, accent.withAlpha (0.55f), 768, 168, true));
-    g.fillRect (0, 167, kBaseWidth, 1);
+    g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.0f), 0, 228, accent.withAlpha (0.55f), 768, 228, true));
+    g.fillRect (0, 227, kBaseWidth, 1);
+}
 
-    // bottom bar
-    drawPanelBackground (g, { 14.0f, 904.0f, 1508.0f, 84.0f });
-    g.setColour (text);
-    g.setFont (font (15.5f, Weight::Medium, 0.04f));
-    g.drawText ("VOICES", 1140, 927, 76, 38, juce::Justification::centredRight);
-    g.drawText ("GLIDE", 1316, 927, 70, 38, juce::Justification::centredRight);
+DivinityEditor::Content::Content (DivinityEditor& e) : owner (e)
+{
+    logo.setSource (juce::ImageCache::getFromMemory (DivinityAssets::triple_seven_logo_png, DivinityAssets::triple_seven_logo_pngSize));
 }
 
 void DivinityEditor::ExplainOverlay::paint (juce::Graphics& g)
@@ -277,7 +264,7 @@ void DivinityEditor::timerCallback()
 {
     statusText = "CPU " + juce::String (juce::roundToInt (proc.cpuLoad.load() * 100.0f)) + "%   /   "
                + juce::String (proc.getActiveVoices()) + " VOICES PLAYING";
-    content.repaint (1175, 100, 345, 18);
+    content.repaint (1110, 76, 410, 18);
     undo.setEnabled (proc.undo.canUndo());
     redo.setEnabled (proc.undo.canRedo());
     updatePresetDisplay();

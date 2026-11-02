@@ -778,6 +778,15 @@ static void snapshotEditor (DivinityProcessor& p, const juce::File& dir)
         juce::FileOutputStream os (f);
         png.writeImageToStream (img, os);
         INFO ("wrote " << f.getFileName());
+        if (juce::String (tab) == "CREATE")
+        {
+            // retina-style 2x render, to check the logo and Guardian Angel artwork stay crisp
+            auto hi = ed->createComponentSnapshot (ed->getLocalBounds(), true, 2.0f);
+            auto f2 = dir.getChildFile ("ui_create@2x.png");
+            f2.deleteFile();
+            juce::FileOutputStream os2 (f2);
+            png.writeImageToStream (hi, os2);
+        }
     }
     std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
     ed->setSize ((int) (DivinityEditor::kBaseWidth * 0.6f), (int) (DivinityEditor::kBaseHeight * 0.6f));

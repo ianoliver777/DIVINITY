@@ -1,5 +1,6 @@
 #include "GuardianPanel.h"
 #include "../PluginProcessor.h"
+#include "DivinityAssets.h"
 
 namespace divinity::ui
 {
@@ -10,6 +11,7 @@ using namespace colours;
 //==============================================================================
 AngelArt::AngelArt()
 {
+    frown.setSource (juce::ImageCache::getFromMemory (DivinityAssets::barbed_frown_png, DivinityAssets::barbed_frown_pngSize));
     setInterceptsMouseClicks (false, false);
     startTimerHz (30);
 }
@@ -103,57 +105,22 @@ void AngelArt::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xff5b6880).withAlpha (0.5f * alpha));
     g.strokePath (body, juce::PathStrokeType (1.0f));
 
-    // head
-    juce::Path head; head.addEllipse (59, 62, 132, 128);
-    plushFill (g, head, { 100, 92 }, 130);
-    g.setColour (juce::Colour (0xff5b6880).withAlpha (0.5f * alpha));
-    g.strokePath (head, juce::PathStrokeType (1.0f));
-
-    // barbed-wire wreath: two twisted strands + barbs
-    const juce::Point<float> hc (125, 126);
-    for (int strand = 0; strand < 2; ++strand)
+    // head: the barbed frown (wire ring, barbed eyes, barbed frown), drawn exactly from the artwork
     {
-        juce::Path wire;
-        for (int i = 0; i <= 240; ++i)
+        const juce::Point<float> hc (125, 126);
+        // dark face so the wire reads against the wings and body
+        g.setColour (juce::Colour (0xff0a1322).withAlpha (alpha));
+        g.fillEllipse (hc.x - 70.0f, hc.y - 70.0f, 140.0f, 140.0f);
+        g.setColour (accent.withAlpha ((0.10f + 0.12f * glow) * alpha));
+        g.drawEllipse (hc.x - 74.0f, hc.y - 74.0f, 148.0f, 148.0f, 6.0f);
+        if (frown.isValid())
         {
-            const float a = juce::MathConstants<float>::twoPi * (float) i / 240.0f;
-            const float r = 72.0f + (strand == 0 ? 2.6f : -2.6f) * std::sin (a * 14.0f);
-            const juce::Point<float> pt (hc.x + r * std::cos (a), hc.y + r * 0.98f * std::sin (a));
-            if (i == 0) wire.startNewSubPath (pt); else wire.lineTo (pt);
+            // a gentle "speaking" pulse while Guardian Angel talks
+            const float pulse = 1.0f + 0.025f * talk * (0.5f + 0.5f * std::sin (phase * 22.0f));
+            const float size = 156.0f * pulse;
+            frown.draw (g, { hc.x - size * 0.5f, hc.y - size * 0.5f, size, size }, alpha);
         }
-        g.setColour (juce::Colour (0xff1b2436).withAlpha (alpha));
-        g.strokePath (wire, juce::PathStrokeType (3.6f));
-        g.setColour (juce::Colour (0xffe7eefb).withAlpha (alpha));
-        g.strokePath (wire, juce::PathStrokeType (1.8f));
     }
-    for (int i = 0; i < 18; ++i)
-    {
-        const float a = juce::MathConstants<float>::twoPi * (float) i / 18.0f + 0.12f;
-        const juce::Point<float> c (hc.x + 72.0f * std::cos (a), hc.y + 70.5f * std::sin (a));
-        juce::Path barb;
-        const float d = 6.0f;
-        barb.startNewSubPath (c.x - d * std::cos (a + 0.8f), c.y - d * std::sin (a + 0.8f));
-        barb.lineTo (c.x + d * std::cos (a + 0.8f), c.y + d * std::sin (a + 0.8f));
-        barb.startNewSubPath (c.x - d * std::cos (a - 0.8f), c.y - d * std::sin (a - 0.8f));
-        barb.lineTo (c.x + d * std::cos (a - 0.8f), c.y + d * std::sin (a - 0.8f));
-        g.setColour (juce::Colour (0xff1b2436).withAlpha (alpha));
-        g.strokePath (barb, juce::PathStrokeType (3.0f));
-        g.setColour (juce::Colour (0xffe7eefb).withAlpha (alpha));
-        g.strokePath (barb, juce::PathStrokeType (1.4f));
-    }
-
-    // face: X eyes + sad mouth (mouth opens a little while speaking)
-    juce::Path face;
-    for (float ex : { 101.0f, 149.0f })
-    {
-        face.startNewSubPath (ex - 8, 110); face.lineTo (ex + 8, 126);
-        face.startNewSubPath (ex + 8, 110); face.lineTo (ex - 8, 126);
-    }
-    const float open = 6.0f * talk * (0.5f + 0.5f * std::sin (phase * 22.0f));
-    face.startNewSubPath (100, 166);
-    face.quadraticTo (125, 140 - open, 150, 166);
-    g.setColour (juce::Colour (0xff141b29).withAlpha (alpha));
-    g.strokePath (face, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     g.restoreState();
 
     // halo (floats on its own rhythm)

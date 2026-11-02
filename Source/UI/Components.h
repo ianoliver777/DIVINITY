@@ -16,6 +16,37 @@ namespace divinity::ui
 using APVTS = juce::AudioProcessorValueTreeState;
 
 /** True when this component and all its parents are visible (works off-screen too, unlike isShowing). */
+/** Draws a large source image crisply at small sizes: the image is resampled in halving
+    steps to the exact physical pixel size it will be shown at, and cached until that size changes. */
+class CrispImage
+{
+public:
+    void setSource (juce::Image img) { source = std::move (img); cached = {}; }
+    bool isValid() const { return source.isValid(); }
+    int getWidth() const  { return source.getWidth(); }
+    int getHeight() const { return source.getHeight(); }
+
+    void draw (juce::Graphics& g, juce::Rectangle<float> area, float opacity = 1.0f)
+    {
+        if (! source.isValid() || area.isEmpty()) return;
+        const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
+        const int w = juce::jmax (1, juce::roundToInt (area.getWidth() * scale));
+        const int h = juce::jmax (1, juce::roundToInt (area.getHeight() * scale));
+        if (! cached.isValid() || std::abs (cached.getWidth() - w) > 1 || std::abs (cached.getHeight() - h) > 1)
+        {
+            auto img = source;
+            while (img.getWidth() > w * 2 && img.getHeight() > h * 2)
+                img = img.rescaled (img.getWidth() / 2, img.getHeight() / 2, juce::Graphics::highResamplingQuality);
+            cached = img.rescaled (w, h, juce::Graphics::highResamplingQuality);
+        }
+        g.setOpacity (opacity);
+        g.drawImage (cached, area, juce::RectanglePlacement::stretchToFit);
+        g.setOpacity (1.0f);
+    }
+private:
+    juce::Image source, cached;
+};
+
 inline bool visibleInTree (const juce::Component& c)
 {
     for (auto* p = &c; p != nullptr; p = p->getParentComponent())

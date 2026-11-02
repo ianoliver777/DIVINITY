@@ -12,7 +12,7 @@ class DivinityEditor : public juce::AudioProcessorEditor,
                        private juce::ChangeListener
 {
 public:
-    static constexpr int kBaseWidth = 1536, kBaseHeight = 1024;
+    static constexpr int kBaseWidth = 1536, kBaseHeight = 934;
 
     explicit DivinityEditor (DivinityProcessor&);
     ~DivinityEditor() override;
@@ -27,9 +27,10 @@ private:
     class Content : public juce::Component
     {
     public:
-        explicit Content (DivinityEditor& e) : owner (e) {}
+        explicit Content (DivinityEditor& e);
         void paint (juce::Graphics&) override;
         DivinityEditor& owner;
+        ui::CrispImage logo;
     };
 
     /** Explain mode: captures the next click and asks Guardian Angel to explain the control underneath. */
@@ -74,7 +75,7 @@ private:
     ui::GuardianPanel angel;
     ExplainOverlay explainOverlay { *this };
 
-    // bottom bar
+    // control strip (under the title)
     ui::IconButton settings, folder, save, undo, redo;
     juce::TextButton presetCount, category;
     ui::NumberBox voices, glide;
