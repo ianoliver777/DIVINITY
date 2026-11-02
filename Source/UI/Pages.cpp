@@ -1062,18 +1062,89 @@ namespace
     private:
         juce::OwnedArray<Knob> knobs;
     };
+
+    class ArpPanel : public Panel, private juce::Timer
+    {
+    public:
+        explicit ArpPanel (DivinityProcessor& p)
+            : Panel ("ARPEGGIATOR"), proc (p), power (p.apvts, arpids::on), mode (p.apvts, arpids::mode), rate (p.apvts, arpids::rate),
+              octaves (p.apvts, arpids::octaves, "Octaves"), gate (p.apvts, arpids::gate, "Gate"), swing (p.apvts, arpids::swing, "Swing")
+        {
+            latch.setClickingTogglesState (true);
+            latch.setTooltip (helpTextFor (arpids::latch));
+            latchAttach = std::make_unique<APVTS::ButtonAttachment> (p.apvts, arpids::latch, latch);
+            for (auto* k : { &octaves, &gate, &swing }) k->setCaptionSize (11.5f);
+            for (auto* c : std::initializer_list<juce::Component*> { &power, &mode, &rate, &octaves, &gate, &swing, &latch }) addAndMakeVisible (c);
+            mode.setTooltip (helpTextFor (arpids::mode));
+            rate.setTooltip (helpTextFor (arpids::rate));
+            startTimerHz (30);
+        }
+        void paint (juce::Graphics& g) override
+        {
+            drawPanelBackground (g, getLocalBounds().toFloat(), isOn());
+            drawSectionTitle (g, { 46, 8, 200, 24 }, "ARPEGGIATOR");
+            g.setColour (textDim);
+            g.setFont (font (10.5f, Weight::Medium, 0.12f));
+            g.drawText ("MODE", mode.getX(), mode.getY() - 16, 100, 14, juce::Justification::centredLeft);
+            g.drawText ("RATE", rate.getX(), rate.getY() - 16, 100, 14, juce::Justification::centredLeft);
+
+            // step lights + current note
+            const auto lights = juce::Rectangle<float> (16.0f, (float) getHeight() - 34.0f, (float) getWidth() - 140.0f, 18.0f);
+            const float w = lights.getWidth() / 16.0f;
+            for (int i = 0; i < 16; ++i)
+            {
+                auto r = juce::Rectangle<float> (lights.getX() + i * w + 2.0f, lights.getY(), w - 4.0f, lights.getHeight());
+                const bool lit = isOn() && note >= 0 && (step % 16) == i;
+                g.setColour (lit ? accent : panel2.brighter (0.15f));
+                g.fillRoundedRectangle (r, 3.0f);
+                if (lit) { g.setColour (accent.withAlpha (0.3f)); g.drawRoundedRectangle (r.expanded (2.0f), 4.0f, 2.0f); }
+            }
+            g.setFont (font (16.0f, Weight::SemiBold));
+            g.setColour (isOn() && note >= 0 ? text : textFaint);
+            g.drawText (isOn() ? (note >= 0 ? juce::MidiMessage::getMidiNoteName (note, true, true, 4) : (keys > 0 ? "..." : "hold keys")) : "off",
+                        getWidth() - 118, getHeight() - 40, 102, 30, juce::Justification::centredRight);
+        }
+        void resized() override
+        {
+            power.setBounds (14, 9, 24, 24);
+            latch.setBounds (getWidth() - 86, 8, 72, 26);
+            mode.setBounds (16, 62, 150, 30);
+            rate.setBounds (16, 124, 150, 30);
+            const int kx = 180, kw = (getWidth() - kx - 10) / 3;
+            octaves.setBounds (kx, 44, kw, 130);
+            gate.setBounds (kx + kw, 44, kw, 130);
+            swing.setBounds (kx + 2 * kw, 44, kw, 130);
+        }
+    private:
+        bool isOn() const { return proc.apvts.getRawParameterValue (arpids::on)->load() > 0.5f; }
+        void timerCallback() override
+        {
+            const int n = proc.arp.displayNote.load(), st = proc.arp.displayStep.load(), k = proc.arp.displayCount.load();
+            const bool on = isOn();
+            if (n != note || st != step || k != keys || on != wasOn) { note = n; step = st; keys = k; wasOn = on; repaint(); }
+        }
+        DivinityProcessor& proc;
+        PowerButton power;
+        ChoiceBox mode, rate;
+        Knob octaves, gate, swing;
+        juce::TextButton latch { "LATCH" };
+        std::unique_ptr<APVTS::ButtonAttachment> latchAttach;
+        int note = -1, step = 0, keys = 0;
+        bool wasOn = false;
+    };
 }
 
 struct PlayPage::Impl
 {
     Impl (DivinityProcessor& p, juce::Component& owner)
-        : browser (p), info (p), soul (p), macros (p, true), perf (p), keys (p)
+        : browser (p), info (p), arp (p), soul (p), macros (p, true), perf (p), keys (p)
     {
-        for (auto* c : std::initializer_list<juce::Component*> { &browser, &info, &soul, &macros, &perf, &keys })
+        for (auto* c : std::initializer_list<juce::Component*> { &browser, &info, &arp, &soul, &macros, &perf, &keys })
             owner.addAndMakeVisible (c);
     }
     PresetBrowser browser;
     PresetInfoPanel info;
+    ArpPanel arp;
     SoulMini soul;
     MacroSection macros;
     PerformancePanel perf;
@@ -1087,10 +1158,11 @@ void PlayPage::resized()
 {
     auto& m = *impl;
     m.browser.setBounds (0, 0, 330, 530);
-    m.info.setBounds (342, 0, 560, 265);
-    m.soul.setBounds (914, 0, 334, 265);
-    m.macros.setBounds (342, 277, 400, 253);
-    m.perf.setBounds (754, 277, 494, 253);
+    m.info.setBounds (342, 0, 400, 265);
+    m.arp.setBounds (754, 0, 494, 265);
+    m.soul.setBounds (342, 277, 290, 253);
+    m.macros.setBounds (644, 277, 290, 253);
+    m.perf.setBounds (946, 277, 302, 253);
     m.keys.setBounds (0, 542, 1248, 140);
 }
 

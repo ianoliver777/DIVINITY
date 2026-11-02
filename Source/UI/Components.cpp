@@ -304,20 +304,21 @@ ChoiceBox::ChoiceBox (APVTS& s, const juce::String& id)
 }
 
 //==============================================================================
-SegmentedChoice::SegmentedChoice (APVTS& s, const juce::String& id, juce::StringArray labels)
-    : param (*dynamic_cast<juce::AudioParameterChoice*> (s.getParameter (id))),
+SegmentedChoice::SegmentedChoice (APVTS& s, const juce::String& id, juce::StringArray labels, std::vector<int> valueForButton)
+    : map (std::move (valueForButton)), param (*dynamic_cast<juce::AudioParameterChoice*> (s.getParameter (id))),
       attachment (param, [this] (float v)
       {
           const int idx = juce::roundToInt (v);
-          for (int i = 0; i < buttons.size(); ++i) buttons[i]->setToggleState (i == idx, juce::dontSendNotification);
+          for (int i = 0; i < buttons.size(); ++i) buttons[i]->setToggleState ((i < (int) map.size() ? map[(size_t) i] : i) == idx, juce::dontSendNotification);
       }, s.undoManager)
 {
+    if (map.size() != (size_t) labels.size()) { map.clear(); for (int i = 0; i < labels.size(); ++i) map.push_back (i); }
     for (int i = 0; i < labels.size(); ++i)
     {
         auto* b = buttons.add (new juce::TextButton (labels[i]));
         b->setClickingTogglesState (false);
         b->setTooltip (helpTextFor (id));
-        b->onClick = [this, i] { attachment.setValueAsCompleteGesture ((float) i); };
+        b->onClick = [this, i] { attachment.setValueAsCompleteGesture ((float) map[(size_t) i]); };
         addAndMakeVisible (b);
     }
     attachment.sendInitialUpdate();

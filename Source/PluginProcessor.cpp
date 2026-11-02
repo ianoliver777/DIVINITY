@@ -9,7 +9,8 @@ DivinityProcessor::DivinityProcessor()
       apvts (*this, &undo, "PARAMETERS", createParameterLayout()),
       presets (apvts),
       engine (apvts, *bank),
-      fx (apvts)
+      fx (apvts),
+      arp (apvts)
 {
     apvts.state.setProperty (fxOrderProperty, defaultFxOrder().joinIntoString (","), nullptr);
     apvts.state.addListener (this);
@@ -48,6 +49,7 @@ void DivinityProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     engine.prepare (sampleRate, samplesPerBlock);
     fx.prepare (sampleRate, samplesPerBlock);
+    arp.prepare (sampleRate);
     loadMeasurer.reset (sampleRate, samplesPerBlock);
     uiMidi.reset (sampleRate);
     uiMidiBuffer.ensureSize (2048);
@@ -68,6 +70,7 @@ void DivinityProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     if (panicRequested.exchange (false))
     {
         engine.allNotesOff (true);
+        arp.reset();
         fx.reset();
     }
 
@@ -80,6 +83,7 @@ void DivinityProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             transport.isPlaying = pos->getIsPlaying();
         }
 
+    arp.process (midi, n, transport);
     engine.process (buffer, midi, transport);
     fx.process (buffer, transport.bpm, engine.getGlobalMods(), engine.getSnapshot().macro);
 
@@ -103,6 +107,7 @@ void DivinityProcessor::getStateInformation (juce::MemoryBlock& destData)
     root.setAttribute ("uiWorkspace", uiWorkspace);
     root.setAttribute ("uiScale", (double) uiScale);
     root.setAttribute ("uiAngelTips", uiAngelTips);
+    root.setAttribute ("uiAngelOpen", uiAngelOpen);
     if (auto params = apvts.copyState().createXml())
         root.addChildElement (params.release());
     copyXmlToBinary (root, destData);
@@ -136,8 +141,9 @@ void DivinityProcessor::setStateInformation (const void* data, int sizeInBytes)
     setFxOrder (juce::StringArray::fromTokens (params->getStringAttribute (fxOrderProperty.toString(), defaultFxOrder().joinIntoString (",")), ",", ""), false);
     uiWorkspace = xml->getStringAttribute ("uiWorkspace", "CREATE");
     if (! juce::StringArray { "CREATE", "EFFECTS", "PLAY", "SOUL", "LAB" }.contains (uiWorkspace)) uiWorkspace = "CREATE";
-    uiScale = (float) juce::jlimit (0.5, 2.0, xml->getDoubleAttribute ("uiScale", 0.9));
+    uiScale = (float) juce::jlimit (0.5, 2.0, xml->getDoubleAttribute ("uiScale", 1.0));
     uiAngelTips = xml->getBoolAttribute ("uiAngelTips", true);
+    uiAngelOpen = xml->getBoolAttribute ("uiAngelOpen", true);
     presets.setCurrentFromState (xml->getStringAttribute ("presetName", "Init"), xml->getBoolAttribute ("presetModified", false));
     undo.clearUndoHistory();
 }

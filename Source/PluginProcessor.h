@@ -5,6 +5,7 @@
 #include "Parameters.h"
 #include "DSP/SynthEngine.h"
 #include "DSP/FXChain.h"
+#include "DSP/Arpeggiator.h"
 #include "Presets/PresetManager.h"
 
 namespace divinity
@@ -95,7 +96,8 @@ public:
 
     // UI preference (not part of the sound): workspace & scale are stored with the session.
     juce::String uiWorkspace { "CREATE" };   // CREATE / EFFECTS / PLAY / SOUL / LAB
-    float uiScale = 0.9f;
+    float uiScale = 1.0f;
+    bool uiAngelOpen = true;
     bool uiAngelTips = true;
 
 private:
@@ -103,6 +105,9 @@ private:
     juce::SharedResourcePointer<WavetableBank> bank;
     SynthEngine engine;
     FXChain fx;
+public:
+    Arpeggiator arp;   // public: the UI reads its display atomics
+private:
     juce::AudioProcessLoadMeasurer loadMeasurer;
     juce::MidiBuffer uiMidiBuffer;
 

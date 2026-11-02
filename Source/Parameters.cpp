@@ -1,6 +1,7 @@
 #include "Parameters.h"
 #include "DSP/SoulEngine.h"
 #include "DSP/FxCatalog.h"
+#include "DSP/Arpeggiator.h"
 
 namespace divinity
 {
@@ -333,7 +334,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         group->addChild (std::make_unique<API> (pid (ids::voices), "Voices", 1, kMaxVoices, 8));
         group->addChild (std::make_unique<API> (pid (ids::bendRange), "Bend Range", 0, 24, 2));
         group->addChild (std::make_unique<APF> (pid (ids::glide), "Glide", skewed (0.0f, 2000.0f, 200.0f), 0.0f, ms()));
-        group->addChild (std::make_unique<APC> (pid (ids::voiceMode), "Voice Mode", juce::StringArray { "Poly", "Legato" }, 0));
+        group->addChild (std::make_unique<APC> (pid (ids::voiceMode), "Voice Mode", juce::StringArray { "Poly", "Legato", "Mono" }, 0));
         group->addChild (std::make_unique<APF> (pid (ids::masterTune), "Master Tune", juce::NormalisableRange<float> (-100.0f, 100.0f), 0.0f, cents()));
         group->addChild (std::make_unique<APF> (pid (ids::master), "Master Volume", juce::NormalisableRange<float> (-60.0f, 6.0f, 0.0f, 2.5f), -6.0f, db()));
         layout.add (std::move (group));
@@ -341,6 +342,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 
     addSoulParameters (layout);
     addFxRackParameters (layout);
+    addArpParameters (layout);
     return layout;
 }
 
@@ -449,10 +451,11 @@ juce::String helpTextFor (const juce::String& id)
     if (id == ids::voices)     return "Voices: maximum notes that can sound at once. Lower values save CPU.";
     if (id == ids::bendRange)  return "Bend Range: how many semitones the pitch wheel bends.";
     if (id == ids::glide)      return "Glide: slides the pitch between notes.";
-    if (id == ids::voiceMode)  return "Poly plays chords. Legato is monophonic and glides smoothly between overlapping notes.";
+    if (id == ids::voiceMode)  return "Poly plays chords. Mono plays one note at a time and restarts the envelopes on every key. Legato is also one note at a time, but overlapping notes slide without restarting the envelopes.";
     if (id == ids::master)     return "Master Volume: final output level.";
     if (id == ids::masterTune) return "Master Tune: shifts the tuning of the whole instrument in cents.";
     if (id == ids::limCeiling) return "Limiter Ceiling: the loudest the output is allowed to get.";
+    if (auto t = arpHelpText (id); t.isNotEmpty()) return t;
     return fxHelpText (id);
 }
 

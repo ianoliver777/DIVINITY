@@ -7,6 +7,7 @@
 #include "Assistant/GuardianBrain.h"
 #include <chrono>
 #include <random>
+#include <map>
 
 using namespace divinity;
 
@@ -131,6 +132,11 @@ static void testFactoryPresets (DivinityProcessor& p)
             }
         }
     CHECK (bad == 0, "every factory preset references valid parameters and choices");
+    juce::StringArray names; int dupes = 0, wave = 0, grime = 0;
+    for (auto& fp : list) { if (names.contains (fp.name)) { ++dupes; std::cout << "  duplicate " << fp.name << "\n"; } names.add (fp.name);
+                            wave += fp.category.startsWith ("Wave "); grime += fp.category.startsWith ("Grime "); }
+    CHECK (dupes == 0, "factory preset names are unique");
+    CHECK (list.size() == 220 && wave == 110 && grime == 90, "220 factory presets: 110 wave + 90 neogrime (" << (int) list.size() << ", " << wave << ", " << grime << ")");
     INFO (list.size() << " factory presets");
 }
 
@@ -611,6 +617,161 @@ static void testFxRack (DivinityProcessor& p)
     CHECK (swStep <= ref * 1.15f, "switching an effect on mid-note is click-free (" << swStep << " vs " << ref << ")");
 }
 
+//==============================================================================
+struct ArpEvent { double t; int note; bool on; };
+
+/** Drives the arpeggiator directly: keys = (time, length, note), returns its output events. */
+static std::vector<ArpEvent> runArp (DivinityProcessor& p, const std::vector<Note>& keys, double seconds,
+                                     bool hostPlaying = false, double ppqStart = 0.0, double bpm = 120.0, std::function<void (int)> perBlock = {})
+{
+    const double sr = 48000; const int block = 512;
+    p.arp.prepare (sr);
+    std::vector<ArpEvent> evs;
+    juce::MidiBuffer midi;
+    const int total = (int) (seconds * sr);
+    int blk = 0;
+    for (int pos = 0; pos < total; pos += block, ++blk)
+    {
+        const int n = juce::jmin (block, total - pos);
+        midi.clear();
+        for (auto& k : keys)
+        {
+            const int on = (int) (k.start * sr), off = (int) ((k.start + k.length) * sr);
+            if (on >= pos && on < pos + n) midi.addEvent (juce::MidiMessage::noteOn (1, k.note, k.vel), on - pos);
+            if (off >= pos && off < pos + n) midi.addEvent (juce::MidiMessage::noteOff (1, k.note), off - pos);
+        }
+        if (perBlock) perBlock (blk);
+        TransportInfo tr; tr.bpm = bpm; tr.isPlaying = hostPlaying; tr.hasPpq = hostPlaying;
+        tr.ppqAtBlockStart = ppqStart + pos / sr * bpm / 60.0;
+        p.arp.process (midi, n, tr);
+        for (const auto m : midi)
+        {
+            auto msg = m.getMessage();
+            if (msg.isNoteOn()) evs.push_back ({ (pos + m.samplePosition) / sr, msg.getNoteNumber(), true });
+            else if (msg.isNoteOff()) evs.push_back ({ (pos + m.samplePosition) / sr, msg.getNoteNumber(), false });
+        }
+    }
+    return evs;
+}
+
+static std::vector<int> onNotes (const std::vector<ArpEvent>& e) { std::vector<int> v; for (auto& x : e) if (x.on) v.push_back (x.note); return v; }
+
+static bool balanced (const std::vector<ArpEvent>& e)
+{
+    std::map<int, int> c;
+    for (auto& x : e) c[x.note] += x.on ? 1 : -1;
+    for (auto& [n, v] : c) if (v != 0) return false;
+    return true;
+}
+
+static void testArpAndVoiceModes (DivinityProcessor& p)
+{
+    std::cout << "\n== Arpeggiator + voice modes\n";
+    p.presets.loadInit();
+    setP (p, arpids::on, 1); setChoice (p, arpids::rate, "1/16"); setP (p, arpids::gate, 0.5f); setP (p, arpids::octaves, 1);
+    const std::vector<Note> chord { { 0.0, 1.0, 60, 0.8f }, { 0.0, 1.0, 64, 0.8f }, { 0.0, 1.0, 67, 0.8f } };
+
+    auto pattern = [&] (const char* mode, int octs)
+    {
+        setChoice (p, arpids::mode, mode); setP (p, arpids::octaves, (float) octs);
+        auto e = runArp (p, chord, 1.2);
+        return onNotes (e);
+    };
+    auto starts = [] (const std::vector<int>& v, std::vector<int> want)
+    { if (v.size() < want.size()) return false; for (size_t i = 0; i < want.size(); ++i) if (v[i] != want[i]) return false; return true; };
+
+    auto up = pattern ("Up", 1);
+    CHECK (starts (up, { 60, 64, 67, 60, 64, 67, 60, 64 }), "Up plays the chord low to high, repeating");
+    CHECK (up.size() == 8, "1/16 at 120 BPM = 8 steps per second (" << up.size() << ")");
+    CHECK (starts (pattern ("Down", 1), { 67, 64, 60, 67, 64, 60 }), "Down plays high to low");
+    CHECK (starts (pattern ("Up/Down", 1), { 60, 64, 67, 64, 60, 64, 67, 64 }), "Up/Down bounces without repeating the ends");
+    CHECK (starts (pattern ("Up", 2), { 60, 64, 67, 72, 76, 79, 60 }), "Octaves extends the pattern upward");
+    {
+        setChoice (p, arpids::mode, "As Played"); setP (p, arpids::octaves, 1);
+        auto e = onNotes (runArp (p, { { 0.0, 1.0, 67, 0.8f }, { 0.01, 1.0, 60, 0.8f }, { 0.02, 1.0, 64, 0.8f } }, 1.0));
+        CHECK (e.size() >= 4 && e[1] == 60 && e[2] == 64 && e[3] == 67, "As Played follows the order the keys were pressed");
+    }
+    {
+        setChoice (p, arpids::mode, "Chord");
+        auto e = runArp (p, chord, 0.3);
+        int atZero = 0; for (auto& x : e) if (x.on && x.t < 0.001) ++atZero;
+        CHECK (atZero == 3, "Chord mode plays every held key together on each step (" << atZero << ")");
+    }
+    {
+        setChoice (p, arpids::mode, "Random");
+        auto e = onNotes (runArp (p, chord, 2.0));
+        bool repeat = false, allIn = true;
+        for (size_t i = 1; i < e.size(); ++i) repeat |= e[i] == e[i - 1];
+        for (int n : e) allIn &= (n == 60 || n == 64 || n == 67);
+        CHECK (! repeat && allIn && e.size() == 8, "Random only uses held keys and never repeats a note back to back");
+    }
+
+    // gate: 50% of a 1/16 (125 ms at 120) = 62.5 ms
+    setChoice (p, arpids::mode, "Up");
+    {
+        auto e = runArp (p, chord, 0.5);
+        double on = -1, len = -1;
+        for (auto& x : e) { if (x.on && on < 0) on = x.t; else if (! x.on && on >= 0 && len < 0) len = x.t - on; }
+        CHECK (std::abs (len - 0.0625) < 0.0005, "gate sets the note length (" << len * 1000.0 << " ms)");
+        CHECK (balanced (e), "every arp note-on gets a note-off after the keys are released");
+    }
+    // swing delays every second step
+    {
+        setP (p, arpids::swing, 0.5f);
+        auto e = runArp (p, chord, 0.5);
+        std::vector<double> t; for (auto& x : e) if (x.on) t.push_back (x.t);
+        CHECK (t.size() >= 3 && std::abs ((t[1] - t[0]) - 0.125 * 1.25) < 0.001 && std::abs ((t[2] - t[0]) - 0.25) < 0.001, "swing delays the off-beat steps only");
+        setP (p, arpids::swing, 0.0f);
+    }
+    // host sync: transport playing from beat 0.3, key at time 0 -> first step lands on beat 0.5
+    {
+        auto e = runArp (p, chord, 0.5, true, 0.3, 120.0);
+        const double first = e.empty() ? -1.0 : e.front().t;
+        CHECK (std::abs (first - 0.2 * 0.5) < 0.0005, "follows the host grid: first step on the next 1/16 (" << first << " s)");
+    }
+    // latch keeps playing after release; new keys replace the latched chord
+    {
+        setP (p, arpids::latch, 1);
+        auto e = runArp (p, { { 0.0, 0.2, 60, 0.8f }, { 0.0, 0.2, 64, 0.8f }, { 0.6, 0.3, 72, 0.8f } }, 1.2);
+        int afterRelease = 0, replaced = 0, oldAfter = 0;
+        for (auto& x : e) if (x.on) { if (x.t > 0.25 && x.t < 0.55) ++afterRelease; if (x.t > 0.65) { replaced += x.note == 72; oldAfter += x.note != 72; } }
+        CHECK (afterRelease >= 2, "latch keeps the pattern going after the keys are released");
+        CHECK (replaced >= 4 && oldAfter == 0, "pressing new keys replaces the latched chord");
+        setP (p, arpids::latch, 0);
+    }
+    // switching the arp off mid-pattern leaves no hanging notes and hands held keys back to the synth
+    {
+        auto e = runArp (p, { { 0.0, 1.0, 60, 0.8f } }, 1.2, false, 0, 120, [&] (int blk) { if (blk == 30) setP (p, arpids::on, 0); });
+        int handBack = 0; for (auto& x : e) if (x.on && x.t > 0.3) ++handBack;
+        CHECK (balanced (e) && handBack == 1, "switching off releases arp notes and returns held keys to the synth");
+        setP (p, arpids::on, 1);
+    }
+    // through the real synth: sound, finite, monophonic per step
+    {
+        cleanPatch (p);
+        setP (p, arpids::on, 1); setChoice (p, arpids::mode, "Up"); setChoice (p, arpids::rate, "1/16");
+        int maxVoices = 0;
+        auto out = render (p, 48000, 256, 1.2, chord, [&] (int) { maxVoices = std::max (maxVoices, p.getActiveVoices()); });
+        CHECK (allFinite (out) && rmsDb (out, 0, 48000) > -40.0f, "arp drives the synth (rms " << rmsDb (out, 0, 48000) << " dB)");
+        CHECK (maxVoices <= 3, "arp steps don't pile up voices (" << maxVoices << ")");
+        setP (p, arpids::on, 0);
+    }
+
+    // MONO: one voice, every key restarts the envelope
+    cleanPatch (p);
+    setChoice (p, ids::voiceMode, "Mono");
+    setP (p, ids::env (0, "decay"), 0.05f); setP (p, ids::env (0, "sustain"), 0.1f);
+    int monoMax = 0;
+    auto mono = render (p, 48000, 256, 1.0, { { 0.0, 0.8, 60, 1.0f }, { 0.4, 0.5, 67, 1.0f } }, [&] (int) { monoMax = std::max (monoMax, p.getActiveVoices()); });
+    setChoice (p, ids::voiceMode, "Legato");
+    auto leg = render (p, 48000, 256, 1.0, { { 0.0, 0.8, 60, 1.0f }, { 0.4, 0.5, 67, 1.0f } });
+    // just after the second key: mono restarted its envelope (back at the peak), legato stays at the low sustain level
+    const float monoLevel = rmsDb (mono, (int) (0.402 * 48000), 480), legLevel = rmsDb (leg, (int) (0.402 * 48000), 480);
+    CHECK (monoMax == 1, "mono mode stays monophonic");
+    CHECK (monoLevel > legLevel + 6.0f, "mono retriggers the envelope, legato doesn't (" << monoLevel << " vs " << legLevel << " dB)");
+    setChoice (p, ids::voiceMode, "Poly");
+}
+
 static void testFuzzAndExtremes (DivinityProcessor& p)
 {
     std::cout << "\n== Extreme / random parameter fuzzing + rapid automation\n";
@@ -718,20 +879,25 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
     dir.createDirectory();
     juce::WavAudioFormat wav;
     const auto& list = p.presets.getPresets();
-    int hot = 0;
+    int hot = 0, quiet = 0;
+    juce::StringArray demoCats;
+    std::vector<float> rmsAll;
     for (int i = 0; i < list.size(); ++i)
     {
         if (! list[i].isFactory) continue;
         p.presets.loadPreset (i);
         const auto cat = list[i].category;
+        const bool arpPatch = p.apvts.getRawParameterValue (arpids::on)->load() > 0.5f;
         std::vector<Note> phrase;
-        if (cat == "Bass" || cat == "808")
+        if (cat.contains ("Bass") || cat.contains ("808") || cat.contains ("Sub"))
             phrase = { { 0.0, 0.45, 36, 1.0f }, { 0.5, 0.45, 36, 0.9f }, { 1.0, 0.7, 39, 1.0f }, { 1.75, 0.6, 34, 1.0f } };
         else if (cat == "Percussion")
             phrase = { { 0.0, 0.2, 36, 1.0f }, { 0.5, 0.2, 36, 1.0f }, { 1.0, 0.2, 36, 1.0f }, { 1.5, 0.2, 36, 1.0f } };
-        else if (cat == "Lead")
+        else if (arpPatch)
+            phrase = { { 0.0, 2.4, 60, 0.9f }, { 0.0, 2.4, 63, 0.9f }, { 0.0, 2.4, 67, 0.9f } };
+        else if (cat.contains ("Lead") || cat.contains ("Vox"))
             phrase = { { 0.0, 0.45, 72, 0.9f }, { 0.5, 0.45, 75, 0.9f }, { 1.0, 0.45, 79, 0.9f }, { 1.5, 0.9, 77, 0.9f } };
-        else if (cat == "Pluck" || cat == "Arpeggio" || cat == "Bell" || cat == "Keys")
+        else if (cat.contains ("Pluck") || cat.contains ("Bell") || cat == "Keys" || cat.contains ("Stab"))
             phrase = { { 0.0, 0.3, 60, 0.9f }, { 0.25, 0.3, 64, 0.8f }, { 0.5, 0.3, 67, 0.9f }, { 0.75, 0.3, 71, 0.8f }, { 1.0, 0.3, 72, 0.9f }, { 1.25, 0.3, 67, 0.8f }, { 1.5, 0.6, 64, 0.9f } };
         else
             phrase = { { 0.0, 2.5, 48, 0.8f }, { 0.0, 2.5, 55, 0.8f }, { 0.0, 2.5, 60, 0.8f }, { 0.0, 2.5, 63, 0.8f } };
@@ -741,6 +907,11 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
         std::cout << "  " << juce::String (list[i].name).paddedRight (' ', 20) << juce::String (cat).paddedRight (' ', 15)
                   << " peak " << juce::String (peak, 1).paddedLeft (' ', 6) << " dBFS   rms " << juce::String (rms, 1).paddedLeft (' ', 6) << " dBFS\n";
         if (peak > -0.2f) ++hot;
+        if (rms < -42.0f || ! allFinite (b)) { ++quiet; std::cout << "    ^ too quiet or not finite\n"; }
+        rmsAll.push_back (rms);
+        // WAV demos: the classic set + the first preset of every category (keeps CI artefacts small)
+        if (i >= 20 && demoCats.contains (cat)) continue;
+        demoCats.add (cat);
         auto f = dir.getChildFile (juce::String (i + 1).paddedLeft ('0', 2) + " " + list[i].name + ".wav");
         f.deleteFile();
         if (auto os = std::unique_ptr<juce::OutputStream> (f.createOutputStream()))
@@ -751,6 +922,10 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
             }
     }
     CHECK (hot == 0, "no factory preset exceeds the -0.3 dB limiter ceiling");
+    CHECK (quiet == 0, "every factory preset makes sound and stays finite");
+    std::sort (rmsAll.begin(), rmsAll.end());
+    const float spread = rmsAll.empty() ? 0.0f : rmsAll[rmsAll.size() * 9 / 10] - rmsAll[rmsAll.size() / 10];
+    CHECK (spread < 16.0f, "factory presets are level-matched (10th-90th percentile spread " << spread << " dB)");
 }
 
 static void snapshotEditor (DivinityProcessor& p, const juce::File& dir)
@@ -762,6 +937,7 @@ static void snapshotEditor (DivinityProcessor& p, const juce::File& dir)
     for (auto tab : { "CREATE", "EFFECTS", "PLAY", "SOUL", "LAB" })
     {
         p.uiWorkspace = tab;
+        p.uiAngelOpen = true;
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         ed->setSize (DivinityEditor::kBaseWidth, DivinityEditor::kBaseHeight);
         ed->setVisible (true);   // hosts make the editor visible; visualisers only run when visible
@@ -787,6 +963,23 @@ static void snapshotEditor (DivinityProcessor& p, const juce::File& dir)
             juce::FileOutputStream os2 (f2);
             png.writeImageToStream (hi, os2);
         }
+    }
+    {
+        // Guardian Angel collapsed: the window narrows, everything else stays put
+        p.uiWorkspace = "PLAY";
+        std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+        auto* de = dynamic_cast<DivinityEditor*> (ed.get());
+        ed->setSize (DivinityEditor::kBaseWidth, DivinityEditor::kBaseHeight);
+        ed->setVisible (true);
+        de->setAngelOpen (false);
+        CHECK (ed->getWidth() == DivinityEditor::kCompactWidth && ed->getHeight() == DivinityEditor::kBaseHeight, "collapsing Guardian Angel narrows the window (" << ed->getWidth() << "x" << ed->getHeight() << ")");
+        for (int i = 0; i < 3; ++i) { render (p, 48000, 512, 0.15, { { 0.0, 1.0, 60, 0.8f }, { 0.0, 1.0, 67, 0.8f } }); juce::MessageManager::getInstance()->runDispatchLoopUntil (50); }
+        auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+        auto f = dir.getChildFile ("ui_play_angel_collapsed.png"); f.deleteFile();
+        juce::FileOutputStream os (f); juce::PNGImageFormat().writeImageToStream (img, os);
+        de->setAngelOpen (true);
+        CHECK (ed->getWidth() == DivinityEditor::kBaseWidth, "reopening Guardian Angel restores the width");
+        CHECK (p.uiAngelOpen, "angel state is remembered");
     }
     std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
     ed->setSize ((int) (DivinityEditor::kBaseWidth * 0.6f), (int) (DivinityEditor::kBaseHeight * 0.6f));
@@ -815,6 +1008,17 @@ static void testGuardianAngel (DivinityProcessor& p)
     r = brain.createSound ("dreamy evolving wide pad");
     CHECK (p.presets.getCurrentName() == "Celestial Pad" && p.apvts.getRawParameterValue (ids::macro (1))->load() > 0.3f
            && p.apvts.getRawParameterValue (ids::divineAmount)->load() > 0.2f, "\"dreamy evolving wide pad\" adds movement + Divine");
+    {
+        // the wave / neogrime library is reachable by asking
+        const std::pair<const char*, const char*> asks[] = { { "make me a grime 808", "Grime 808" }, { "give me an icy eski bell", "Ice Bell" },
+                                                             { "dark wave pad please", "Seraph Bloom" }, { "make a wave reese", "Wave Reese" },
+                                                             { "8-bit lead", "8-Bit Ghost" } };
+        int hits = 0;
+        for (auto& [q, want] : asks) { brain.createSound (q); hits += p.presets.getCurrentName() == want; }
+        CHECK (hits == 5, "Guardian Angel builds from the wave / neogrime library (" << hits << "/5)");
+        r = brain.ask ("how do i use the arp");
+        CHECK (r.text.contains ("ARP") && r.text.contains ("LATCH"), "Guardian Angel explains the arpeggiator");
+    }
     r = brain.createSound ("something cool");
     CHECK (r.actionLabel.isEmpty() && r.text.contains ("pad"), "unknown sound type asks for a clearer description");
 
@@ -875,6 +1079,7 @@ int main (int argc, char** argv)
         testSoul (p);
         testGuardianAngel (p);
         testFxRack (p);
+        testArpAndVoiceModes (p);
         testFuzzAndExtremes (p);
         testRatesAndBuffers (p);
         testLongNotesAndSilence (p);

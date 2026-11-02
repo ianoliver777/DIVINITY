@@ -152,10 +152,12 @@ private:
 class SegmentedChoice : public juce::Component
 {
 public:
-    SegmentedChoice (APVTS& apvts, const juce::String& paramID, juce::StringArray labels);
+    /** valueForButton maps button i to choice index (default: identity), so buttons can be shown in any order. */
+    SegmentedChoice (APVTS& apvts, const juce::String& paramID, juce::StringArray labels, std::vector<int> valueForButton = {});
     void resized() override;
 private:
     juce::OwnedArray<juce::TextButton> buttons;
+    std::vector<int> map;
     juce::AudioParameterChoice& param;
     juce::ParameterAttachment attachment;
 };

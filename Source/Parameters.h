@@ -30,7 +30,7 @@ namespace divinity
     enum class FilterType { Off = 0, Ladder24, LowPass12, HighPass12, BandPass, Notch, Peak, Comb };
     enum class FilterRouting { Serial = 0, Parallel };
     enum class LfoShape { Sine = 0, Square, Triangle, Random };
-    enum class VoiceMode { Poly = 0, Legato };
+    enum class VoiceMode { Poly = 0, Legato, Mono };
 
     enum class ModSource
     {

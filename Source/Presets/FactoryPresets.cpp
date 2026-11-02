@@ -317,13 +317,20 @@ std::vector<FactoryPreset> createFactoryPresets()
         list.push_back (p);
     }
 
+    addWaveAndGrimePresets (list);
+
     // SOUL ENGINE character per category: emotion mapping + Divine Intervention mode
     struct SoulStyle { const char* cat; int mapping; const char* divine; };
     const SoulStyle styles[] = {
         { "Pad", 1, "Bloom" }, { "Ambient", 3, "Abyss" }, { "Vocal Texture", 3, "Ascension" },
         { "Bass", 2, "Shatter" }, { "808", 2, "Collapse" }, { "Experimental", 0, "Shatter" },
         { "Lead", 0, "Ascension" }, { "Pluck", 0, "Bloom" }, { "Bell", 1, "Ascension" }, { "Keys", 4, "Bloom" },
-        { "Arpeggio", 0, "Shatter" }, { "Percussion", 2, "Collapse" }, { "Cinematic", 1, "Abyss" }, { "FX", 1, "Collapse" } };
+        { "Arpeggio", 0, "Shatter" }, { "Percussion", 2, "Collapse" }, { "Cinematic", 1, "Abyss" }, { "FX", 1, "Collapse" },
+        { "Wave Lead", 0, "Ascension" }, { "Wave Pad", 1, "Bloom" }, { "Wave Bass", 2, "Shatter" }, { "Wave 808", 2, "Collapse" },
+        { "Wave Vox", 3, "Ascension" }, { "Wave Pluck", 0, "Bloom" }, { "Wave Bell", 1, "Abyss" }, { "Wave Atmos", 3, "Abyss" },
+        { "Wave Arp", 0, "Bloom" }, { "Grime Lead", 0, "Shatter" }, { "Grime Sub", 2, "Collapse" }, { "Grime Bass", 2, "Shatter" },
+        { "Grime Bell", 1, "Ascension" }, { "Grime Stab", 0, "Shatter" }, { "Grime Pluck", 0, "Shatter" }, { "Grime 808", 2, "Collapse" },
+        { "Grime Pad", 3, "Abyss" }, { "Grime Arp", 0, "Shatter" }, { "Grime FX", 1, "Collapse" } };
     for (auto& p : list)
         for (auto& st : styles)
             if (p.category == st.cat)

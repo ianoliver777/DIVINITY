@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(DIVINITY VERSION 0.4.1 LANGUAGES C CXX)
+project(DIVINITY VERSION 0.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -66,8 +66,10 @@ set(DIVINITY_CORE_SOURCES
     Source/DSP/FXChain.cpp
     Source/DSP/SoulEngine.cpp
     Source/DSP/FxCatalog.cpp
+    Source/DSP/Arpeggiator.cpp
     Source/Presets/PresetManager.cpp
     Source/Presets/FactoryPresets.cpp
+    Source/Presets/FactoryPresetsWave.cpp
     Source/PluginEditor.cpp
     Source/UI/DivinityLookAndFeel.cpp
     Source/UI/Components.cpp

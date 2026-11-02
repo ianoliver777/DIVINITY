@@ -297,7 +297,7 @@ SynthEngine::Voice* SynthEngine::findVoiceToSteal()
 
 void SynthEngine::noteOn (int note, float velocity)
 {
-    if (snap.voiceMode == (int) VoiceMode::Legato)
+    if (snap.voiceMode != (int) VoiceMode::Poly)
     {
         heldNotes.erase (std::remove (heldNotes.begin(), heldNotes.end(), note), heldNotes.end());
         if (heldNotes.size() < heldNotes.capacity()) heldNotes.push_back (note);
@@ -306,7 +306,7 @@ void SynthEngine::noteOn (int note, float velocity)
             if (voices[i].active && voices[i].keyDown) releaseVoice (voices[i]);
 
         auto& v = voices[0];
-        if (v.active && ! v.env[0].isReleasing() && heldNotes.size() > 1)
+        if (snap.voiceMode == (int) VoiceMode::Legato && v.active && ! v.env[0].isReleasing() && heldNotes.size() > 1)
         {
             // legato: change pitch without retriggering envelopes
             v.note = note; v.targetPitch = note; v.keyDown = true;
@@ -339,7 +339,7 @@ void SynthEngine::noteOn (int note, float velocity)
 
 void SynthEngine::noteOff (int note)
 {
-    if (snap.voiceMode == (int) VoiceMode::Legato)
+    if (snap.voiceMode != (int) VoiceMode::Poly)
     {
         heldNotes.erase (std::remove (heldNotes.begin(), heldNotes.end(), note), heldNotes.end());
         auto& v = voices[0];

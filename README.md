@@ -3,7 +3,7 @@
 **TRIPLE SEVEN AUDIO — Engineered to Feel.**
 Hybrid software synthesizer · VST3 / AU / Standalone · macOS (Apple Silicon + Intel) & Windows · JUCE / C++17
 
-Current version: **0.4.0 — 16-effect reorderable FX rack**. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
+Current version: **0.5.0 — arpeggiator, 220 presets (110 wave + 90 neogrime), collapsible Guardian Angel**. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
 
 ---
 
@@ -53,8 +53,10 @@ Push to GitHub and `.github/workflows/build.yml` builds a **universal macOS** zi
 ---
 
 ## Using it
+- **Top of the window (every tab):** workspace tabs + HIDE/SHOW ANGEL, then the preset bar: settings, import, save, undo/redo, category filter (WAVE / NEOGRIME / CLASSIC groups), preset browser, ARP on/off, POLY / MONO / LEGATO, voices and glide.
+- **Presets:** 220 factory presets. 110 wave (leads, pads, reese, 808s, vocal chops, plucks, bells, atmospheres, gated + pumping chords, arps), 90 neogrime (eski square leads, subs, growls, ice bells, stabs, metal plucks, 8-bit leads, 808s, pads, arps, sirens) and the 20 classics. Loudness-matched.
 - **CREATE** — the engine: oscillators, sub, noise, filter, amp envelope, LFO, macros, all envelopes/LFOs/matrix, quick FX + spectrum.
-- **EFFECTS** — the FX rack: 16 effects (EQ, compressor, saturation, distortion, bitcrusher, transient shaper, multiband, chorus, flanger, phaser, tremolo/autopan, ring mod, frequency shifter, delay, reverb, stereo tools). Drag rows (or use the arrows) to reorder; click a dot to switch an effect on. The order saves with presets and sessions and is undoable. The safety limiter always stays last. **PLAY** — preset browser, macros, performance controls, keyboard. **LAB** — matrix and deep settings.
+- **EFFECTS** — the FX rack: 16 effects (EQ, compressor, saturation, distortion, bitcrusher, transient shaper, multiband, chorus, flanger, phaser, tremolo/autopan, ring mod, frequency shifter, delay, reverb, stereo tools). Drag rows (or use the arrows) to reorder; click a dot to switch an effect on. The order saves with presets and sessions and is undoable. The safety limiter always stays last. **PLAY** — preset browser, arpeggiator (7 modes, synced rates incl. triplets/dotted, 1-4 octaves, gate, swing, latch), SOUL pad, macros, performance controls, keyboard. **LAB** — matrix and deep settings.
 - **Guardian Angel** (right side) — ask questions, describe a sound to build, get ideas, explain any control, randomize.
 - **SOUL** — drag the emotion pad (soft ↔ aggressive, melancholy ↔ euphoria), edit how each target responds, and hit **Divine Intervention** (Ascension / Collapse / Shatter / Bloom / Abyss).
 - Every control: hover for help · double-click to reset · shift-drag for fine · right-click to type a value.

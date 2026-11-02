@@ -30,7 +30,7 @@ namespace
             { { "mod matrix", "modulation", "matrix", "route", "routing" },
               "Open LAB (or the MATRIX tab on CREATE). Each row picks a source, a destination and an amount from -100% to +100%. Right-click an amount to type it or clear the row. Knobs that are being modulated show a bright outer ring." },
             { { "save", "preset", "favourite", "favorite" },
-              "Save with the disk icon in the bottom bar or the + next to the preset name. The heart marks favourites, and PLAY has a searchable browser with a Favourites filter. User presets live in Documents / TRIPLE SEVEN AUDIO / DIVINITY / Presets." },
+              "Save with the disk icon in the preset bar or the + next to the preset name. The heart marks favourites, and PLAY has a searchable browser with a Favourites filter. User presets live in Documents / TRIPLE SEVEN AUDIO / DIVINITY / Presets." },
             { { "undo", "redo", "mistake" },
               "Undo is Cmd/Ctrl+Z and redo is Cmd/Ctrl+Shift+Z, or use the arrows in the bottom bar. Everything I change for you is undoable too." },
             { { "wavetable", "position", "wt pos", "scan" },
@@ -43,6 +43,14 @@ namespace
               "ENV 1 shapes volume. ENV 2 and ENV 3 are free to route anywhere. For a pluck: ENV 2 with zero sustain and a short decay into Filter 1 Cutoff at about +50%. You can drag the points on any envelope display." },
             { { "lfo", "wobble", "sync" },
               "LFOs move things over time. Switch SYNC on to lock one to your project tempo; 1/8 into Filter 1 Cutoff is an instant wobble. SMOOTH rounds off sharp edges and DEPTH scales it everywhere it's routed." },
+            { { "arp", "arpeggi" },
+              "Hit ARP in the preset bar (it's there on every tab) and hold a chord. The full arpeggiator is on PLAY: Up, Down, Up/Down, Down/Up, Random, As Played and Chord modes, rate (T = triplet, D = dotted), octaves, gate, swing and LATCH to keep it going hands-free. It locks to your DAW's grid while the transport runs." },
+            { { "mono", "poly", "voice mode", "monophonic" },
+              "POLY / MONO / LEGATO sits in the preset bar on every tab. POLY plays chords. MONO plays one note at a time and restarts the envelopes on every key, great for punchy basses and eski leads. LEGATO also plays one note, but overlapping notes slide without restarting, perfect for 808 glides." },
+            { { "hide", "collapse", "go away", "smaller window", "minimi" },
+              "Hit HIDE ANGEL next to the tabs and I'll tuck myself away; the window gets narrower. SHOW ANGEL brings me back whenever you need me." },
+            { { "wave music", "neogrime", "grime", "eski", "barnacle" },
+              "DIVINITY ships with 110 wave presets (pads, supersaw leads, reese, 808s, vocal chops, plucks, bells, atmospheres, gated and pumping chords, arps) and 90 neogrime presets (eski square leads, subs, growls, ice bells, stabs, metal plucks, 8-bit leads, 808s, pads, arps, sirens). Pick WAVE or NEOGRIME in the category menu, or ask me for something like \"wave 808\" or \"grime bell\"." },
             { { "glide", "portamento", "legato", "slide" },
               "Set VOICES mode to LEGATO in LAB and raise GLIDE in the bottom bar: overlapping notes will slide instead of retriggering. 40-80 ms feels great on 808s and leads." },
             { { "cpu", "lag", "performance", "crackle" },
@@ -267,6 +275,31 @@ GuardianBrain::Reply GuardianBrain::createSound (const juce::String& raw)
     const auto q = raw.toLowerCase();
     struct Base { std::vector<const char*> words; const char* preset; const char* noun; };
     static const std::vector<Base> bases {
+        // wave + neogrime library first ("a+b" = both words must appear)
+        { { "grime+808", "eski+808" }, "Grime 808", "neogrime 808" },
+        { { "grime+sub", "eski+sub" }, "Pure Sub", "grime sub" },
+        { { "grime+bass", "eski+bass" }, "Concrete Growl", "grime bass" },
+        { { "grime+bell", "eski+bell", "ice bell" }, "Ice Bell", "ice bell" },
+        { { "grime+arp", "eski+arp" }, "Tick Tock", "grime arp" },
+        { { "grime+pad", "grime+atmos" }, "Grey Skies", "neogrime pad" },
+        { { "grime+pluck", "metal+pluck" }, "Clang Pluck", "metal pluck" },
+        { { "stab" }, "Cold Stab", "cold stab" },
+        { { "8-bit", "8 bit", "chiptune", "chip" }, "8-Bit Ghost", "8-bit lead" },
+        { { "siren" }, "Pirate Siren", "siren" },
+        { { "eski", "grime", "square lead" }, "Eskimo Ice", "eski lead" },
+        { { "wave+808" }, "Void 808", "wave 808" },
+        { { "wave+reese", "wave+bass" }, "Wave Reese", "wave reese" },
+        { { "wave+pluck" }, "Crystal Rain", "wave pluck" },
+        { { "wave+bell" }, "Mourning Bell", "wave bell" },
+        { { "wave+arp" }, "Falling Stars", "wave arp" },
+        { { "wave+vox", "wave+vocal", "wave+choir", "vocal chop", "vox chop" }, "Angel Chop", "vocal chop lead" },
+        { { "wave+lead", "wave+supersaw" }, "Into The Void", "wave lead" },
+        { { "wave+pad", "ethereal" }, "Seraph Bloom", "wave pad" },
+        { { "wave+atmos", "wave+ambient" }, "Northern Lights", "wave atmosphere" },
+        { { "gated", "trance gate" }, "Strobe Heaven", "gated pad" },
+        { { "pump", "sidechain" }, "Pulse Of Heaven", "pumping chords" },
+        { { "screech", "scream" }, "Banshee", "screech lead" },
+        { { "wave music", "wavey" }, "Seraph Bloom", "wave pad" },
         { { "808" }, "808 Boom", "808" },
         { { "kick", "drum" }, "Punch Kick", "kick" },
         { { "wobble", "dubstep", "riddim" }, "Wobble Machine", "wobble bass" },
@@ -292,7 +325,12 @@ GuardianBrain::Reply GuardianBrain::createSound (const juce::String& raw)
     const Base* base = nullptr;
     for (auto& b : bases)
     {
-        for (auto* w : b.words) if (q.contains (w)) { base = &b; break; }
+        for (auto* w : b.words)
+        {
+            bool all = true;
+            for (auto& part : juce::StringArray::fromTokens (w, "+", "")) all &= q.contains (part);
+            if (all) { base = &b; break; }
+        }
         if (base != nullptr) break;
     }
     if (base == nullptr)

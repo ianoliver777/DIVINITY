@@ -688,7 +688,7 @@ void FxSection::resized()
 GlobalSection::GlobalSection (DivinityProcessor& p)
     : Panel ("GLOBAL"),
       voices (p.apvts, ids::voices), bend (p.apvts, ids::bendRange), glide (p.apvts, ids::glide), tune (p.apvts, ids::masterTune),
-      mode (p.apvts, ids::voiceMode, { "POLY", "LEGATO" })
+      mode (p.apvts, ids::voiceMode, { "POLY", "MONO", "LEGATO" }, { 0, 2, 1 })
 {
     for (auto* c : std::initializer_list<juce::Component*> { &voices, &bend, &glide, &tune, &mode }) addAndMakeVisible (c);
 }

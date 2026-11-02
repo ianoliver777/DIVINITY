@@ -12,7 +12,10 @@ class DivinityEditor : public juce::AudioProcessorEditor,
                        private juce::ChangeListener
 {
 public:
-    static constexpr int kBaseWidth = 1536, kBaseHeight = 934;
+    static constexpr int kBaseWidth = 1536, kCompactWidth = 1276, kBaseHeight = 934;
+    /** Width of the unscaled layout: full with Guardian Angel open, compact with it collapsed. */
+    int getBaseWidth() const noexcept { return proc.uiAngelOpen ? kBaseWidth : kCompactWidth; }
+    void setAngelOpen (bool open);
 
     explicit DivinityEditor (DivinityProcessor&);
     ~DivinityEditor() override;
@@ -54,6 +57,9 @@ private:
     void savePresetDialog();
     void importPreset();
     void setUiScale (float s);
+    void applySizeLimits();
+    void updateAngelToggleText();
+    juce::Rectangle<int> presetBox;
     juce::Array<int> presetsInCategory() const;
 
     DivinityProcessor& proc;
@@ -65,6 +71,7 @@ private:
     ui::IconButton menu, prevPreset, nextPreset, savePlus;
     juce::TextButton presetName;
     juce::OwnedArray<juce::TextButton> tabs;
+    juce::TextButton angelToggle { "ANGEL" };
 
     // pages + angel
     ui::CreatePage createPage;
@@ -79,6 +86,9 @@ private:
     ui::IconButton settings, folder, save, undo, redo;
     juce::TextButton presetCount, category;
     ui::NumberBox voices, glide;
+    ui::SegmentedChoice voiceMode;
+    juce::TextButton arpButton { "ARP" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> arpAttach;
 
     std::unique_ptr<juce::FileChooser> chooser;
     juce::String categoryFilter { "ALL" };

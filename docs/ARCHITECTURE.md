@@ -117,6 +117,12 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 ### Guardian Angel (v0.3.0)
 - Fully offline. Answers questions from a knowledge base + every parameter's help text; builds sounds from plain-English descriptions (type + vibe words → factory base + SOUL/macro/mod adjustments); suggests one idea at a time with one-click DO IT; musically-safe randomiser (all outputs tested audible, finite and under the ceiling); explain mode (click any control); "make it brighter / wider / grittier..." tweaks. Every change is undoable.
 
+### v0.5.0
+- **Arpeggiator** (`DSP/Arpeggiator`): rewrites the MIDI buffer before the engine. Up, Down, Up/Down, Down/Up, Random (no back-to-back repeats), As Played, Chord; 12 synced rates; 1-4 octaves; gate; swing; latch. Follows the host grid while the transport plays (starts on the next step), free-runs from the first key otherwise. Fixed-size storage, no allocation on the audio thread. Turning it off hands held keys back to the synth so nothing hangs.
+- **Voice modes:** Poly, Legato, Mono (appended so old sessions keep their meaning). Mono retriggers envelopes from their current level (click-free); Legato slides without retriggering.
+- **Layout:** tabs row, then the preset bar, both global. Guardian Angel collapses: the editor switches between 1536 and 1276 base width at the same scale. Default scale is now 100%.
+- **Presets:** `FactoryPresetsWave.cpp` builds 200 sounds from 23 archetypes plus named traits; every trait is an audible parameter change and the description/tags are generated from the same traits. Levels are trimmed from measured renders (`FactoryPresetsWaveLevels.inc`) to a common peak.
+
 ### FX rack (v0.4.0)
 - 16 modules in `FxCatalog`; each has a stable key (`eq`, `comp`, `sat`, `dist`, `crush`, `trans`, `mb`, `chorus`, `flanger`, `phaser`, `trem`, `ring`, `fshift`, `delay`, `reverb`, `stereo`) and stable parameter IDs. Older parameter IDs (sat/chorus/delay/reverb) are unchanged, so v0.3 sessions load.
 - The order lives as the `fxOrder` property on the APVTS state (undoable, saved in sessions and preset files; factory presets use the default order). Bad or partial orders are repaired to a full permutation.
