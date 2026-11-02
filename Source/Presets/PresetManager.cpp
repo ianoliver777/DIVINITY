@@ -1,4 +1,5 @@
 #include "PresetManager.h"
+#include "../DSP/FxCatalog.h"
 
 namespace divinity
 {
@@ -82,6 +83,7 @@ void PresetManager::parameterValueChanged (int, float)
 
 void PresetManager::setAllToDefault()
 {
+    apvts.state.setProperty (fxOrderProperty, defaultFxOrder().joinIntoString (","), nullptr);
     for (auto* p : apvts.processor.getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
             rp->setValueNotifyingHost (rp->getDefaultValue());
@@ -164,6 +166,7 @@ std::unique_ptr<juce::XmlElement> PresetManager::createPresetXml (const PresetIn
     xml->setAttribute ("category", info.category);
     xml->setAttribute ("tags", info.tags);
     xml->setAttribute ("description", info.description);
+    xml->setAttribute ("fxOrder", sanitiseFxOrder (juce::StringArray::fromTokens (apvts.state.getProperty (fxOrderProperty).toString(), ",", "")).joinIntoString (","));
     auto* params = xml->createNewChildElement ("Params");
     for (auto* p : apvts.processor.getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
@@ -184,6 +187,8 @@ bool PresetManager::applyPresetXml (const juce::XmlElement& xml)
 
     const bool wasLoading = loading.exchange (true);
     setAllToDefault();
+    if (xml.hasAttribute ("fxOrder"))
+        apvts.state.setProperty (fxOrderProperty, sanitiseFxOrder (juce::StringArray::fromTokens (xml.getStringAttribute ("fxOrder"), ",", "")).joinIntoString (","), nullptr);
     for (auto* e : params->getChildWithTagNameIterator ("P"))
         if (auto* p = apvts.getParameter (e->getStringAttribute ("id")))
             p->setValueNotifyingHost (p->convertTo0to1 ((float) e->getDoubleAttribute ("v")));

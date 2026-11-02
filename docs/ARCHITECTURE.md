@@ -23,7 +23,8 @@ Source/
 │  ├─ DSPCore.h             Envelope, LFO, ZDF SVF, ZDF ladder, comb, noise, PolyBLEP, RNG
 │  ├─ Wavetables.h/.cpp     Factory wavetable bank, band-limited mipmaps (shared across instances)
 │  ├─ SynthEngine.h/.cpp    Voices, unison, glide/legato, mod matrix, sample-accurate MIDI
-│  └─ FXChain.h/.cpp        Saturation (ADAA), chorus, delay, reverb, limiter, master
+│  ├─ FxCatalog.h/.cpp      The 16 rack effects: keys, names, parameters, help, default order
+│  └─ FXChain.h/.cpp        Reorderable rack (lock-free order handoff, per-module bypass crossfade), limiter, master
 ├─ Assistant/
 │  └─ GuardianBrain.h/.cpp  Guardian Angel's offline brain: knowledge base, sound recipes, ideas, safe randomiser
 ├─ Presets/
@@ -116,9 +117,14 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 ### Guardian Angel (v0.3.0)
 - Fully offline. Answers questions from a knowledge base + every parameter's help text; builds sounds from plain-English descriptions (type + vibe words → factory base + SOUL/macro/mod adjustments); suggests one idea at a time with one-click DO IT; musically-safe randomiser (all outputs tested audible, finite and under the ceiling); explain mode (click any control); "make it brighter / wider / grittier..." tweaks. Every change is undoable.
 
+### FX rack (v0.4.0)
+- 16 modules in `FxCatalog`; each has a stable key (`eq`, `comp`, `sat`, `dist`, `crush`, `trans`, `mb`, `chorus`, `flanger`, `phaser`, `trem`, `ring`, `fshift`, `delay`, `reverb`, `stereo`) and stable parameter IDs. Older parameter IDs (sat/chorus/delay/reverb) are unchanged, so v0.3 sessions load.
+- The order lives as the `fxOrder` property on the APVTS state (undoable, saved in sessions and preset files; factory presets use the default order). Bad or partial orders are repaired to a full permutation.
+- The audio thread picks up a new order with a try-lock and never waits. Every module crossfades in and out (~20 ms) so switching mid-note doesn't click. Modules that are off cost nothing.
+- Distortion uses first-order ADAA shapers; the frequency shifter is a Hilbert-pair design; the multiband is a 3-band Linkwitz-Riley up/down compressor.
+
 ### Known limitations (honest list)
 - Wavefold isn't oversampled yet → some aliasing at high fold on high notes (Phase 2, M11).
-- FX order is fixed (sat → chorus → delay → reverb → limiter); drag-reorder comes with the full rack in Phase 4.
 - Reverb is JUCE's Freeverb-style reverb — fine for Phase 1, will be replaced by a custom design.
 - Filter display draws the analog prototype response (very close, not bit-exact above ~10 kHz).
 - No MIDI learn or MPE yet. AU and Windows builds are produced by CI and haven't been run in a real DAW by us.

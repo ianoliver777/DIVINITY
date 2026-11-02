@@ -1,5 +1,6 @@
 #include "Parameters.h"
 #include "DSP/SoulEngine.h"
+#include "DSP/FxCatalog.h"
 
 namespace divinity
 {
@@ -339,6 +340,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     }
 
     addSoulParameters (layout);
+    addFxRackParameters (layout);
     return layout;
 }
 
@@ -451,7 +453,7 @@ juce::String helpTextFor (const juce::String& id)
     if (id == ids::master)     return "Master Volume: final output level.";
     if (id == ids::masterTune) return "Master Tune: shifts the tuning of the whole instrument in cents.";
     if (id == ids::limCeiling) return "Limiter Ceiling: the loudest the output is allowed to get.";
-    return {};
+    return fxHelpText (id);
 }
 
 } // namespace divinity

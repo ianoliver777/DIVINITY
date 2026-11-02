@@ -507,6 +507,110 @@ static void testSoul (DivinityProcessor& p)
     CHECK (std::abs (q.apvts.getRawParameterValue (ids::soul (3, "y"))->load() + 0.83f) < 1.0e-3f, "custom emotion mapping recalls with the session");
 }
 
+//==============================================================================
+static float maxDiff (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b)
+{
+    float d = 0;
+    for (int ch = 0; ch < 2; ++ch)
+        for (int i = 0; i < juce::jmin (a.getNumSamples(), b.getNumSamples()); ++i)
+            d = std::max (d, std::abs (a.getSample (ch, i) - b.getSample (ch, i)));
+    return d;
+}
+
+static void allFxOff (DivinityProcessor& p)
+{
+    for (auto& d : fxCatalog()) setP (p, d.onID, 0);
+}
+
+static void testFxRack (DivinityProcessor& p)
+{
+    std::cout << "\n== FX rack: every module, ordering, recall, bypass\n";
+    const auto& cat = fxCatalog();
+    CHECK (cat.size() == 16, "16 rack effects (" << (int) cat.size() << ")");
+    CHECK (defaultFxOrder().size() == (int) cat.size(), "default order covers every effect");
+
+    const std::vector<Note> chord { { 0.0, 0.9, 48, 0.9f }, { 0.05, 0.85, 55, 0.8f }, { 0.1, 0.8, 64, 0.8f } };
+    int working = 0;
+    for (auto& d : cat)
+    {
+        cleanPatch (p); allFxOff (p);
+        auto dry = render (p, 48000, 256, 1.2, chord);
+        // push every control off its (often neutral) default
+        for (auto& k : d.knobs)
+            if (auto* prm = p.apvts.getParameter (k.id)) prm->setValueNotifyingHost (k.bipolar ? 0.85f : 0.75f);
+        setP (p, d.onID, 1);
+        auto wet = render (p, 48000, 256, 1.2, chord);
+        const float diff = maxDiff (dry, wet);
+        const bool finite = allFinite (wet);
+        float peak = 0; for (int ch = 0; ch < 2; ++ch) peak = std::max (peak, wet.getMagnitude (ch, 0, wet.getNumSamples()));
+        const bool ok = finite && diff > 1.0e-3f && peak < 8.0f;
+        if (ok) ++working;
+        else INFO ("  " << d.name << ": finite " << (int) finite << " diff " << diff << " peak " << peak);
+        // switching it back off restores the dry sound exactly
+        setP (p, d.onID, 0);
+        auto again = render (p, 48000, 256, 1.2, chord);
+        CHECK (maxDiff (dry, again) < 1.0e-5f, d.name << ": switching off restores the dry signal");
+    }
+    CHECK (working == (int) cat.size(), "every effect is finite, bounded and audibly changes the sound (" << working << "/" << (int) cat.size() << ")");
+
+    // order matters: distortion -> reverb is not reverb -> distortion
+    cleanPatch (p); allFxOff (p);
+    setP (p, fxids::distOn, 1); setP (p, fxids::distDrive, 0.8f); setP (p, fxids::distMix, 1.0f);
+    setP (p, ids::revOn, 1); setP (p, ids::revMix, 0.6f);
+    auto order = defaultFxOrder();
+    order.removeString ("dist"); order.insert (order.indexOf ("reverb"), "dist");
+    p.setFxOrder (order, false);
+    auto a = render (p, 48000, 256, 1.2, chord);
+    order.removeString ("dist"); order.add ("dist");
+    p.setFxOrder (order, false);
+    auto b = render (p, 48000, 256, 1.2, chord);
+    CHECK (maxDiff (a, b) > 1.0e-2f, "changing the chain order changes the sound (diff " << maxDiff (a, b) << ")");
+    CHECK (p.getFxOrder() == order, "processor reports the order it was given");
+
+    // garbage / partial orders are repaired
+    p.setFxOrder (juce::StringArray { "reverb", "nonsense", "reverb", "sat" }, false);
+    auto fixed = p.getFxOrder();
+    CHECK (fixed.size() == (int) cat.size() && fixed[0] == "reverb" && fixed[1] == "sat", "bad orders are sanitised to a full permutation");
+    for (auto& d : cat) CHECK (fixed.contains (d.key), "sanitised order contains " << d.key);
+
+    // recall: host state
+    p.setFxOrder (order, false);
+    juce::MemoryBlock state; p.getStateInformation (state);
+    DivinityProcessor q;
+    q.setStateInformation (state.getData(), (int) state.getSize());
+    CHECK (q.getFxOrder() == order, "chain order restored from host state");
+
+    // recall: preset XML, and factory presets reset to the default order
+    PresetInfo info; info.name = "order test";
+    auto xml = p.presets.createPresetXml (info);
+    p.presets.loadPreset (0);
+    CHECK (p.getFxOrder() == defaultFxOrder(), "factory preset loads the default order");
+    p.presets.applyPresetXml (*xml);
+    CHECK (p.getFxOrder() == order, "chain order restored from a preset file");
+
+    // order change is undoable and marks the preset modified
+    p.presets.loadPreset (0);
+    p.undo.beginNewTransaction();
+    auto moved = defaultFxOrder(); moved.move (0, 5);
+    p.setFxOrder (moved);
+    CHECK (p.presets.isModified(), "reordering marks the preset modified");
+    p.undo.undo();
+    CHECK (p.getFxOrder() == defaultFxOrder(), "reordering can be undone");
+
+    // bypass crossfade: switching an effect on mid-note does not click
+    cleanPatch (p); allFxOff (p);
+    setChoice (p, ids::osc (0, "engine"), "Analog"); setChoice (p, ids::osc (0, "wave"), "Sine");
+    setChoice (p, fxids::distType, "Tube"); setP (p, fxids::distDrive, 0.6f); setP (p, fxids::distMix, 1.0f);
+    auto sw = render (p, 48000, 128, 1.0, { { 0.0, 2.0, 57, 0.9f } }, [&] (int blk) { if (blk == 200) setP (p, fxids::distOn, 1); });
+    auto on = render (p, 48000, 128, 1.0, { { 0.0, 2.0, 57, 0.9f } });
+    setP (p, fxids::distOn, 0);
+    auto off = render (p, 48000, 128, 1.0, { { 0.0, 2.0, 57, 0.9f } });
+    auto steepest = [] (const juce::AudioBuffer<float>& x, int from, int to)
+    { float m = 0; for (int i = from; i < to; ++i) m = std::max (m, std::abs (x.getSample (0, i) - x.getSample (0, i - 1))); return m; };
+    const float swStep = steepest (sw, 24000, 30000), ref = std::max (steepest (on, 24000, 30000), steepest (off, 24000, 30000));
+    CHECK (swStep <= ref * 1.15f, "switching an effect on mid-note is click-free (" << swStep << " vs " << ref << ")");
+}
+
 static void testFuzzAndExtremes (DivinityProcessor& p)
 {
     std::cout << "\n== Extreme / random parameter fuzzing + rapid automation\n";
@@ -761,6 +865,7 @@ int main (int argc, char** argv)
         testMidi (p);
         testSoul (p);
         testGuardianAngel (p);
+        testFxRack (p);
         testFuzzAndExtremes (p);
         testRatesAndBuffers (p);
         testLongNotesAndSilence (p);

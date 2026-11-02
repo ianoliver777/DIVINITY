@@ -547,98 +547,94 @@ namespace
     };
 
     //--------------------------------------------------------------------------
-    struct FxModuleDef
-    {
-        const char* name; juce::String onID; const char* description;
-        std::vector<std::pair<juce::String, const char*>> knobs;
-        juce::String choiceID; juce::String toggleID; const char* toggleLabel;
-    };
-
-    const std::vector<FxModuleDef>& fxModules()
-    {
-        static const std::vector<FxModuleDef> m {
-            { "Saturation", ids::satOn, "Warm, anti-aliased harmonic drive. A touch adds presence, a lot adds teeth.",
-              { { ids::satDrive, "Drive" }, { ids::satMix, "Mix" } }, {}, {}, nullptr },
-            { "Chorus", ids::choOn, "Detuned copies drifting around the dry signal for width and shimmer.",
-              { { ids::choRate, "Rate" }, { ids::choDepth, "Depth" }, { ids::choMix, "Mix" } }, {}, {}, nullptr },
-            { "Delay", ids::dlyOn, "Tempo-synced echoes, ping-pong across the stereo field, darkening with each repeat.",
-              { { ids::dlyFeedback, "Feedback" }, { ids::dlyMix, "Mix" }, { ids::dlyTone, "Tone" } }, ids::dlyDiv, ids::dlyPingPong, "PING-PONG" },
-            { "Reverb", ids::revOn, "A lush stereo room, from small chambers to endless halls.",
-              { { ids::revSize, "Size" }, { ids::revDamp, "Damping" }, { ids::revWidth, "Width" }, { ids::revMix, "Mix" } }, {}, {}, nullptr },
-            { "Limiter", ids::limOn, "The safety net: catches peaks so nothing ever clips your DAW.",
-              { { ids::limCeiling, "Ceiling" } }, {}, {}, nullptr },
-        };
-        return m;
-    }
-
-    /** All controls for one FX module (used by the CREATE quick panel and the EFFECTS page). */
+    /** All controls for one rack module, built from the FX catalogue. */
     struct FxModuleControls
     {
-        FxModuleControls (APVTS& s, const FxModuleDef& d) : def (d), power (s, d.onID)
+        FxModuleControls (APVTS& s, const FxDef& d, int maxKnobs = 99, bool withExtras = true) : def (d), power (s, d.onID)
         {
-            for (auto& [id, cap] : d.knobs) { knobs.add (new Knob (s, id, cap)); knobs.getLast()->setCaptionSize (11.5f); }
-            if (d.choiceID.isNotEmpty()) choice = std::make_unique<ChoiceBox> (s, d.choiceID);
-            if (d.toggleID.isNotEmpty())
+            for (auto& k : d.knobs)
             {
-                toggle = std::make_unique<juce::TextButton> (d.toggleLabel);
-                toggle->setClickingTogglesState (true);
-                toggle->setTooltip (helpTextFor (d.toggleID));
-                toggleAttach = std::make_unique<APVTS::ButtonAttachment> (s, d.toggleID, *toggle);
+                if (knobs.size() >= maxKnobs) break;
+                knobs.add (new Knob (s, k.id, k.label, ModDest::None, 1.0f, k.bipolar));
+                knobs.getLast()->setCaptionSize (11.5f);
+            }
+            if (! withExtras) return;
+            for (auto& id : d.choices)
+            {
+                choices.add (new ChoiceBox (s, id));
+                auto name = s.getParameter (id)->getName (64);
+                choiceLabels.add (name.fromFirstOccurrenceOf (" ", false, false).toUpperCase());
+            }
+            for (auto& [id, label] : d.toggles)
+            {
+                auto* b = toggles.add (new juce::TextButton (label));
+                b->setClickingTogglesState (true);
+                b->setTooltip (helpTextFor (id));
+                toggleAttach.push_back (std::make_unique<APVTS::ButtonAttachment> (s, id, *b));
             }
         }
         void addTo (juce::Component& parent)
         {
             parent.addAndMakeVisible (power);
             for (auto* k : knobs) parent.addAndMakeVisible (k);
-            if (choice) parent.addAndMakeVisible (*choice);
-            if (toggle) parent.addAndMakeVisible (*toggle);
+            for (auto* c : choices) parent.addAndMakeVisible (c);
+            for (auto* t : toggles) parent.addAndMakeVisible (t);
         }
         void setVisible (bool v)
         {
             power.setVisible (v);
             for (auto* k : knobs) k->setVisible (v);
-            if (choice) choice->setVisible (v);
-            if (toggle) toggle->setVisible (v);
+            for (auto* c : choices) c->setVisible (v);
+            for (auto* t : toggles) t->setVisible (v);
         }
-        const FxModuleDef& def;
+        const FxDef& def;
         PowerButton power;
         juce::OwnedArray<Knob> knobs;
-        std::unique_ptr<ChoiceBox> choice;
-        std::unique_ptr<juce::TextButton> toggle;
-        std::unique_ptr<APVTS::ButtonAttachment> toggleAttach;
+        juce::OwnedArray<ChoiceBox> choices;
+        juce::StringArray choiceLabels;
+        juce::OwnedArray<juce::TextButton> toggles;
+        std::vector<std::unique_ptr<APVTS::ButtonAttachment>> toggleAttach;   // destroyed before the buttons
     };
 
-    class FxQuick : public Panel
+    class FxQuick : public Panel, private juce::Timer
     {
     public:
-        explicit FxQuick (DivinityProcessor& p) : analyzer (p), meter (p, true)
+        explicit FxQuick (DivinityProcessor& p) : apvts (p.apvts), analyzer (p), meter (p, true)
         {
-            for (auto& d : fxModules())
+            for (auto& d : fxCatalog())
             {
-                modules.add (new FxModuleControls (p.apvts, d));
+                modules.add (new FxModuleControls (p.apvts, d, 8, false));
                 modules.getLast()->addTo (*this);
-                selector.addItem (d.name, selector.getNumItems() + 1);
             }
-            selector.setTooltip ("Choose which effect to edit here. The full chain is on the EFFECTS tab.");
-            selector.onChange = [this] { select (selector.getSelectedItemIndex()); };
+            rebuildMenu();
+            selector.setTooltip ("Choose which effect to edit here. Reorder the chain and see every setting on the EFFECTS tab.");
+            selector.onChange = [this] { select (selector.getSelectedId() - 1); };
             addAndMakeVisible (selector);
             addAndMakeVisible (analyzer);
             addAndMakeVisible (meter);
-            selector.setSelectedItemIndex (3, juce::sendNotificationSync);
+            select (fxIndexForKey ("reverb"));
+            startTimerHz (4);
         }
         void select (int i)
         {
-            current = juce::jmax (0, i);
+            current = juce::jlimit (0, modules.size() - 1, i);
+            selector.setSelectedId (current + 1, juce::dontSendNotification);
             for (int k = 0; k < modules.size(); ++k) modules[k]->setVisible (k == current);
             resized(); repaint();
         }
         void paint (juce::Graphics& g) override
         {
             Panel::paint (g);
-            drawSectionTitle (g, { 236, 10, 300, 24 }, juce::String (fxModules()[(size_t) current].name).toUpperCase());
             g.setColour (textDim);
             g.setFont (font (11.0f, Weight::Medium, 0.1f));
             g.drawText ("OUTPUT SPECTRUM", analyzer.getX(), 14, 200, 16, juce::Justification::centredLeft);
+            const auto& d = fxCatalog()[(size_t) current];
+            if ((int) d.knobs.size() > modules[current]->knobs.size() || ! d.choices.empty() || ! d.toggles.empty())
+            {
+                g.setColour (textFaint);
+                g.setFont (font (10.5f));
+                g.drawText ("More settings on the EFFECTS tab", 236, 14, 200, 16, juce::Justification::centredLeft);
+            }
         }
         void resized() override
         {
@@ -649,25 +645,35 @@ namespace
             for (auto* m : modules)
             {
                 m->power.setBounds (12, 11, 24, 24);
-                int x = 8, y = 46;
-                const int kw = 96, kh = 74;
-                for (auto* k : m->knobs)
-                {
-                    k->setBounds (x, y, kw, kh);
-                    x += kw + 8;
-                    if (x + kw > 330) { x = 8; y += kh + 4; }
-                }
-                int cy = h - 38;
-                if (m->choice) { m->choice->setBounds (12, cy, 140, 26); }
-                if (m->toggle) { m->toggle->setBounds (160, cy, 130, 26); }
+                for (int k = 0; k < m->knobs.size(); ++k)
+                    m->knobs[k]->setBounds (6 + (k % 4) * 80, 42 + (k / 4) * 74, 80, 72);
             }
         }
     private:
+        void rebuildMenu()
+        {
+            selector.clear (juce::dontSendNotification);
+            const auto& c = fxCatalog();
+            for (int i = 0; i < (int) c.size(); ++i)
+            {
+                const bool on = apvts.getRawParameterValue (c[(size_t) i].onID)->load() > 0.5f;
+                selector.addItem (juce::String (c[(size_t) i].name) + (on ? juce::String (juce::CharPointer_UTF8 ("  \xe2\x97\x8f")) : juce::String()), i + 1);
+            }
+            selector.setSelectedId (current + 1, juce::dontSendNotification);
+        }
+        void timerCallback() override
+        {
+            int mask = 0;
+            const auto& c = fxCatalog();
+            for (int i = 0; i < (int) c.size(); ++i) if (apvts.getRawParameterValue (c[(size_t) i].onID)->load() > 0.5f) mask |= 1 << i;
+            if (mask != lastMask && ! selector.isPopupActive()) { lastMask = mask; rebuildMenu(); }
+        }
+        APVTS& apvts;
         juce::ComboBox selector;
         juce::OwnedArray<FxModuleControls> modules;
         SpectrumAnalyzer analyzer;
         LevelMeter meter;
-        int current = 0;
+        int current = 0, lastMask = -1;
     };
 }
 
@@ -721,10 +727,158 @@ void CreatePage::resized()
 //==============================================================================
 namespace
 {
-    class FxModulePanel : public Panel
+    /** Drag-to-reorder chain list. Click a row to edit it, click its dot to switch it on/off. */
+    class ChainList : public Panel, public juce::SettableTooltipClient, private juce::Timer
     {
     public:
-        FxModulePanel (DivinityProcessor& p, const FxModuleDef& d) : Panel (juce::String (d.name).toUpperCase()), ctl (p.apvts, d)
+        explicit ChainList (DivinityProcessor& p) : Panel ("FX CHAIN"), proc (p)
+        {
+            up.setButtonText (juce::String (juce::CharPointer_UTF8 ("\xe2\x96\xb2")));
+            down.setButtonText (juce::String (juce::CharPointer_UTF8 ("\xe2\x96\xbc")));
+            up.setTooltip ("Move the selected effect earlier in the chain.");
+            down.setTooltip ("Move the selected effect later in the chain.");
+            up.onClick = [this] { move (-1); };
+            down.onClick = [this] { move (1); };
+            addAndMakeVisible (up); addAndMakeVisible (down);
+            setTooltip ("Drag effects to reorder the chain. Click a dot to switch an effect on or off.");
+            startTimerHz (8);
+        }
+        std::function<void (int)> onSelect;   // catalogue index
+        int selected = 0;
+
+        void paint (juce::Graphics& g) override
+        {
+            Panel::paint (g);
+            const auto order = proc.getFxOrder();
+            const auto& cat = fxCatalog();
+            for (int r = 0; r < order.size(); ++r)
+            {
+                const int idx = fxIndexForKey (order[r]);
+                auto row = rowBounds (r).toFloat();
+                if (dragFrom == r && dragging) { g.setColour (accent.withAlpha (0.08f)); g.fillRoundedRectangle (row, 5.0f); continue; }
+                const bool on = proc.apvts.getRawParameterValue (cat[(size_t) idx].onID)->load() > 0.5f;
+                const bool sel = idx == selected;
+                g.setColour (sel ? juce::Colour (0xff0d2b52) : panel2.withAlpha (0.55f));
+                g.fillRoundedRectangle (row, 5.0f);
+                g.setColour (sel ? accent : border);
+                g.drawRoundedRectangle (row, 5.0f, sel ? 1.2f : 1.0f);
+                // grip
+                g.setColour (textFaint);
+                for (int d = 0; d < 3; ++d) for (int e = 0; e < 2; ++e)
+                    g.fillEllipse (row.getX() + 9.0f + e * 5.0f, row.getCentreY() - 6.0f + d * 5.0f, 2.2f, 2.2f);
+                g.setFont (font (11.0f, Weight::Medium));
+                g.setColour (textFaint);
+                g.drawText (juce::String (r + 1), (int) row.getX() + 22, (int) row.getY(), 22, (int) row.getHeight(), juce::Justification::centredRight);
+                g.setFont (font (14.0f, Weight::Medium));
+                g.setColour (on ? text : textDim);
+                g.drawText (cat[(size_t) idx].name, (int) row.getX() + 52, (int) row.getY(), 170, (int) row.getHeight(), juce::Justification::centredLeft);
+                auto dot = dotBounds (r).toFloat();
+                if (on) { g.setColour (accent.withAlpha (0.3f)); g.fillEllipse (dot.expanded (3.0f)); }
+                g.setColour (on ? accent : textFaint);
+                g.fillEllipse (dot);
+            }
+            if (dragging)
+            {
+                const int target = targetIndex();
+                const float y = (float) rowBounds (juce::jmin (target, order.size() - 1)).getY() + (target >= order.size() ? 36.0f : 0.0f) - 2.0f;
+                g.setColour (accent);
+                g.fillRoundedRectangle (10.0f, y, (float) getWidth() - 20.0f, 3.0f, 1.5f);
+                auto ghost = juce::Rectangle<float> (10.0f, (float) dragY - 17.0f, (float) getWidth() - 20.0f, 34.0f);
+                g.setColour (juce::Colour (0xee12407a));
+                g.fillRoundedRectangle (ghost, 5.0f);
+                g.setColour (accent); g.drawRoundedRectangle (ghost, 5.0f, 1.2f);
+                g.setColour (text); g.setFont (font (14.0f, Weight::Medium));
+                g.drawText (cat[(size_t) fxIndexForKey (order[dragFrom])].name, ghost.withTrimmedLeft (52.0f), juce::Justification::centredLeft);
+            }
+            g.setColour (textFaint);
+            g.setFont (font (11.0f));
+            g.drawText ("Output -> Limiter (always last)", 16, getHeight() - 26, getWidth() - 32, 16, juce::Justification::centredLeft);
+        }
+        void resized() override
+        {
+            up.setBounds (getWidth() - 74, 9, 30, 26);
+            down.setBounds (getWidth() - 40, 9, 30, 26);
+        }
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            dragFrom = rowAt (e.y); dragging = false; dragY = e.y;
+            if (dragFrom < 0) return;
+            const auto order = proc.getFxOrder();
+            const int idx = fxIndexForKey (order[dragFrom]);
+            if (dotBounds (dragFrom).expanded (6).contains (e.getPosition()))
+            {
+                auto* prm = proc.apvts.getParameter (fxCatalog()[(size_t) idx].onID);
+                prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->getValue() > 0.5f ? 0.0f : 1.0f); prm->endChangeGesture();
+                dragFrom = -1;
+            }
+            selected = idx;
+            if (onSelect) onSelect (idx);
+            repaint();
+        }
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            if (dragFrom < 0) return;
+            if (! dragging && std::abs (e.getDistanceFromDragStartY()) > 4) dragging = true;
+            dragY = juce::jlimit (40, getHeight() - 30, e.y);
+            repaint();
+        }
+        void mouseUp (const juce::MouseEvent&) override
+        {
+            if (dragging && dragFrom >= 0)
+            {
+                auto order = proc.getFxOrder();
+                int target = targetIndex();
+                const auto key = order[dragFrom];
+                order.remove (dragFrom);
+                if (target > dragFrom) --target;
+                order.insert (juce::jlimit (0, order.size(), target), key);
+                proc.setFxOrder (order);
+            }
+            dragging = false; dragFrom = -1;
+            repaint();
+        }
+
+    private:
+        juce::Rectangle<int> rowBounds (int r) const { return { 10, 44 + r * 38, getWidth() - 20, 34 }; }
+        juce::Rectangle<int> dotBounds (int r) const { auto rb = rowBounds (r); return { rb.getRight() - 24, rb.getCentreY() - 5, 10, 10 }; }
+        int rowAt (int y) const
+        {
+            const int n = proc.getFxOrder().size();
+            for (int r = 0; r < n; ++r) if (rowBounds (r).getY() <= y && y < rowBounds (r).getBottom() + 4) return r;
+            return -1;
+        }
+        int targetIndex() const
+        {
+            const int n = proc.getFxOrder().size();
+            return juce::jlimit (0, n, (dragY - 44 + 19) / 38);
+        }
+        void move (int delta)
+        {
+            auto order = proc.getFxOrder();
+            const int r = order.indexOf (fxCatalog()[(size_t) selected].key);
+            const int t = r + delta;
+            if (r < 0 || t < 0 || t >= order.size()) return;
+            order.move (r, t);
+            proc.setFxOrder (order);
+            repaint();
+        }
+        void timerCallback() override
+        {
+            juce::String sig = proc.getFxOrder().joinIntoString (",");
+            for (auto& d : fxCatalog()) sig << (proc.apvts.getRawParameterValue (d.onID)->load() > 0.5f ? "1" : "0");
+            if (sig != lastSig) { lastSig = sig; repaint(); }
+        }
+        DivinityProcessor& proc;
+        juce::TextButton up, down;
+        int dragFrom = -1, dragY = 0;
+        bool dragging = false;
+        juce::String lastSig;
+    };
+
+    class FxEditor : public Panel
+    {
+    public:
+        FxEditor (DivinityProcessor& p, const FxDef& d) : ctl (p.apvts, d)
         {
             ctl.addTo (*this);
             ctl.power.onStateChange = [this] { repaint(); };
@@ -732,20 +886,28 @@ namespace
         void paint (juce::Graphics& g) override
         {
             drawPanelBackground (g, getLocalBounds().toFloat(), ctl.power.getToggleState());
-            drawSectionTitle (g, { 44, 10, getWidth() - 56, 24 }, juce::String (ctl.def.name).toUpperCase());
+            g.setColour (text);
+            g.setFont (font (22.0f, Weight::SemiBold, 0.04f));
+            g.drawText (juce::String (ctl.def.name).toUpperCase(), 52, 12, 400, 30, juce::Justification::centredLeft);
             g.setColour (textDim);
-            g.setFont (font (12.5f));
-            g.drawFittedText (ctl.def.description, 16, 44, getWidth() - 32, 52, juce::Justification::topLeft, 3);
+            g.setFont (font (13.0f));
+            g.drawFittedText (ctl.def.description, 20, 48, getWidth() - 40, 36, juce::Justification::topLeft, 2);
+            g.setFont (font (10.5f, Weight::Medium, 0.12f));
+            for (int i = 0; i < ctl.choices.size(); ++i)
+                g.drawText (ctl.choiceLabels[i], ctl.choices[i]->getX(), ctl.choices[i]->getY() - 18, 200, 16, juce::Justification::centredLeft);
         }
         void resized() override
         {
-            ctl.power.setBounds (12, 10, 24, 24);
-            const int cols = 2, kw = (getWidth() - 24) / cols, kh = 104;
-            int y = 106;
-            if (ctl.choice) { ctl.choice->setBounds (16, y, getWidth() - 32, 28); y += 40; }
-            for (int i = 0; i < ctl.knobs.size(); ++i)
-                ctl.knobs[i]->setBounds (12 + (i % cols) * kw, y + (i / cols) * (kh + 8), kw, kh);
-            if (ctl.toggle) ctl.toggle->setBounds (16, getHeight() - 46, getWidth() - 32, 30);
+            ctl.power.setBounds (16, 15, 26, 26);
+            int x = 20;
+            const int extrasY = 112;
+            for (auto* c : ctl.choices) { c->setBounds (x, extrasY, 180, 30); x += 196; }
+            for (auto* t : ctl.toggles) { t->setBounds (x, extrasY, 140, 30); x += 156; }
+            const bool hasExtras = ! ctl.choices.isEmpty() || ! ctl.toggles.isEmpty();
+            const int top = hasExtras ? 164 : 104, n = ctl.knobs.size();
+            const int perRow = juce::jmin (n, 7), kw = juce::jmin (128, (getWidth() - 40) / juce::jmax (1, perRow));
+            for (int k = 0; k < n; ++k)
+                ctl.knobs[k]->setBounds (20 + (k % perRow) * kw, top + (k / perRow) * 132, kw, 124);
         }
     private:
         FxModuleControls ctl;
@@ -755,16 +917,25 @@ namespace
 struct EffectsPage::Impl
 {
     Impl (DivinityProcessor& p, juce::Component& owner)
-        : master (p.apvts, ids::master, "Output"), meter (p, true), analyzer (p)
+        : chain (p), analyzer (p), master (p.apvts, ids::master, "Output"), limiterPower (p.apvts, ids::limOn),
+          ceiling (p.apvts, ids::limCeiling, "Ceiling"), meter (p, true)
     {
-        for (auto& d : fxModules()) { panels.add (new FxModulePanel (p, d)); owner.addAndMakeVisible (panels.getLast()); }
-        master.setCaptionSize (12.5f);
-        for (auto* c : std::initializer_list<juce::Component*> { &master, &meter, &analyzer }) owner.addAndMakeVisible (c);
+        for (auto& d : fxCatalog()) { editors.add (new FxEditor (p, d)); owner.addChildComponent (editors.getLast()); }
+        chain.onSelect = [this] (int i) { show (i); };
+        master.setCaptionSize (12.0f); ceiling.setCaptionSize (12.0f);
+        for (auto* c : std::initializer_list<juce::Component*> { &chain, &analyzer, &master, &limiterPower, &ceiling, &meter }) owner.addAndMakeVisible (c);
+        show (fxIndexForKey ("reverb"));
+        chain.selected = fxIndexForKey ("reverb");
     }
-    juce::OwnedArray<FxModulePanel> panels;
-    Knob master;
-    LevelMeter meter;
+    void show (int i) { for (int k = 0; k < editors.size(); ++k) editors[k]->setVisible (k == i); }
+
+    ChainList chain;
+    juce::OwnedArray<FxEditor> editors;
     SpectrumAnalyzer analyzer;
+    Knob master;
+    PowerButton limiterPower;
+    Knob ceiling;
+    LevelMeter meter;
 };
 
 EffectsPage::EffectsPage (DivinityProcessor& p) : impl (std::make_unique<Impl> (p, *this)) {}
@@ -772,30 +943,23 @@ EffectsPage::~EffectsPage() = default;
 
 void EffectsPage::paint (juce::Graphics& g)
 {
-    drawPanelBackground (g, { 0.0f, 470.0f, 1248.0f, 212.0f });
-    drawSectionTitle (g, { 16, 478, 400, 24 }, "OUTPUT");
+    drawPanelBackground (g, { 312.0f, 432.0f, 936.0f, 250.0f });
+    drawSectionTitle (g, { 328, 440, 300, 24 }, "OUTPUT");
     g.setColour (textDim);
-    g.setFont (font (12.5f));
-    g.drawText (juce::String (juce::CharPointer_UTF8 ("Signal flow: voices \xe2\x86\x92 Saturation \xe2\x86\x92 Chorus \xe2\x86\x92 Delay \xe2\x86\x92 Reverb \xe2\x86\x92 Output \xe2\x86\x92 Limiter")),
-                16, 652, 900, 20, juce::Justification::centredLeft);
-    g.setColour (textFaint);
-    for (int i = 0; i + 1 < impl->panels.size(); ++i)
-    {
-        const auto b = impl->panels[i]->getBounds();
-        const float x = (float) b.getRight() + 6.0f, y = (float) b.getCentreY();
-        juce::Path p; p.startNewSubPath (x - 3, y - 6); p.lineTo (x + 3, y); p.lineTo (x - 3, y + 6);
-        g.strokePath (p, juce::PathStrokeType (1.4f));
-    }
+    g.setFont (font (11.0f, Weight::Medium, 0.1f));
+    g.drawText ("LIMITER", 1010, 444, 100, 16, juce::Justification::centredLeft);
 }
 
 void EffectsPage::resized()
 {
     auto& m = *impl;
-    const int n = m.panels.size(), gap = 12, w = (1248 - gap * (n - 1)) / n;
-    for (int i = 0; i < n; ++i) m.panels[i]->setBounds (i * (w + gap), 0, w, 458);
-    m.analyzer.setBounds (16, 508, 1000, 136);
-    m.master.setBounds (1040, 500, 120, 140);
-    m.meter.setBounds (1190, 510, 30, 130);
+    m.chain.setBounds (0, 0, 300, 682);
+    for (auto* e : m.editors) e->setBounds (312, 0, 936, 420);
+    m.analyzer.setBounds (328, 472, 660, 196);
+    m.limiterPower.setBounds (1066, 440, 22, 22);
+    m.ceiling.setBounds (1000, 480, 100, 120);
+    m.master.setBounds (1100, 480, 100, 120);
+    m.meter.setBounds (1210, 474, 26, 194);
 }
 
 //==============================================================================

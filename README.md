@@ -3,7 +3,7 @@
 **TRIPLE SEVEN AUDIO — Engineered to Feel.**
 Hybrid software synthesizer · VST3 / AU / Standalone · macOS (Apple Silicon + Intel) & Windows · JUCE / C++17
 
-Current version: **0.3.0 — new interface, full-page tabs, Guardian Angel**. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
+Current version: **0.4.0 — 16-effect reorderable FX rack**. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
 
 ---
 
@@ -54,7 +54,7 @@ Push to GitHub and `.github/workflows/build.yml` builds a **universal macOS** zi
 
 ## Using it
 - **CREATE** — the engine: oscillators, sub, noise, filter, amp envelope, LFO, macros, all envelopes/LFOs/matrix, quick FX + spectrum.
-- **EFFECTS** — the full effect chain and output. **PLAY** — preset browser, macros, performance controls, keyboard. **LAB** — matrix and deep settings.
+- **EFFECTS** — the FX rack: 16 effects (EQ, compressor, saturation, distortion, bitcrusher, transient shaper, multiband, chorus, flanger, phaser, tremolo/autopan, ring mod, frequency shifter, delay, reverb, stereo tools). Drag rows (or use the arrows) to reorder; click a dot to switch an effect on. The order saves with presets and sessions and is undoable. The safety limiter always stays last. **PLAY** — preset browser, macros, performance controls, keyboard. **LAB** — matrix and deep settings.
 - **Guardian Angel** (right side) — ask questions, describe a sound to build, get ideas, explain any control, randomize.
 - **SOUL** — drag the emotion pad (soft ↔ aggressive, melancholy ↔ euphoria), edit how each target responds, and hit **Divine Intervention** (Ascension / Collapse / Shatter / Bloom / Abyss).
 - Every control: hover for help · double-click to reset · shift-drag for fine · right-click to type a value.

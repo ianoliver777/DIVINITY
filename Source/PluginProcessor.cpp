@@ -11,9 +11,31 @@ DivinityProcessor::DivinityProcessor()
       engine (apvts, *bank),
       fx (apvts)
 {
+    apvts.state.setProperty (fxOrderProperty, defaultFxOrder().joinIntoString (","), nullptr);
+    apvts.state.addListener (this);
     // Start on the first factory preset (Celestial Pad) rather than a bare init patch.
     presets.loadPreset (0);
     undo.clearUndoHistory();
+}
+
+juce::StringArray DivinityProcessor::getFxOrder() const
+{
+    return sanitiseFxOrder (juce::StringArray::fromTokens (apvts.state.getProperty (fxOrderProperty).toString(), ",", ""));
+}
+
+void DivinityProcessor::setFxOrder (const juce::StringArray& keys, bool undoable)
+{
+    if (undoable) undo.beginNewTransaction ("Reorder effects");
+    apvts.state.setProperty (fxOrderProperty, sanitiseFxOrder (keys).joinIntoString (","), undoable ? &undo : nullptr);
+}
+
+void DivinityProcessor::valueTreePropertyChanged (juce::ValueTree& tree, const juce::Identifier& property)
+{
+    if (tree == apvts.state && property == fxOrderProperty)
+    {
+        fx.setOrder (juce::StringArray::fromTokens (tree.getProperty (property).toString(), ",", ""));
+        if (! presets.isLoading()) presets.markModified();
+    }
 }
 
 bool DivinityProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -111,6 +133,7 @@ void DivinityProcessor::setStateInformation (const void* data, int sizeInBytes)
         rp->setValueNotifyingHost (norm);
     }
 
+    setFxOrder (juce::StringArray::fromTokens (params->getStringAttribute (fxOrderProperty.toString(), defaultFxOrder().joinIntoString (",")), ",", ""), false);
     uiWorkspace = xml->getStringAttribute ("uiWorkspace", "CREATE");
     if (! juce::StringArray { "CREATE", "EFFECTS", "PLAY", "SOUL", "LAB" }.contains (uiWorkspace)) uiWorkspace = "CREATE";
     uiScale = (float) juce::jlimit (0.5, 2.0, xml->getDoubleAttribute ("uiScale", 0.9));

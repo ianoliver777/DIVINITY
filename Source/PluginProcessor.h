@@ -38,7 +38,8 @@ private:
 };
 
 //==============================================================================
-class DivinityProcessor : public juce::AudioProcessor
+class DivinityProcessor : public juce::AudioProcessor,
+                          private juce::ValueTree::Listener
 {
 public:
     DivinityProcessor();
@@ -88,12 +89,17 @@ public:
     float getDivineAmount() const noexcept { return engine.getSoul().getEffectiveDivine(); }
     const FXChain::Display& getFxDisplay() const noexcept { return fx.display; }
 
+    /** FX rack order (module keys). Setting it is undoable and saved with sessions and presets. */
+    juce::StringArray getFxOrder() const;
+    void setFxOrder (const juce::StringArray& keys, bool undoable = true);
+
     // UI preference (not part of the sound): workspace & scale are stored with the session.
     juce::String uiWorkspace { "CREATE" };   // CREATE / EFFECTS / PLAY / SOUL / LAB
     float uiScale = 0.9f;
     bool uiAngelTips = true;
 
 private:
+    void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
     juce::SharedResourcePointer<WavetableBank> bank;
     SynthEngine engine;
     FXChain fx;

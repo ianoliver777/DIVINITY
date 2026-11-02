@@ -57,6 +57,8 @@ public:
     int  getCurrentIndex() const noexcept { return currentIndex; }
     juce::String getCurrentName() const   { return currentName; }
     bool isModified() const noexcept      { return modified.load(); }
+    bool isLoading() const noexcept       { return loading.load(); }
+    void markModified() noexcept          { modified = true; }
 
     bool isFavourite (const PresetInfo& p) const;
     void toggleFavourite (const PresetInfo& p);
