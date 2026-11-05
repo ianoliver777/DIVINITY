@@ -117,6 +117,12 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 ### Guardian Angel (v0.3.0)
 - Fully offline. Answers questions from a knowledge base + every parameter's help text; builds sounds from plain-English descriptions (type + vibe words → factory base + SOUL/macro/mod adjustments); suggests one idea at a time with one-click DO IT; musically-safe randomiser (all outputs tested audible, finite and under the ceiling); explain mode (click any control); "make it brighter / wider / grittier..." tweaks. Every change is undoable.
 
+### v0.7.1 (UI to reference)
+- Theme: black-glass palette sampled from the reference (`colours` in `DivinityLookAndFeel.h`), `drawPanelBackground` (lit top rim), `drawDisplayBackground`, `strokeGlow` (halo + hot core for every trace, arc and envelope), `drawGlassControl` (rows, dropdowns, tabs; selected = cyan glow). Applies to every page.
+- Header art (logo, wordmark, mountains) is `Resources/Images/header_band.png`, cut from the reference at 2x with the live areas (stats, icons, tabs) inpainted; stats, icons and tabs are drawn live on top. With Guardian Angel open the sky is mirrored to fill the extra width.
+- Knobs can show values (`Knob::setValueStyle`: inline line or pill), panel header buttons are boxed `IconButton`s with real actions (copy oscillator, filter select / routing / keytrack, open envelope or LFO editor, reset, x2 times, LFO "Route" to the matrix).
+- Keyboard bar: `GlassKeyboard` (glossy keys, glowing pressed keys), cylinder wheels, ±bend display + range menu.
+
 ### v0.7.0
 - **Sources:** OSC D (same engine as A-C; mod destinations appended after the old ones via `oscModDest()`), unison BLEND, and a **Sampler** (`DSP/Sampler`): 26 factory one-shots / loops synthesized at startup + user import (WAV/AIFF/FLAC, ≤ 30 s) published to the audio thread with an atomic pointer swap; the old buffer is freed on the message thread by a timer. The user file path saves with sessions and presets.
 - **Wavetables:** 82 generated library tables (`DSP/WavetableLibrary.cpp`) on top of the 6 originals = 88. Library tables use compact int16 storage with 21 half-octave mip levels and Hermite read-out (measured alias −78 to −88 dB, same as the originals).

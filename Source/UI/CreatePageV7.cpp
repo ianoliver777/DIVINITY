@@ -62,36 +62,114 @@ namespace
         return p;
     }
 
-    /** Panel with a title row like the mockup: optional power button, title, chip text. */
+    juce::Path filterGlyph()
+    {
+        juce::Path p;
+        p.startNewSubPath (2, 8); p.lineTo (12, 8); p.cubicTo (16, 8, 17, 6, 19, 4);
+        p.startNewSubPath (12, 8); p.cubicTo (15, 8, 16, 14, 22, 20);
+        p.addRoundedRectangle (2.0f, 13.0f, 7.0f, 7.0f, 2.0f);
+        return p;
+    }
+    juce::Path gridGlyph()
+    {
+        juce::Path p;
+        for (int r = 0; r < 3; ++r) for (int c = 0; c < 3; ++c) p.addEllipse (4.0f + c * 6.0f, 4.0f + r * 6.0f, 3.0f, 3.0f);
+        return p;
+    }
+    juce::Path targetGlyph()
+    {
+        juce::Path p;
+        p.addRoundedRectangle (3.0f, 3.0f, 18.0f, 18.0f, 4.0f);
+        p.addEllipse (8.0f, 8.0f, 8.0f, 8.0f);
+        return p;
+    }
+    juce::Path windowGlyph()
+    {
+        juce::Path p;
+        p.addRoundedRectangle (3.0f, 4.0f, 18.0f, 16.0f, 3.0f);
+        p.startNewSubPath (3, 9); p.lineTo (21, 9);
+        return p;
+    }
+    juce::Path dialGlyph()
+    {
+        juce::Path p;
+        p.addCentredArc (10, 12, 7, 7, 0.0f, 0.6f, juce::MathConstants<float>::twoPi - 0.6f, true);
+        p.startNewSubPath (10, 12); p.lineTo (14, 8);
+        p.startNewSubPath (19, 11); p.lineTo (21, 13); p.lineTo (23, 11);
+        return p;
+    }
+    juce::Path resetGlyph()
+    {
+        juce::Path p;
+        p.addCentredArc (12, 12, 7, 7, 0.0f, -2.2f, 2.4f, true);
+        p.startNewSubPath (4.5f, 5.0f); p.lineTo (5.2f, 9.5f); p.lineTo (9.6f, 8.2f);
+        return p;
+    }
+
+    /** Panel with a title row like the mockup: optional glyph or power button, title, chip text. */
     class V7Panel : public juce::Component
     {
     public:
         explicit V7Panel (juce::String t) : title (std::move (t)) {}
+        enum Glyph { NoGlyph, FilterGlyph, StarGlyph, GearGlyph, PowerOutline, PowerCyan, DiamondGlyph };
         void paint (juce::Graphics& g) override
         {
             drawPanelBackground (g, getLocalBounds().toFloat());
             g.setColour (text);
-            g.setFont (font (15.5f, Weight::SemiBold, 0.03f));
-            g.drawText (title, titleX, 8, getWidth() - titleX - 12, 26, juce::Justification::centredLeft, false);
+            g.setFont (titleFont());
+            g.drawText (title, titleX, 9, getWidth() - titleX - 12, 26, juce::Justification::centredLeft, false);
+            const juce::Rectangle<float> ib (14.0f, 12.0f, 20.0f, 20.0f);
+            switch (glyph)
+            {
+                case FilterGlyph: { auto p = filterGlyph(); p.applyTransform (p.getTransformToScaleToFit (ib.reduced (1.0f), true)); strokeGlow (g, p, 1.5f); break; }
+                case StarGlyph:
+                {
+                    juce::Path p; p.addStar (ib.getCentre(), 5, 3.6f, 8.6f, 0.0f);
+                    g.setColour (accent.withAlpha (0.25f)); g.fillPath (p, juce::AffineTransform::scale (1.25f, 1.25f, ib.getCentreX(), ib.getCentreY()));
+                    g.setColour (accent); g.fillPath (p);
+                    break;
+                }
+                case GearGlyph: { auto p = icons::gear(); p.applyTransform (p.getTransformToScaleToFit (ib.reduced (1.0f), true)); g.setColour (text); g.fillPath (p); break; }
+                case PowerOutline: g.setColour (text); g.strokePath (icons::power (ib), juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded)); break;
+                case PowerCyan: strokeGlow (g, icons::power (ib), 1.7f); break;
+                case DiamondGlyph:
+                {
+                    juce::Path p; const auto c = ib.getCentre();
+                    p.startNewSubPath (c.x, c.y - 7); p.lineTo (c.x + 7, c.y); p.lineTo (c.x, c.y + 7); p.lineTo (c.x - 7, c.y); p.closeSubPath();
+                    g.setColour (text); g.strokePath (p, juce::PathStrokeType (1.4f));
+                    break;
+                }
+                default: break;
+            }
             if (chip.isNotEmpty())
             {
                 auto c = chipBounds().toFloat();
-                g.setColour (accentDeep.withAlpha (0.5f)); g.fillRoundedRectangle (c, 4.0f);
-                g.setColour (borderBright); g.drawRoundedRectangle (c.reduced (0.5f), 4.0f, 1.0f);
+                g.setColour (accentDeep.withAlpha (0.45f)); g.fillRoundedRectangle (c, 5.0f);
+                g.setColour (accent.withAlpha (0.7f)); g.drawRoundedRectangle (c.reduced (0.5f), 5.0f, 1.0f);
                 g.setColour (accent);
-                g.setFont (font (10.5f, Weight::Medium, 0.08f));
+                g.setFont (font (10.5f, Weight::Medium, 0.06f));
                 g.drawText (chip, c, juce::Justification::centred);
             }
         }
+        static juce::Font titleFont() { return font (16.0f, Weight::Medium, 0.02f); }
         juce::Rectangle<int> chipBounds() const
         {
-            const int tw = (int) font (15.5f, Weight::SemiBold, 0.03f).getStringWidthFloat (title);
-            return { titleX + tw + 12, 12, 46, 18 };
+            const int tw = (int) titleFont().getStringWidthFloat (title);
+            return { titleX + tw + 14, 12, 46, 20 };
         }
         void setTitle (const juce::String& t) { title = t; repaint(); }
         juce::String title, chip;
         int titleX = 16;
+        Glyph glyph = NoGlyph;
     };
+
+    IconButton* headerButton (juce::OwnedArray<IconButton>& store, juce::Component& parent, const juce::String& tip, juce::Path p, bool filled = false)
+    {
+        auto* b = store.add (new IconButton (tip, std::move (p), filled));
+        b->boxed = true;
+        parent.addAndMakeVisible (b);
+        return b;
+    }
 
     void layoutRow (juce::Array<juce::Component*> items, juce::Rectangle<int> row)
     {
@@ -106,7 +184,7 @@ namespace
     Knob* makeKnob (APVTS& s, const juce::String& id, const char* cap, ModDest d = ModDest::None, float scale = 1.0f, bool bipolar = false)
     {
         auto* k = new Knob (s, id, cap, d, scale, bipolar);
-        k->setCaptionSize (10.5f);
+        k->setCaptionSize (11.5f);
         return k;
     }
 
@@ -136,32 +214,30 @@ namespace
         void paint (juce::Graphics& g) override
         {
             V7Panel::paint (g);
-            static const int icon[] = { 0, 0, 0, 0, 5, 4, 6 };
+            static const int icon[] = { 0, 0, 0, 0, 0, 4, 6 };
             for (int i = 0; i < 7; ++i)
             {
                 auto r = item (i).toFloat();
                 const bool sel = i == selected;
-                if (sel)
+                drawGlassControl (g, r, sel, i == hover, 7.0f);
+                if (! sel) { g.setColour (juce::Colour (0xff010305).withAlpha (0.6f)); g.fillRoundedRectangle (r.reduced (1.0f), 6.0f); }
+                const bool on = isOn (i);
+                auto ic = wavePath (icon[i], { r.getX() + 14.0f, r.getCentreY() - 6.0f, 24.0f, 12.0f });
+                if (sel) strokeGlow (g, ic, 1.6f, glow);
+                else { g.setColour (on ? text : textFaint); g.strokePath (ic, juce::PathStrokeType (1.4f)); }
+                g.setFont (font (14.5f, Weight::Medium));
+                g.setColour (on || sel ? text : textDim);
+                g.drawText (sourceName (i), (int) r.getX() + 56, (int) r.getY(), 90, (int) r.getHeight(), juce::Justification::centredLeft);
+                auto dot = dotBounds (i);
+                if (on)
                 {
-                    g.setColour (accent.withAlpha (0.18f)); g.drawRoundedRectangle (r.expanded (1.5f), 7.0f, 3.0f);
-                    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff12407a), 0, r.getY(), juce::Colour (0xff0a2547), 0, r.getBottom(), false));
-                    g.fillRoundedRectangle (r, 6.0f);
-                    g.setColour (accent); g.drawRoundedRectangle (r, 6.0f, 1.2f);
+                    g.setColour ((sel ? glow : accent).withAlpha (0.3f)); g.fillEllipse (dot.expanded (3.0f));
+                    g.setColour (sel ? juce::Colours::white : accent); g.fillEllipse (dot);
                 }
                 else
                 {
-                    g.setColour (panel2.withAlpha (i == hover ? 0.95f : 0.6f)); g.fillRoundedRectangle (r, 6.0f);
-                    g.setColour (border); g.drawRoundedRectangle (r, 6.0f, 1.0f);
+                    g.setColour (textFaint); g.drawEllipse (dot.reduced (0.5f), 1.0f);
                 }
-                const bool on = isOn (i);
-                g.setColour (on ? text : textFaint);
-                g.strokePath (wavePath (icon[i], { r.getX() + 12.0f, r.getCentreY() - 6.0f, 22.0f, 12.0f }), juce::PathStrokeType (1.5f));
-                g.setFont (font (14.0f, Weight::Medium));
-                g.drawText (sourceName (i), (int) r.getX() + 46, (int) r.getY(), 90, (int) r.getHeight(), juce::Justification::centredLeft);
-                auto dot = dotBounds (i);
-                if (on) { g.setColour (accent.withAlpha (0.3f)); g.fillEllipse (dot.expanded (3.0f)); }
-                g.setColour (on ? accent : textFaint.withAlpha (0.7f));
-                g.fillEllipse (dot);
             }
         }
         void resized() override { more.setBounds (getWidth() - 34, 8, 26, 26); }
@@ -187,8 +263,8 @@ namespace
         void mouseExit (const juce::MouseEvent&) override { hover = -1; repaint(); }
 
     private:
-        juce::Rectangle<int> item (int i) const { const int h = (getHeight() - 50) / 7; return { 8, 42 + i * h, getWidth() - 16, h - 5 }; }
-        juce::Rectangle<float> dotBounds (int i) const { auto r = item (i).toFloat(); return juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ r.getRight() - 14.0f, r.getCentreY() }); }
+        juce::Rectangle<int> item (int i) const { const int h = (getHeight() - 46) / 7; return { 9, 40 + i * h, getWidth() - 18, h - 4 }; }
+        juce::Rectangle<float> dotBounds (int i) const { auto r = item (i).toFloat(); return juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ r.getRight() - 16.0f, r.getCentreY() }); }
         juce::String onId (int i) const
         {
             if (i < 4) return ids::osc (i, "on");
@@ -279,10 +355,30 @@ namespace
               power (p.apvts, ids::osc (i, "on")), engine (p.apvts, ids::osc (i, "engine")),
               table (p.apvts, ids::osc (i, "table")), wave (p.apvts, ids::osc (i, "wave")),
               display (p.apvts, p.getWavetables(), i), level (p.apvts, ids::osc (i, "level")),
-              more ("More oscillator settings (level, fine, fold, width, pulse width, phase)", dots3(), true)
+              more ("More oscillator settings (level, fine, fold, width, pulse width, phase)", targetGlyph()),
+              link ("Copy this oscillator's settings to another oscillator", juce::Path())
         {
             chip = sourceName (i);
             titleX = 42;
+            more.boxed = true; link.boxed = true;
+            {
+                juce::Path lp; lp.addRoundedRectangle (2.0f, 9.0f, 11.0f, 7.0f, 3.5f); lp.addRoundedRectangle (11.0f, 9.0f, 11.0f, 7.0f, 3.5f);
+                link.setPath (lp);
+            }
+            link.onClick = [this]
+            {
+                juce::PopupMenu m;
+                m.addSectionHeader ("Copy " + sourceName (index) + " to");
+                for (int t = 0; t < kNumOscs; ++t) if (t != index) m.addItem (t + 1, sourceName (t));
+                m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&link), [this] (int r)
+                {
+                    if (r <= 0) return;
+                    for (auto* n : { "on", "engine", "table", "wave", "pos", "oct", "semi", "fine", "level", "unison", "detune", "width", "blend", "fold", "pw", "phase", "randphase" })
+                        if (auto* from = apvts.getParameter (ids::osc (index, n)))
+                            if (auto* to = apvts.getParameter (ids::osc (r - 1, n)))
+                                { to->beginChangeGesture(); to->setValueNotifyingHost (from->getValue()); to->endChangeGesture(); }
+                });
+            };
             auto& s = p.apvts;
             oct = makeKnob (s, ids::osc (i, "oct"), "Octave", ModDest::None, 1.0f, true);
             semi = makeKnob (s, ids::osc (i, "semi"), "Semi", ModDest::None, 1.0f, true);
@@ -292,10 +388,16 @@ namespace
             uni = makeKnob (s, ids::osc (i, "unison"), "Unison");
             det = makeKnob (s, ids::osc (i, "detune"), "Detune", (ModDest) oscModDest (5, i));
             blend = makeKnob (s, ids::osc (i, "blend"), "Blend");
-            for (auto* k : { oct, semi, fine, pw, pos, uni, det, blend }) { owned.add (k); addChildComponent (k); }
-            for (auto* c : std::initializer_list<juce::Component*> { &power, &engine, &table, &wave, &display, &level, &more }) addAndMakeVisible (c);
+            for (auto* k : { oct, semi, fine, pw, pos, uni, det, blend }) { owned.add (k); addChildComponent (k); k->setValueStyle (1); }
+            auto pct = [] (float v) { return juce::String (juce::roundToInt (v * 100.0f)) + "%"; };
+            auto num = [] (float v) { return juce::String (juce::roundToInt (v)); };
+            oct->formatValue = num; semi->formatValue = num; uni->formatValue = num;
+            fine->formatValue = num; det->formatValue = pct; blend->formatValue = pct; pos->formatValue = pct; pw->formatValue = pct;
+            for (auto* c : std::initializer_list<juce::Component*> { &power, &engine, &table, &wave, &display, &more, &link }) addAndMakeVisible (c);
+            addChildComponent (level);   // level lives in the deep settings now (target button)
             engine.onChange = [this] { update(); };
             wave.onChange = [this] { update(); };
+            table.centreText = true; wave.centreText = true;
             more.onClick = [this, &s]
             {
                 auto content = std::make_unique<OscDeepCallout> (s, index);
@@ -318,14 +420,14 @@ namespace
         void resized() override
         {
             const int w = getWidth(), h = getHeight();
-            power.setBounds (12, 9, 24, 24);
-            more.setBounds (w - 34, 8, 26, 26);
-            engine.setBounds (12, 40, w - 24, 26);
-            table.setBounds (12, 70, w - 24, 26);
-            wave.setBounds (12, 70, w - 24, 26);
-            display.setBounds (12, 100, w - 44, h - 190);
-            level.setBounds (w - 30, 100, 18, h - 190);
-            layoutRow ({ oct, semi, fine, pw, pos, uni, det, blend }, { 4, h - 86, w - 8, 82 });
+            power.setBounds (11, 9, 26, 26);
+            more.setBounds (w - 36, 9, 26, 24);
+            link.setBounds (w - 66, 9, 26, 24);
+            engine.setBounds (12, 41, w - 24, 28);
+            table.setBounds (12, 74, w - 24, 28);
+            wave.setBounds (12, 74, w - 24, 28);
+            display.setBounds (14, 106, w - 28, h - 200);
+            layoutRow ({ oct, semi, fine, pw, pos, uni, det, blend }, { 4, h - 90, w - 8, 86 });
         }
     private:
         void timerCallback() override { const bool on = power.getToggleState(); if (on != lastOn) { lastOn = on; display.setAlpha (on ? 1.0f : 0.45f); } }
@@ -335,7 +437,7 @@ namespace
         Selector engine, table, wave;
         OscDisplay display;
         LevelFader level;
-        IconButton more;
+        IconButton more, link;
         juce::OwnedArray<Knob> owned;
         Knob *oct, *semi, *fine, *pw, *pos, *uni, *det, *blend;
         bool lastOn = true;
@@ -349,7 +451,7 @@ namespace
         void paint (juce::Graphics& g) override
         {
             auto r = getLocalBounds().toFloat();
-            g.setColour (juce::Colour (0xff060c18)); g.fillRoundedRectangle (r, 5.0f);
+            drawDisplayBackground (g, r);
             r = r.reduced (14.0f, 16.0f);
             juce::Path p;
             if (noise)
@@ -455,7 +557,7 @@ namespace
         void paint (juce::Graphics& g) override
         {
             auto r = getLocalBounds().toFloat();
-            g.setColour (juce::Colour (0xff060c18)); g.fillRoundedRectangle (r, 5.0f);
+            drawDisplayBackground (g, r);
             if (dragging) { g.setColour (accent); g.drawRoundedRectangle (r.reduced (1.0f), 5.0f, 2.0f); }
             const auto* sd = current();
             auto inner = r.reduced (8.0f, 10.0f);
@@ -569,11 +671,12 @@ namespace
     {
     public:
         explicit FilterV7 (DivinityProcessor& p)
-            : V7Panel ("FILTER"), apvts (p.apvts), which ({ "1", "2" }), routing ("Routing: serial / parallel", juce::Path()),
+            : V7Panel ("FILTER"), apvts (p.apvts), routing ("Routing: serial / parallel", juce::Path()),
               routeAttach (*p.apvts.getParameter (ids::filterRouting), [this] (float v) { routing.setToggleState (v > 0.5f, juce::dontSendNotification); updateRouteIcon(); }),
               response (p.apvts, 0)
         {
             titleX = 42;
+            glyph = FilterGlyph;
             auto& s = p.apvts;
             for (int f = 0; f < 2; ++f)
             {
@@ -588,12 +691,52 @@ namespace
                 knobs[f].add (makeKnob (s, ids::filt (f, "mix"), "Mix"));
                 for (auto* k : knobs[f]) addChildComponent (k);
             }
-            which.setTooltip ("Edit Filter 1 or Filter 2.");
-            which.onSelect = [this] (int i) { select (i); };
+            // header: [filter 1/2 menu] [routing] [deep settings]
+            auto* pick = headerButton (header, *this, "Choose Filter 1 or Filter 2", dialGlyph());
+            pick->onClick = [this, pick]
+            {
+                juce::PopupMenu m;
+                m.addItem (1, "Filter 1", true, current == 0);
+                m.addItem (2, "Filter 2", true, current == 1);
+                m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (pick), [this] (int r) { if (r > 0) select (r - 1); });
+            };
+            routing.boxed = true;
             routing.setClickingTogglesState (false);
             routing.onClick = [this] { routeAttach.setValueAsCompleteGesture (routing.getToggleState() ? 0.0f : 1.0f); };
             routeAttach.sendInitialUpdate();
-            for (auto* c : std::initializer_list<juce::Component*> { &which, &routing, &response }) addAndMakeVisible (c);
+            addAndMakeVisible (routing);
+            auto* deep = headerButton (header, *this, "Key tracking for this filter", gridGlyph(), true);
+            deep->onClick = [this, deep]
+            {
+                auto* k = makeKnob (apvts, ids::filt (current, "keytrack"), "Keytrack");
+                struct Holder : juce::Component { std::unique_ptr<Knob> k; void resized() override { if (k) k->setBounds (getLocalBounds().reduced (5, 4)); } };
+                auto holder = std::make_unique<Holder>();
+                holder->k.reset (k);
+                holder->addAndMakeVisible (k);
+                holder->setSize (110, 96);
+                juce::CallOutBox::launchAsynchronously (std::move (holder), deep->getScreenBounds(), nullptr);
+            };
+            // inside the display: F1 / F2 quick select + routing state
+            for (int f = 0; f < 2; ++f)
+            {
+                juce::Path br;
+                br.startNewSubPath (3, 8); br.lineTo (3, 3); br.lineTo (8, 3);
+                br.startNewSubPath (16, 3); br.lineTo (21, 3); br.lineTo (21, 8);
+                br.startNewSubPath (21, 16); br.lineTo (21, 21); br.lineTo (16, 21);
+                br.startNewSubPath (8, 21); br.lineTo (3, 21); br.lineTo (3, 16);
+                if (f == 1) br.addRectangle (10.0f, 10.0f, 4.0f, 4.0f);
+                auto* b = quick.add (new IconButton (f == 0 ? "Edit Filter 1" : "Edit Filter 2", br));
+                b->onClick = [this, f] { select (f); };
+                addAndMakeVisible (b);
+            }
+            {
+                juce::Path lp; lp.addRoundedRectangle (2.0f, 8.0f, 11.0f, 8.0f, 4.0f); lp.addRoundedRectangle (11.0f, 8.0f, 11.0f, 8.0f, 4.0f);
+                auto* b = quick.add (new IconButton ("Filter routing: serial / parallel", lp));
+                b->onClick = [this] { routing.triggerClick(); };
+                addAndMakeVisible (b);
+            }
+            for (auto* c : std::initializer_list<juce::Component*> { &response }) addAndMakeVisible (c);
+            for (auto* b : quick) b->toFront (false);
             select (0);
             startTimerHz (5);
         }
@@ -601,34 +744,27 @@ namespace
         {
             current = f;
             for (int i = 0; i < 2; ++i) { types[i]->setVisible (i == f); for (auto* k : knobs[i]) k->setVisible (i == f); }
+            for (int i = 0; i < 2; ++i) quick[i]->setToggleState (i == f, juce::dontSendNotification);
             response.setFilter (f);
-            setTitle ("FILTER " + juce::String (f + 1));
-        }
-        void paint (juce::Graphics& g) override
-        {
-            V7Panel::paint (g);
-            // power-style dot: lit when the current filter isn't Off
-            const bool on = apvts.getRawParameterValue (ids::filt (current, "type"))->load() > 0.5f;
-            auto d = juce::Rectangle<float> (14.0f, 14.0f).withCentre ({ 24.0f, 21.0f });
-            g.setColour (on ? accent : textFaint);
-            g.drawEllipse (d, 1.6f);
-            g.fillEllipse (d.reduced (4.5f));
+            setTitle (f == 0 ? "FILTER" : "FILTER 2");
         }
         void resized() override
         {
             const int w = getWidth(), h = getHeight();
-            which.setBounds (w - 104, 8, 62, 26);
-            routing.setBounds (w - 36, 8, 26, 26);
-            for (auto* t : types) t->setBounds (12, 40, w - 24, 26);
-            response.setBounds (12, 72, w - 24, h - 160);
-            for (auto& k : knobs) layoutRow ({ k[0], k[1], k[2], k[3] }, { 4, h - 86, w - 8, 82 });
+            header[0]->setBounds (w - 98, 9, 30, 24);
+            routing.setBounds (w - 64, 9, 26, 24);
+            header[1]->setBounds (w - 34, 9, 26, 24);
+            for (auto* t : types) t->setBounds (12, 41, w - 24, 28);
+            response.setBounds (12, 76, w - 24, h - 170);
+            for (int i = 0; i < quick.size(); ++i) quick[i]->setBounds (response.getRight() - 24, response.getY() + 6 + i * 20, 18, 18);
+            for (auto& k : knobs) layoutRow ({ k[0], k[1], k[2], k[3] }, { 4, h - 90, w - 8, 86 });
         }
     private:
         void updateRouteIcon()
         {
             juce::Path p;
-            if (routing.getToggleState()) { p.addRoundedRectangle (4.0f, 6.0f, 16.0f, 4.0f, 2.0f); p.addRoundedRectangle (4.0f, 14.0f, 16.0f, 4.0f, 2.0f); }   // parallel
-            else { p.addRoundedRectangle (2.0f, 10.0f, 8.0f, 4.0f, 2.0f); p.addRoundedRectangle (14.0f, 10.0f, 8.0f, 4.0f, 2.0f); p.addRectangle (10.0f, 11.5f, 4.0f, 1.0f); }   // serial
+            p.addRoundedRectangle (2.0f, 9.0f, 11.0f, 7.0f, 3.5f); p.addRoundedRectangle (11.0f, 9.0f, 11.0f, 7.0f, 3.5f);
+            if (routing.getToggleState()) { p.clear(); p.addRoundedRectangle (4.0f, 6.0f, 16.0f, 4.0f, 2.0f); p.addRoundedRectangle (4.0f, 14.0f, 16.0f, 4.0f, 2.0f); }
             routing.setPath (p);
             routing.setTooltip (routing.getToggleState() ? "Filters run in PARALLEL. Click for serial." : "Filters run in SERIAL (1 into 2). Click for parallel.");
         }
@@ -638,7 +774,7 @@ namespace
             if (v != lastType) { lastType = v; repaint(); }
         }
         APVTS& apvts;
-        TabRow which;
+        juce::OwnedArray<IconButton> header, quick;
         IconButton routing;
         juce::ParameterAttachment routeAttach;
         juce::OwnedArray<Selector> types;
@@ -657,33 +793,46 @@ namespace
         CurveButtons (APVTS& s, int env) : param (*s.getParameter (ids::env (env, "curve"))), attach (param, [this] (float) { repaint(); })
         {
             attach.sendInitialUpdate();
-            setTooltip ("Envelope curve: snappy, linear, swelling. Fine-tune with the CURVE knob.");
+            setTooltip ("Envelope curve: punchy, snappy, linear, swelling. Fine-tune with the CURVE knob on the ENV tab.");
         }
+        static constexpr int kCount = 4;
         void paint (juce::Graphics& g) override
         {
-            const float values[3] = { -0.7f, 0.0f, 0.7f };
+            static const float values[kCount] = { -0.8f, -0.35f, 0.0f, 0.6f };
+            auto box = getLocalBounds().toFloat();
+            g.setColour (juce::Colour (0xff050c11).withAlpha (0.9f)); g.fillRoundedRectangle (box, 6.0f);
+            g.setColour (juce::Colour (0xff22394a)); g.drawRoundedRectangle (box.reduced (0.5f), 6.0f, 1.0f);
             const float cur = param.convertFrom0to1 (param.getValue());
-            for (int i = 0; i < 3; ++i)
+            int best = 0; for (int i = 1; i < kCount; ++i) if (std::abs (cur - values[i]) < std::abs (cur - values[best])) best = i;
+            for (int i = 0; i < kCount; ++i)
             {
                 auto r = slot (i).toFloat();
-                const bool sel = std::abs (cur - values[i]) < 0.15f;
-                g.setColour (sel ? accentDeep : panel2.withAlpha (0.7f)); g.fillRoundedRectangle (r, 4.0f);
-                g.setColour (sel ? accent : border); g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
+                const bool sel = i == best && std::abs (cur - values[i]) < 0.2f;
+                if (sel) drawGlassControl (g, r.reduced (2.0f), true, false, 4.0f);
                 juce::Path p;
-                auto a = r.reduced (6.0f, 6.0f);
-                p.startNewSubPath (a.getX(), a.getBottom());
-                const float bend = values[i];
-                p.quadraticTo (a.getCentreX() + bend * a.getWidth() * 0.45f, a.getCentreY() - bend * a.getHeight() * 0.45f, a.getRight(), a.getY());
-                g.setColour (sel ? text : textDim); g.strokePath (p, juce::PathStrokeType (1.4f));
+                auto a = r.reduced (r.getWidth() * 0.26f, r.getHeight() * 0.3f);
+                if (i == 3)
+                {
+                    p.startNewSubPath (a.getX(), a.getY() + a.getHeight() * 0.3f);
+                    p.lineTo (a.getX() + a.getWidth() * 0.4f, a.getBottom());
+                    p.lineTo (a.getRight(), a.getY());
+                }
+                else
+                {
+                    const float bend = values[i] * 1.2f;
+                    p.startNewSubPath (a.getX(), a.getBottom());
+                    p.quadraticTo (a.getCentreX() + bend * a.getWidth() * 0.5f, a.getCentreY() - bend * a.getHeight() * 0.5f, a.getRight(), a.getY());
+                }
+                g.setColour (sel ? glow : text.withAlpha (0.85f)); g.strokePath (p, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
             }
         }
         void mouseUp (const juce::MouseEvent& e) override
         {
-            const float values[3] = { -0.7f, 0.0f, 0.7f };
-            for (int i = 0; i < 3; ++i) if (slot (i).contains (e.getPosition())) attach.setValueAsCompleteGesture (values[i]);
+            static const float values[kCount] = { -0.8f, -0.35f, 0.0f, 0.6f };
+            for (int i = 0; i < kCount; ++i) if (slot (i).contains (e.getPosition())) attach.setValueAsCompleteGesture (values[i]);
         }
     private:
-        juce::Rectangle<int> slot (int i) const { const int w = getWidth() / 3; return { i * w + 1, 0, w - 2, getHeight() }; }
+        juce::Rectangle<int> slot (int i) const { const int w = getWidth() / kCount; return { i * w, 0, w, getHeight() }; }
         juce::RangedAudioParameter& param;
         juce::ParameterAttachment attach;
     };
@@ -691,26 +840,42 @@ namespace
     class AmpV7 : public V7Panel
     {
     public:
-        explicit AmpV7 (DivinityProcessor& p) : V7Panel ("AMP (ENVELOPE)"), display (p.apvts, 0), curves (p.apvts, 0)
+        explicit AmpV7 (DivinityProcessor& p) : V7Panel ("AMP (ENVELOPE)"), apvts (p.apvts), display (p.apvts, 0), curves (p.apvts, 0)
         {
-            titleX = 16;
+            titleX = 40;
+            glyph = StarGlyph;
             auto& s = p.apvts;
             for (auto [id, cap] : { std::pair { "attack", "A" }, { "decay", "D" }, { "sustain", "S" }, { "release", "R" } })
                 { knobs.add (makeKnob (s, ids::env (0, id), cap)); addAndMakeVisible (knobs.getLast()); }
             addAndMakeVisible (display);
             addAndMakeVisible (curves);
+            auto* open = new IconButton ("Open the full envelope editor (ENV 1, with CURVE)", resetGlyph());
+            open->setPath ([] { juce::Path q; q.addCentredArc (11, 13, 7, 7, 0.0f, -2.6f, 2.0f, true); q.startNewSubPath (15, 4); q.lineTo (20, 4); q.lineTo (20, 9); q.startNewSubPath (20, 4); q.lineTo (13, 11); return q; }());
+            open->onClick = [this] { if (onOpenEditor) onOpenEditor(); };
+            auto* reset = new IconButton ("Reset the amp envelope", gridGlyph(), true);
+            reset->onClick = [this]
+            {
+                for (auto* n : { "attack", "decay", "sustain", "release", "curve" })
+                    if (auto* prm = apvts.getParameter (ids::env (0, n))) { prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->getDefaultValue()); prm->endChangeGesture(); }
+            };
+            for (auto* b : { open, reset }) { header.add (b); addAndMakeVisible (b); }
         }
+        std::function<void()> onOpenEditor;
         void resized() override
         {
             const int w = getWidth(), h = getHeight();
-            curves.setBounds (w - 96, 8, 86, 26);
-            display.setBounds (12, 40, w - 24, h - 128);
-            layoutRow ({ knobs[0], knobs[1], knobs[2], knobs[3] }, { 4, h - 86, w - 8, 82 });
+            header[0]->setBounds (w - 58, 10, 24, 24);
+            header[1]->setBounds (w - 32, 10, 24, 24);
+            display.setBounds (12, 41, w - 24, h - 135);
+            curves.setBounds (display.getRight() - 120, display.getY() + 8, 112, 26);
+            layoutRow ({ knobs[0], knobs[1], knobs[2], knobs[3] }, { 4, h - 90, w - 8, 86 });
         }
     private:
+        APVTS& apvts;
         EnvelopeDisplay display;
         CurveButtons curves;
         juce::OwnedArray<Knob> knobs;
+        juce::OwnedArray<IconButton> header;
     };
 
     //==========================================================================
@@ -729,14 +894,17 @@ namespace
             static const int order[6] = { 0, 2, 1, 4, 5, 3 };       // parameter index per button
             static const int icon[6]  = { 0, 1, 3, 2, 7, 8 };
             const int cur = (int) std::lround (param.convertFrom0to1 (param.getValue()));
+            auto box = getLocalBounds().toFloat();
+            g.setColour (juce::Colour (0xff050c11)); g.fillRoundedRectangle (box, 7.0f);
+            g.setColour (juce::Colour (0xff22394a)); g.drawRoundedRectangle (box.reduced (0.5f), 7.0f, 1.0f);
             for (int i = 0; i < 6; ++i)
             {
                 auto r = slot (i).toFloat();
                 const bool sel = order[i] == cur;
-                g.setColour (sel ? accentDeep : panel2.withAlpha (0.65f)); g.fillRoundedRectangle (r, 4.0f);
-                g.setColour (sel ? accent : border); g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
-                g.setColour (sel ? text : textDim);
-                g.strokePath (wavePath (icon[i], r.reduced (r.getWidth() * 0.22f, r.getHeight() * 0.3f)), juce::PathStrokeType (1.4f));
+                if (sel) drawGlassControl (g, r.reduced (3.0f, 3.0f), true, false, 5.0f);
+                auto ic = wavePath (icon[i], r.reduced (r.getWidth() * 0.27f, r.getHeight() * 0.33f));
+                if (sel) strokeGlow (g, ic, 1.5f, glow);
+                else { g.setColour (text.withAlpha (0.85f)); g.strokePath (ic, juce::PathStrokeType (1.4f)); }
             }
         }
         void mouseUp (const juce::MouseEvent& e) override
@@ -745,7 +913,7 @@ namespace
             for (int i = 0; i < 6; ++i) if (slot (i).contains (e.getPosition())) attach.setValueAsCompleteGesture ((float) order[i]);
         }
     private:
-        juce::Rectangle<int> slot (int i) const { const int w = getWidth() / 6; return { i * w + 1, 0, w - 2, getHeight() }; }
+        juce::Rectangle<int> slot (int i) const { const int w = (getWidth() - 4) / 6; return { 2 + i * w, 0, w, getHeight() }; }
         juce::RangedAudioParameter& param;
         juce::ParameterAttachment attach;
     };
@@ -755,7 +923,30 @@ namespace
         LfoBlock (DivinityProcessor& p, int l) : power (p.apvts, ids::lfo (l, "on")), shapes (p.apvts, l), display (p, l), division (p.apvts, ids::lfo (l, "div"))
         {
             auto& s = p.apvts;
+            power.glyph = 1;
             power.setTooltip (helpTextFor (ids::lfo (l, "on")));
+            division.getProperties().set ("centred", true);
+            route.setTextWhenNothingSelected ("Route");
+            route.setTooltip ("Send this LFO somewhere: picks a destination and adds it to the next free mod-matrix slot (and switches the LFO on).");
+            if (auto* dst = dynamic_cast<juce::AudioParameterChoice*> (s.getParameter (ids::mod (0, "dst"))))
+                for (int i = 1; i < dst->choices.size(); ++i) route.addItem (dst->choices[i], i);
+            route.onChange = [this, &s, l]
+            {
+                const int r = route.getSelectedId();
+                route.setSelectedId (0, juce::dontSendNotification);
+                if (r <= 0) return;
+                for (int slot = 0; slot < kNumModSlots; ++slot)
+                    if (s.getRawParameterValue (ids::mod (slot, "src"))->load() < 0.5f)
+                    {
+                        auto set = [&s] (const juce::String& id, float real) { if (auto* q = s.getParameter (id)) { q->beginChangeGesture(); q->setValueNotifyingHost (q->convertTo0to1 (real)); q->endChangeGesture(); } };
+                        auto* src = dynamic_cast<juce::AudioParameterChoice*> (s.getParameter (ids::mod (slot, "src")));
+                        set (ids::mod (slot, "src"), (float) src->choices.indexOf ("LFO " + juce::String (l + 1)));
+                        set (ids::mod (slot, "dst"), (float) r);
+                        set (ids::mod (slot, "amt"), 0.25f);
+                        set (ids::lfo (l, "on"), 1.0f);
+                        return;
+                    }
+            };
             sync.setButtonText ("SYNC");
             bindToggle (sync, s, ids::lfo (l, "sync"), attach);
             knobs.add (makeKnob (s, ids::lfo (l, "rate"), "Rate", (ModDest) ((int) ModDest::Lfo1Rate + l), 0.3f));
@@ -772,18 +963,19 @@ namespace
         }
         void addTo (juce::Component& parent)
         {
-            for (auto* c : std::initializer_list<juce::Component*> { &power, &shapes, &display, &sync, &division }) parent.addChildComponent (c);
+            for (auto* c : std::initializer_list<juce::Component*> { &power, &shapes, &display, &sync, &division, &route }) parent.addChildComponent (c);
             for (auto* k : knobs) parent.addChildComponent (k);
         }
         void setVisible (bool v)
         {
-            for (auto* c : std::initializer_list<juce::Component*> { &power, &shapes, &display, &sync, &division }) c->setVisible (v);
+            for (auto* c : std::initializer_list<juce::Component*> { &power, &shapes, &display, &sync, &division, &route }) c->setVisible (v);
             for (auto* k : knobs) k->setVisible (v);
         }
         PowerButton power;
         ShapeButtons shapes;
         LfoDisplay display;
         juce::TextButton sync;
+        juce::ComboBox route;
         ChoiceBox division;
         juce::OwnedArray<Knob> knobs;
         std::vector<std::unique_ptr<APVTS::ButtonAttachment>> attach;
@@ -792,15 +984,24 @@ namespace
     class LfoV7 : public V7Panel
     {
     public:
-        explicit LfoV7 (DivinityProcessor& p) : V7Panel ("LFO 1"), which ({ "1", "2", "3", "4" })
+        explicit LfoV7 (DivinityProcessor& p) : V7Panel ("LFO 1")
         {
-            titleX = 42;
+            titleX = 40;
             for (int l = 0; l < kNumLfos; ++l) { blocks.add (new LfoBlock (p, l)); blocks.getLast()->addTo (*this); }
-            which.setTooltip ("Choose which LFO to edit here. LFOs are off until you switch them on (or a preset uses them).");
-            which.onSelect = [this] (int i) { select (i); };
-            addAndMakeVisible (which);
+            juce::Path win; win.addRoundedRectangle (3.0f, 3.0f, 8.0f, 8.0f, 1.5f); win.addRoundedRectangle (13.0f, 3.0f, 8.0f, 8.0f, 1.5f);
+            win.addRoundedRectangle (3.0f, 13.0f, 8.0f, 8.0f, 1.5f); win.addRoundedRectangle (13.0f, 13.0f, 8.0f, 8.0f, 1.5f);
+            auto* pick = headerButton (header, *this, "Choose which LFO to edit here (1-4)", win);
+            pick->onClick = [this, pick]
+            {
+                juce::PopupMenu m;
+                for (int l = 0; l < kNumLfos; ++l) m.addItem (l + 1, "LFO " + juce::String (l + 1), true, l == current);
+                m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (pick), [this] (int r) { if (r > 0) select (r - 1); });
+            };
+            auto* more = headerButton (header, *this, "Open this LFO in the editor below", gridGlyph(), true);
+            more->onClick = [this] { if (onOpenEditor) onOpenEditor (current); };
             select (0);
         }
+        std::function<void (int)> onOpenEditor;
         void select (int l)
         {
             current = l;
@@ -811,19 +1012,22 @@ namespace
         void resized() override
         {
             const int w = getWidth(), h = getHeight();
-            which.setBounds (w - 112, 8, 102, 26);
+            header[0]->setBounds (w - 64, 9, 26, 24);
+            header[1]->setBounds (w - 34, 9, 26, 24);
             for (auto* b : blocks)
             {
-                b->power.setBounds (12, 9, 24, 24);
-                b->shapes.setBounds (12, 40, w - 24, 24);
-                b->display.setBounds (12, 70, w - 24, h - 196);
-                b->sync.setBounds (12, h - 120, (w - 30) / 2, 26);
-                b->division.setBounds (18 + (w - 30) / 2, h - 120, (w - 30) / 2, 26);
-                layoutRow ({ b->knobs[0], b->knobs[1], b->knobs[2], b->knobs[3] }, { 4, h - 88, w - 8, 84 });
+                b->power.setBounds (11, 9, 26, 26);
+                b->shapes.setBounds (12, 41, w - 24, 30);
+                b->display.setBounds (12, 77, w - 24, h - 213);
+                const int y = h - 128, cw = (w - 24 - 12) / 3;
+                b->route.setBounds (12, y, cw - 8, 28);
+                b->sync.setBounds (12 + cw - 2, y, cw + 4, 28);
+                b->division.setBounds (12 + cw * 2 + 8, y, w - 24 - cw * 2 - 8, 28);
+                layoutRow ({ b->knobs[0], b->knobs[1], b->knobs[2], b->knobs[3] }, { 4, h - 90, w - 8, 86 });
             }
         }
     private:
-        TabRow which;
+        juce::OwnedArray<IconButton> header;
         juce::OwnedArray<LfoBlock> blocks;
         int current = 0;
     };
@@ -834,8 +1038,11 @@ namespace
     class MacrosV7 : public V7Panel
     {
     public:
-        explicit MacrosV7 (DivinityProcessor& p) : V7Panel ("MACROS"), apvts (p.apvts), reset ("Reset all macros to 0%", crossPath())
+        explicit MacrosV7 (DivinityProcessor& p) : V7Panel ("MACROS"), apvts (p.apvts), reset ("Macro options", dots3(), true), add ("Assign a macro in the mod matrix", plusPath())
         {
+            reset.boxed = true; add.boxed = true;
+            add.onClick = [this] { if (onAssign) onAssign(); };
+            addAndMakeVisible (add);
             for (int i = 0; i < kNumMacros; ++i)
             {
                 auto* s = sliders.add (new FineSlider());
@@ -850,7 +1057,17 @@ namespace
                 attach.add (new APVTS::SliderAttachment (p.apvts, ids::macro (i), *s));
                 addAndMakeVisible (s);
             }
-            reset.onClick = [this] { for (int i = 0; i < kNumMacros; ++i) if (auto* p = apvts.getParameter (ids::macro (i))) p->setValueNotifyingHost (0.0f); };
+            reset.onClick = [this]
+            {
+                juce::PopupMenu m;
+                m.addItem (1, "Reset all macros to 0%");
+                m.addItem (2, "Assign a macro (mod matrix)");
+                m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&reset), [this] (int r)
+                {
+                    if (r == 1) for (int i = 0; i < kNumMacros; ++i) if (auto* p = apvts.getParameter (ids::macro (i))) p->setValueNotifyingHost (0.0f);
+                    if (r == 2 && onAssign) onAssign();
+                });
+            };
             addAndMakeVisible (reset);
         }
         void paint (juce::Graphics& g) override
@@ -860,13 +1077,12 @@ namespace
             for (int i = 0; i < kNumMacros; ++i)
             {
                 auto r = row (i).toFloat();
-                g.setColour (panel2.withAlpha (0.5f)); g.fillRoundedRectangle (r, 5.0f);
-                g.setColour (border); g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
+                drawGlassControl (g, r, false, sliders[i]->isMouseOverOrDragging(), 6.0f);
                 g.setColour (text);
-                g.setFont (font (14.0f, Weight::Medium));
-                g.drawText (juce::String (i + 1), (int) r.getX() + 8, (int) r.getY(), 16, (int) r.getHeight(), juce::Justification::centredLeft);
-                g.setFont (font (12.0f, Weight::Medium, 0.04f));
-                g.drawText (names[i], (int) r.getX() + 76, (int) r.getY(), (int) r.getWidth() - 80, (int) r.getHeight(), juce::Justification::centredLeft);
+                g.setFont (font (15.0f, Weight::Medium));
+                g.drawText (juce::String (i + 1), (int) r.getX() + 10, (int) r.getY(), 16, (int) r.getHeight(), juce::Justification::centredLeft);
+                g.setFont (font (13.0f, Weight::Medium, 0.03f));
+                g.drawText (names[i], (int) r.getX() + 92, (int) r.getY(), (int) r.getWidth() - 96, (int) r.getHeight(), juce::Justification::centredLeft);
                 if (sliders[i]->isMouseOverOrDragging())
                 {
                     g.setColour (accent);
@@ -876,15 +1092,17 @@ namespace
         }
         void resized() override
         {
-            reset.setBounds (getWidth() - 34, 8, 26, 26);
-            for (int i = 0; i < kNumMacros; ++i) { auto r = row (i); sliders[i]->setBounds (r.getX() + 26, r.getY() + 2, 40, r.getHeight() - 4); }
+            reset.setBounds (getWidth() - 36, 9, 26, 24);
+            add.setBounds (getWidth() - 66, 9, 26, 24);
+            for (int i = 0; i < kNumMacros; ++i) { auto r = row (i); sliders[i]->setBounds (juce::Rectangle<int> (44, 44).withCentre ({ r.getX() + 54, r.getCentreY() })); }
         }
+        std::function<void()> onAssign;
     private:
-        juce::Rectangle<int> row (int i) const { const int h = (getHeight() - 46) / kNumMacros; return { 8, 40 + i * h, getWidth() - 16, h - 4 }; }
+        juce::Rectangle<int> row (int i) const { const int h = (getHeight() - 48) / kNumMacros; return { 9, 41 + i * h, getWidth() - 18, h - 6 }; }
         APVTS& apvts;
         juce::OwnedArray<FineSlider> sliders;
         juce::OwnedArray<APVTS::SliderAttachment> attach;
-        IconButton reset;
+        IconButton reset, add;
     };
 
     //==========================================================================
@@ -902,7 +1120,7 @@ namespace
         void paint (juce::Graphics& g) override
         {
             auto r = getLocalBounds().toFloat();
-            g.setColour (juce::Colour (0xff060c18)); g.fillRoundedRectangle (r, 5.0f);
+            drawDisplayBackground (g, r);
             const int len = (int) proc.apvts.getRawParameterValue (ids::stepLength)->load();
             const int playing = proc.getStepIndex();
             const auto bars = barArea();
@@ -1028,7 +1246,7 @@ namespace
         void paint (juce::Graphics& g) override
         {
             auto r = getLocalBounds().toFloat();
-            g.setColour (juce::Colour (0xff060c18)); g.fillRoundedRectangle (r, 5.0f);
+            drawDisplayBackground (g, r);
             r = r.reduced (8.0f, 10.0f);
             juce::Path p;
             for (size_t i = 0; i < history.size(); ++i)
@@ -1085,19 +1303,37 @@ namespace
     public:
         explicit ModTabsV7 (DivinityProcessor& p)
             : V7Panel (""), proc (p),
-              tabs ({ "ENV 1", "ENV 2", "ENV 3", "ENV 4", "LFO 1", "LFO 2", "LFO 3", "LFO 4", "STEP", "RANDOM", "MATRIX" }),
+              envTabs ({ "ENV 1", "ENV 2", "ENV 3", "ENV 4" }), lfoTabs ({ "LFO 1", "LFO 2", "LFO 3", "LFO 4", "STEP", "RANDOM" }), mtxTabs ({ "MATRIX" }),
               envDisplay (p.apvts, 0), stepEditor (p), randomView (p),
               stepPower (p.apvts, ids::stepOn),
               stepMode (p.apvts, ids::stepMode, { "MODULATE", "TRIGGER" }),
               stepRate (p.apvts, ids::stepRate), stepLen (p.apvts, ids::stepLength), rndDiv (p.apvts, ids::rndDiv)
         {
             auto& s = p.apvts;
-            addAndMakeVisible (tabs);
+            for (auto* t : { &envTabs, &lfoTabs, &mtxTabs }) addAndMakeVisible (t);
             addChildComponent (envDisplay);
+            for (int e = 0; e < kNumEnvs; ++e) { envCurves.add (new CurveButtons (s, e)); addChildComponent (envCurves.getLast()); }
+            {
+                juce::Path lp; lp.addRoundedRectangle (2.0f, 9.0f, 11.0f, 7.0f, 3.5f); lp.addRoundedRectangle (11.0f, 9.0f, 11.0f, 7.0f, 3.5f);
+                envTools.add (new IconButton ("Copy the AMP envelope (ENV 1) into this envelope", lp));
+                envTools.add (new IconButton ("x2: double this envelope's attack, decay and release times", juce::Path()));
+                envTools.add (new IconButton ("Reset this envelope", resetGlyph()));
+                envTools[0]->onClick = [this] { copyEnv (0, current); };
+                envTools[1]->onClick = [this] { scaleEnvTimes (current, 2.0f); };
+                envTools[2]->onClick = [this]
+                {
+                    for (auto* n : { "attack", "decay", "sustain", "release", "curve" })
+                        if (auto* prm = proc.apvts.getParameter (ids::env (current, n))) { prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->getDefaultValue()); prm->endChangeGesture(); }
+                };
+                for (auto* b : envTools) { b->boxed = true; addChildComponent (b); }
+            }
             for (int e = 0; e < kNumEnvs; ++e)
             {
                 for (auto [id, cap] : { std::pair { "attack", "A" }, { "decay", "D" }, { "sustain", "S" }, { "release", "R" }, { "curve", "Curve" } })
+                {
                     envKnobs[e].add (makeKnob (s, ids::env (e, id), cap, ModDest::None, 1.0f, juce::String (id) == "curve"));
+                    envKnobs[e].getLast()->setCaptionSize (14.0f);
+                }
                 for (auto* k : envKnobs[e]) addChildComponent (k);
             }
             for (int l = 0; l < kNumLfos; ++l) { lfos.add (new LfoBlock (p, l)); lfos.getLast()->addTo (*this); }
@@ -1118,7 +1354,9 @@ namespace
             for (auto* k : rndKnobs) addChildComponent (k);
             // MATRIX (all 8 slots)
             for (int i = 0; i < kNumModSlots; ++i) { rows.add (new MatrixRow (s, i)); rows.getLast()->addTo (*this); }
-            tabs.onSelect = [this] (int i) { select (i); };
+            envTabs.onSelect = [this] (int i) { select (i); };
+            lfoTabs.onSelect = [this] (int i) { select (4 + i); };
+            mtxTabs.onSelect = [this] (int) { select (10); };
             select (0);
         }
         void select (int t)
@@ -1127,6 +1365,8 @@ namespace
             const bool env = t < 4, lfo = t >= 4 && t < 8, step = t == 8, rnd = t == 9, matrix = t == 10;
             envDisplay.setVisible (env);
             if (env) envDisplay.setEnvelope (t);
+            for (int e = 0; e < envCurves.size(); ++e) envCurves[e]->setVisible (env && e == t);
+            for (auto* b : envTools) b->setVisible (env);
             for (int e = 0; e < kNumEnvs; ++e) for (auto* k : envKnobs[e]) k->setVisible (env && e == t);
             for (int l = 0; l < kNumLfos; ++l) lfos[l]->setVisible (lfo && l == t - 4);
             for (auto* c : std::initializer_list<juce::Component*> { &stepEditor, &stepPower, &stepMode, &stepRate, &stepLen }) c->setVisible (step);
@@ -1134,12 +1374,15 @@ namespace
             for (auto* c : std::initializer_list<juce::Component*> { &randomView, &rndSync, &rndDiv }) c->setVisible (rnd);
             for (auto* k : rndKnobs) k->setVisible (rnd);
             for (auto* r : rows) r->setVisible (matrix);
-            if (tabs.getSelected() != t) tabs.setSelected (t, false);
+            envTabs.setSelected (env ? t : -1, false);
+            lfoTabs.setSelected (t >= 4 && t < 10 ? t - 4 : -1, false);
+            mtxTabs.setSelected (matrix ? 0 : -1, false);
             resized(); repaint();
         }
         void paint (juce::Graphics& g) override
         {
             V7Panel::paint (g);
+            if (current < 4) drawPanelBackground (g, knobBox().toFloat());
             g.setColour (textDim);
             g.setFont (font (10.5f, Weight::Medium, 0.08f));
             if (current == 8)
@@ -1163,14 +1406,21 @@ namespace
         void resized() override
         {
             const int w = getWidth(), h = getHeight();
-            tabs.setBounds (8, 6, w - 16, 30);
-            const auto area = juce::Rectangle<int> (12, 42, w - 24, h - 48);
+            // three tab groups like the mockup: ENV 1-4 | LFO 1-4 STEP RANDOM | MATRIX
+            const float u = (float) (w - 20) / 1180.0f;
+            envTabs.setBounds (10, 8, juce::roundToInt (440 * u), 30);
+            lfoTabs.setBounds (envTabs.getRight() + 3, 8, juce::roundToInt (636 * u), 30);
+            mtxTabs.setBounds (w - 10 - juce::roundToInt (92 * u), 8, juce::roundToInt (92 * u), 30);
+            const auto area = juce::Rectangle<int> (12, 46, w - 24, h - 54);
             // ENV
-            envDisplay.setBounds (area.withWidth ((int) (area.getWidth() * 0.62f)));
+            envDisplay.setBounds (area.withWidth (knobBox().getX() - 12 - area.getX()));
             {
-                const int kx = envDisplay.getRight() + 10, kw = (area.getRight() - kx) / 5;
+                const auto kb = knobBox().reduced (8, 4);
+                const int kw = kb.getWidth() / 5;
                 for (int e = 0; e < kNumEnvs; ++e)
-                    for (int k = 0; k < 5; ++k) envKnobs[e][k]->setBounds (kx + k * kw, area.getY(), kw, area.getHeight());
+                    for (int k = 0; k < 5; ++k) envKnobs[e][k]->setBounds (kb.getX() + k * kw, kb.getY(), kw, kb.getHeight());
+                for (auto* c : envCurves) c->setBounds (envDisplay.getRight() - 160, envDisplay.getY() + 8, 140, 28);
+                for (int i = 0; i < envTools.size(); ++i) envTools[i]->setBounds (envDisplay.getRight() - 128 + i * 34, envDisplay.getY() + 42, 28, 26);
             }
             // LFO
             for (auto* L : lfos)
@@ -1182,6 +1432,7 @@ namespace
                 const int cx = area.getX() + dw + 12;
                 L->sync.setBounds (cx, area.getY() + 6, 100, 26);
                 L->division.setBounds (cx, area.getY() + 40, 100, 26);
+                L->route.setBounds (cx, area.getY() + 74, 100, 26);
                 const int kx = cx + 112, kw = (area.getRight() - kx) / 4;
                 for (int k = 0; k < 4; ++k) L->knobs[k]->setBounds (kx + k * kw, area.getY(), kw, area.getHeight());
             }
@@ -1223,10 +1474,36 @@ namespace
             }
         }
         void showTab (int t) { select (t); }
+        void paintOverChildren (juce::Graphics& g) override
+        {
+            if (current >= 4) return;
+            auto b = envTools[1]->getBounds().toFloat();
+            g.setColour (text); g.setFont (font (12.5f, Weight::Medium));
+            g.drawText ("x2", b, juce::Justification::centred);
+        }
     private:
+        juce::Rectangle<int> knobBox() const { return { juce::roundToInt (getWidth() * 0.6375f), 46, getWidth() - 10 - juce::roundToInt (getWidth() * 0.6375f), getHeight() - 54 }; }
+        void copyEnv (int from, int to)
+        {
+            if (from == to) return;
+            for (auto* n : { "attack", "decay", "sustain", "release", "curve" })
+                if (auto* a = proc.apvts.getParameter (ids::env (from, n))) if (auto* b = proc.apvts.getParameter (ids::env (to, n)))
+                    { b->beginChangeGesture(); b->setValueNotifyingHost (a->getValue()); b->endChangeGesture(); }
+        }
+        void scaleEnvTimes (int e, float factor)
+        {
+            for (auto* n : { "attack", "decay", "release" })
+                if (auto* prm = proc.apvts.getParameter (ids::env (e, n)))
+                {
+                    const float v = prm->convertFrom0to1 (prm->getValue()) * factor;
+                    prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 (v)); prm->endChangeGesture();
+                }
+        }
         DivinityProcessor& proc;
-        TabRow tabs;
+        TabRow envTabs, lfoTabs, mtxTabs;
         EnvelopeDisplay envDisplay;
+        juce::OwnedArray<CurveButtons> envCurves;
+        juce::OwnedArray<IconButton> envTools;
         juce::OwnedArray<Knob> envKnobs[kNumEnvs];
         juce::OwnedArray<LfoBlock> lfos;
         StepEditor stepEditor;
@@ -1253,6 +1530,9 @@ namespace
             : V7Panel ("MOD MATRIX"), proc (p), add ("Add a route (next empty slot)", plusPath()), more ("Open the full matrix", dots3(), true)
         {
             titleX = 42;
+            glyph = PowerCyan;
+            add.boxed = true; more.boxed = true;
+            inner.rows = &rows;
             for (int i = 0; i < kNumModSlots; ++i) { rows.add (new MatrixRow (p.apvts, i)); rows.getLast()->addTo (inner); }
             viewport.setViewedComponent (&inner, false);
             viewport.setScrollBarsShown (true, false);
@@ -1279,20 +1559,21 @@ namespace
         void paint (juce::Graphics& g) override
         {
             V7Panel::paint (g);
-            juce::Path pw = wavePath (0, { 14.0f, 15.0f, 18.0f, 12.0f });
-            g.setColour (accent); g.strokePath (pw, juce::PathStrokeType (1.5f));
-            g.setColour (textDim);
-            g.setFont (font (10.0f, Weight::Medium, 0.1f));
-            g.drawText ("SRC", 30, 40, 100, 14, juce::Justification::centredLeft);
-            g.drawText ("DEST", 146, 40, 140, 14, juce::Justification::centredLeft);
-            g.drawText ("AMT", getWidth() - 140, 40, 60, 14, juce::Justification::centredLeft);
+            g.setColour (text);
+            g.setFont (font (11.5f, Weight::Medium, 0.04f));
+            const auto c = columns();
+            g.drawText ("SRC", c.src.getX(), 40, c.src.getWidth(), 14, juce::Justification::centred);
+            g.drawText ("DEST", c.dst.getX(), 40, c.dst.getWidth(), 14, juce::Justification::centred);
+            g.drawText ("AMT", c.amt.getX(), 40, c.amt.getWidth(), 14, juce::Justification::centred);
+            juce::Path caret; caret.startNewSubPath (19, 46); caret.lineTo (22, 43); caret.lineTo (25, 46);
+            g.setColour (textFaint); g.strokePath (caret, juce::PathStrokeType (1.2f));
         }
         void resized() override
         {
             const int w = getWidth(), h = getHeight();
-            add.setBounds (w - 64, 8, 26, 26);
-            more.setBounds (w - 34, 8, 26, 26);
-            viewport.setBounds (8, 56, w - 16, h - 62);
+            add.setBounds (w - 66, 9, 26, 24);
+            more.setBounds (w - 36, 9, 26, 24);
+            viewport.setBounds (8, 58, w - 16, h - 64);
             layoutRows();
         }
     private:
@@ -1308,15 +1589,16 @@ namespace
         }
         void layoutRows()
         {
-            const int w = viewport.getWidth() - 8, rowH = 30;
+            const int w = viewport.getWidth() - 4, rowH = 32;
+            const auto c = columns();
             int y = 0;
             for (auto* r : rows)
             {
                 if (! r->src.isVisible()) continue;
-                r->src.setBounds (20, y, 112, 24);
-                r->dst.setBounds (138, y, w - 138 - 138, 24);
-                r->amt.setBounds (w - 132, y + 5, 96, 14);
-                r->clear.setBounds (w - 30, y, 24, 24);
+                r->src.setBounds (c.src.getX() - 8, y, c.src.getWidth(), 26);
+                r->dst.setBounds (c.dst.getX() - 8, y, c.dst.getWidth(), 26);
+                r->amt.setBounds (c.amt.getX() - 8, y + 3, c.amt.getWidth(), 20);
+                r->clear.setBounds (c.amt.getRight() - 8 + 6, y + 5, 16, 16);
                 y += rowH;
             }
             inner.setSize (w, juce::jmax (y, 10));
@@ -1328,9 +1610,32 @@ namespace
                 if (proc.apvts.getRawParameterValue (ids::mod (i, "src"))->load() > 0.5f || proc.apvts.getRawParameterValue (ids::mod (i, "dst"))->load() > 0.5f) mask |= 1 << i;
             if (mask != lastMask) { lastMask = mask; if (reveal >= 0 && (mask & (1 << reveal))) reveal = -1; refreshRows(); }
         }
+        struct Cols { juce::Rectangle<int> src, dst, amt; };
+        Cols columns() const
+        {
+            // proportions from the mockup (423 px wide panel)
+            const float u = (float) getWidth() / 423.0f;
+            auto col = [u] (int x, int w) { return juce::Rectangle<int> (juce::roundToInt (x * u), 0, juce::roundToInt (w * u), 1); };
+            return { col (38, 104), col (157, 143), col (313, 66) };
+        }
+        struct Inner : juce::Component
+        {
+            juce::OwnedArray<MatrixRow>* rows = nullptr;
+            void paint (juce::Graphics& g) override
+            {
+                if (rows == nullptr) return;
+                for (auto* r : *rows)
+                    if (r->src.isVisible())
+                    {
+                        auto grip = gripPath();
+                        grip.applyTransform (grip.getTransformToScaleToFit ({ 4.0f, (float) r->src.getY() + 6.0f, 12.0f, 14.0f }, true));
+                        g.setColour (textDim); g.fillPath (grip);
+                    }
+            }
+        };
         DivinityProcessor& proc;
         juce::Viewport viewport;
-        juce::Component inner;
+        Inner inner;
         juce::OwnedArray<MatrixRow> rows;
         IconButton add, more;
         int reveal = -1, lastMask = -1;
@@ -1344,7 +1649,9 @@ namespace
     public:
         explicit FxChainV7 (DivinityProcessor& p) : V7Panel ("EFFECTS CHAIN"), proc (p), add ("Add an effect", plusPath())
         {
-            titleX = 40;
+            titleX = 42;
+            glyph = GearGlyph;
+            add.boxed = true;
             setTooltip ("The effects that are switched on, in processing order. Drag a row to reorder, click the power icon to bypass, "
                         "\"...\" opens it on the EFFECTS tab. + adds an effect.");
             add.onClick = [this]
@@ -1366,10 +1673,7 @@ namespace
         void paint (juce::Graphics& g) override
         {
             V7Panel::paint (g);
-            auto gear = icons::gear();
-            gear.applyTransform (gear.getTransformToScaleToFit ({ 13.0f, 12.0f, 18.0f, 18.0f }, true));
-            g.setColour (textDim); g.fillPath (gear);
-            g.setFont (font (12.5f, Weight::Medium));
+            g.setFont (font (14.0f, Weight::Medium));
             if (items.isEmpty())
             {
                 g.setColour (textFaint);
@@ -1379,20 +1683,19 @@ namespace
             {
                 auto r = row (i).toFloat();
                 const bool on = proc.apvts.getRawParameterValue (fxCatalog()[(size_t) items[i]].onID)->load() > 0.5f;
-                const bool sel = i == dragIndex;
-                g.setColour (sel ? accentDeep : panel2.withAlpha (0.6f)); g.fillRoundedRectangle (r, 5.0f);
-                g.setColour (sel ? accent : border); g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
-                auto grip = gripPath(); grip.applyTransform (grip.getTransformToScaleToFit ({ r.getX() + 4.0f, r.getY() + 5.0f, 10.0f, r.getHeight() - 10.0f }, true));
-                g.setColour (textFaint); g.fillPath (grip);
+                const bool sel = i == dragIndex || i == selectedRow;
+                auto grip = gripPath(); grip.applyTransform (grip.getTransformToScaleToFit ({ (float) getX() * 0.0f + 6.0f, r.getY() + 6.0f, 12.0f, r.getHeight() - 12.0f }, true));
+                g.setColour (textDim); g.fillPath (grip);
+                drawGlassControl (g, r, sel, false, 6.0f);
                 auto pw = icons::power (powerBounds (i));
-                g.setColour (on ? accent : textFaint); g.strokePath (pw, juce::PathStrokeType (1.4f));
+                if (on) strokeGlow (g, pw, 1.4f); else { g.setColour (textFaint); g.strokePath (pw, juce::PathStrokeType (1.4f)); }
                 g.setColour (on ? text : textDim);
-                g.drawText (fxCatalog()[(size_t) items[i]].name, (int) r.getX() + 42, (int) r.getY(), (int) r.getWidth() - 72, (int) r.getHeight(), juce::Justification::centredLeft);
-                auto d = dots3(); d.applyTransform (d.getTransformToScaleToFit (moreBounds (i), true));
-                g.setColour (textDim); g.fillPath (d);
+                g.drawText (fxCatalog()[(size_t) items[i]].name, (int) r.getX() + 38, (int) r.getY(), (int) r.getWidth() - 68, (int) r.getHeight(), juce::Justification::centredLeft);
+                auto d = dots3(); d.applyTransform (d.getTransformToScaleToFit (moreBounds (i).reduced (2.0f, 0.0f), true));
+                g.setColour (text); g.fillPath (d);
             }
         }
-        void resized() override { add.setBounds (getWidth() - 34, 8, 26, 26); }
+        void resized() override { add.setBounds (getWidth() - 36, 9, 26, 24); }
         void mouseDown (const juce::MouseEvent& e) override
         {
             dragIndex = -1;
@@ -1404,7 +1707,7 @@ namespace
                     return;
                 }
                 if (moreBounds (i).expanded (4.0f).contains (e.position)) { if (onOpenEffects) onOpenEffects(); return; }
-                if (row (i).contains (e.getPosition())) { dragIndex = i; repaint(); return; }
+                if (row (i).contains (e.getPosition()) || (e.x < 22 && e.y >= row (i).getY() && e.y < row (i).getBottom())) { dragIndex = i; selectedRow = i; repaint(); return; }
             }
         }
         void mouseDrag (const juce::MouseEvent& e) override
@@ -1423,13 +1726,13 @@ namespace
         }
         void mouseUp (const juce::MouseEvent&) override { dragIndex = -1; repaint(); }
     private:
-        juce::Rectangle<int> row (int i) const { return { 8, 40 + i * 30, getWidth() - 16, 27 }; }
-        juce::Rectangle<float> powerBounds (int i) const { auto r = row (i).toFloat(); return { r.getX() + 18.0f, r.getY() + 5.0f, 17.0f, 17.0f }; }
+        juce::Rectangle<int> row (int i) const { return { 24, 39 + i * 30, getWidth() - 36, 26 }; }
+        juce::Rectangle<float> powerBounds (int i) const { auto r = row (i).toFloat(); return { r.getX() + 9.0f, r.getY() + 4.0f, 18.0f, 18.0f }; }
         juce::Rectangle<float> moreBounds (int i) const { auto r = row (i).toFloat(); return { r.getRight() - 26.0f, r.getY() + 2.0f, 22.0f, r.getHeight() - 4.0f }; }
         void rebuild()
         {
             items.clearQuick();
-            const int maxRows = juce::jmax (1, (getHeight() - 46) / 30);
+            const int maxRows = juce::jmax (1, (getHeight() - 42) / 30);
             for (auto& k : proc.getFxOrder())
             {
                 const int idx = fxIndexForKey (k);
@@ -1446,7 +1749,7 @@ namespace
         DivinityProcessor& proc;
         IconButton add;
         juce::Array<int> items;
-        int dragIndex = -1;
+        int dragIndex = -1, selectedRow = -1;
     };
 
     //==========================================================================
@@ -1457,13 +1760,14 @@ namespace
     public:
         explicit SpectrumV7 (DivinityProcessor& p) : V7Panel ("OUTPUT SPECTRUM"), analyzer (p), meter (p, true)
         {
-            titleX = 40;
+            titleX = 42;
+            glyph = PowerOutline;
             const char* names[] = { "PRE", "POST", "MIX" };
             for (int i = 0; i < 3; ++i)
             {
                 auto* b = modes.add (new juce::TextButton (names[i]));
                 b->setClickingTogglesState (false);
-                b->getProperties().set ("fontSize", 10.5);
+                b->getProperties().set ("fontSize", 11.5);
                 b->setTooltip (i == 0 ? "PRE: the raw voices, before the effects." : i == 1 ? "POST: what you hear, after the effects." : "MIX: both - post filled, pre as a line.");
                 b->onClick = [this, i] { setMode (i == 0 ? 1 : i == 1 ? 0 : 2); };
                 addAndMakeVisible (b);
@@ -1482,16 +1786,15 @@ namespace
         void paint (juce::Graphics& g) override
         {
             V7Panel::paint (g);
-            g.setColour (textDim);
-            g.drawEllipse (15.0f, 13.0f, 16.0f, 16.0f, 1.4f);
-            g.drawLine (23.0f, 13.0f, 23.0f, 19.0f, 1.4f);
+            g.setColour (textFaint);
+            g.fillEllipse ((float) getWidth() - 21.0f, 18.0f, 5.0f, 5.0f);
         }
         void resized() override
         {
             const int w = getWidth(), h = getHeight();
-            for (int i = 0; i < 3; ++i) modes[i]->setBounds (w - 186 + i * 52, 9, 48, 22);
+            for (int i = 0; i < 3; ++i) modes[i]->setBounds (w - 182 + i * 48, 10, 44, 22);
             analyzer.setBounds (12, 40, w - 50, h - 50);
-            meter.setBounds (w - 32, 40, 20, h - 50);
+            meter.setBounds (w - 30, 40, 18, h - 50);
         }
     private:
         juce::OwnedArray<juce::TextButton> modes;
@@ -1517,6 +1820,9 @@ struct CreatePage::Impl
             owner.addAndMakeVisible (c);
         engines.onSelect = [this] (int i) { show (i); };
         matrix.onOpenFull = [this] { mods.showTab (10); };
+        amp.onOpenEditor = [this] { mods.showTab (0); };
+        lfo.onOpenEditor = [this] (int l) { mods.showTab (4 + l); };
+        macros.onAssign = [this] { mods.showTab (10); };
         chain.onOpenEffects = [&owner] { if (owner.onShowTab) owner.onShowTab ("EFFECTS"); };
         show (0);
     }

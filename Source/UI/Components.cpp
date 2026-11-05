@@ -180,28 +180,51 @@ Knob::Knob (APVTS& s, const juce::String& id, const juce::String& cap, ModDest d
     startTimerHz (15);
 }
 
+juce::String Knob::valueText() const
+{
+    const float v = param.convertFrom0to1 (param.getValue());
+    if (formatValue) return formatValue (v);
+    return param.getCurrentValueAsText();
+}
+
 void Knob::resized()
 {
     auto r = getLocalBounds();
-    auto cap = r.removeFromBottom ((int) (captionSize + 6));
-    juce::ignoreUnused (cap);
-    const int size = juce::jmin (r.getWidth(), r.getHeight());
-    slider.setBounds (r.withSizeKeepingCentre (size, size));
+    r.removeFromBottom ((int) (captionSize + 6));
+    if (valueStyle == 1) r.removeFromBottom (14);
+    if (valueStyle == 2) r.removeFromBottom (24);
+    const int size = juce::jmin (r.getWidth(), r.getHeight(), maxKnob);
+    slider.setBounds (r.withSizeKeepingCentre (size, size).withY (r.getBottom() - size));
 }
 
 void Knob::paint (juce::Graphics& g)
 {
-    auto cap = getLocalBounds().removeFromBottom ((int) (captionSize + 6));
-    g.setFont (font (captionSize, Weight::Medium, 0.06f));
-    if (showingValue)
+    auto r = getLocalBounds();
+    juce::Rectangle<int> pill;
+    if (valueStyle == 2) pill = r.removeFromBottom (24);
+    auto cap = r.removeFromBottom ((int) (captionSize + 6));
+    juce::Rectangle<int> val;
+    if (valueStyle == 1) val = r.removeFromBottom (14);
+
+    g.setFont (font (captionSize, Weight::Medium, 0.04f));
+    const bool hoverValue = showingValue && valueStyle == 0;
+    g.setColour (hoverValue ? accent : (isEnabled() ? text : textFaint));
+    g.drawText (hoverValue ? valueText() : caption, cap.expanded (8, 0), juce::Justification::centred, false);
+
+    if (valueStyle == 1)
     {
-        g.setColour (accent);
-        g.drawText (param.getCurrentValueAsText(), cap.expanded (8, 0), juce::Justification::centred, false);
+        g.setFont (font (10.5f, Weight::Medium));
+        g.setColour (showingValue ? accent : text.withAlpha (0.9f));
+        g.drawText (valueText(), val.expanded (8, 0), juce::Justification::centredBottom, false);
     }
-    else
+    if (valueStyle == 2)
     {
-        g.setColour (isEnabled() ? textDim : textFaint);
-        g.drawText (caption, cap.expanded (8, 0), juce::Justification::centred, false);
+        auto pr = pill.toFloat().withSizeKeepingCentre (juce::jmin ((float) pill.getWidth() - 6.0f, 56.0f), 20.0f).translated (0.0f, 1.0f);
+        g.setColour (juce::Colour (0xff050c11)); g.fillRoundedRectangle (pr, 5.0f);
+        g.setColour (showingValue ? borderBright : juce::Colour (0xff22394a)); g.drawRoundedRectangle (pr.reduced (0.5f), 5.0f, 1.0f);
+        g.setFont (font (12.0f, Weight::Medium));
+        g.setColour (text);
+        g.drawText (valueText(), pr.toNearestInt(), juce::Justification::centred, false);
     }
 }
 
@@ -221,6 +244,11 @@ void Knob::timerCallback()
 {
     const bool show = slider.isMouseOverOrDragging();
     if (show != showingValue || show) { showingValue = show; repaint(); }
+    if (valueStyle != 0)
+    {
+        auto t = valueText();
+        if (t != lastValueText) { lastValueText = t; repaint(); }
+    }
     updateModulation();
 }
 
@@ -234,8 +262,23 @@ void PowerButton::paintButton (juce::Graphics& g, bool over, bool)
 {
     const auto r = getLocalBounds().toFloat().reduced (2.0f);
     const bool on = getToggleState();
-    g.setColour (on ? accent : (over ? textDim : textFaint));
-    g.strokePath (icons::power (r), juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    juce::Path p;
+    if (glyph == 1)
+    {
+        const auto c = r.getCentre(); const float d = juce::jmin (r.getWidth(), r.getHeight()) * 0.36f;
+        p.startNewSubPath (c.x, c.y - d); p.lineTo (c.x + d, c.y); p.lineTo (c.x, c.y + d); p.lineTo (c.x - d, c.y); p.closeSubPath();
+    }
+    else p = icons::power (r);
+    if (on)
+    {
+        if (glyph == 1) { g.setColour (accent.withAlpha (0.35f)); g.fillPath (p); }
+        strokeGlow (g, p, 1.7f);
+    }
+    else
+    {
+        g.setColour (over ? colours::text : colours::textFaint);
+        g.strokePath (p, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
 }
 
 //==============================================================================
@@ -251,26 +294,21 @@ Selector::Selector (APVTS& s, const juce::String& id, bool box)
 void Selector::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    if (drawBox)
-    {
-        g.setColour (panel2.withAlpha (0.8f));
-        g.fillRoundedRectangle (r.reduced (0.5f), 4.0f);
-        g.setColour (isMouseOver() ? borderBright : border);
-        g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
-    }
+    if (drawBox) drawGlassControl (g, r.reduced (0.5f), false, isMouseOver(), 6.0f);
     auto chevron = [&g] (float x, float y, bool left)
     {
         juce::Path p;
         const float d = left ? 1.0f : -1.0f;
-        p.startNewSubPath (x + 2.5f * d, y - 5.0f); p.lineTo (x - 2.5f * d, y); p.lineTo (x + 2.5f * d, y + 5.0f);
-        g.setColour (textDim);
-        g.strokePath (p, juce::PathStrokeType (1.4f));
+        p.startNewSubPath (x + 3.0f * d, y - 6.0f); p.lineTo (x - 3.0f * d, y); p.lineTo (x + 3.0f * d, y + 6.0f);
+        g.setColour (text);
+        g.strokePath (p, juce::PathStrokeType (1.5f, juce::PathStrokeType::mitered, juce::PathStrokeType::rounded));
     };
-    chevron (r.getX() + 14.0f, r.getCentreY(), true);
-    chevron (r.getRight() - 14.0f, r.getCentreY(), false);
+    chevron (r.getX() + 16.0f, r.getCentreY(), true);
+    chevron (r.getRight() - 16.0f, r.getCentreY(), false);
     g.setColour (text);
-    g.setFont (font (juce::jmin (13.5f, r.getHeight() * 0.55f)));
-    g.drawText (param.choices[index], r.reduced (26.0f, 0.0f), juce::Justification::centred, true);
+    g.setFont (font (juce::jmin (14.0f, r.getHeight() * 0.56f)));
+    if (centreText) g.drawText (param.choices[index], r.reduced (30.0f, 0.0f), juce::Justification::centred, true);
+    else            g.drawText (param.choices[index], r.withTrimmedLeft (40.0f).withTrimmedRight (30.0f), juce::Justification::centredLeft, true);
 }
 
 void Selector::step (int delta)
@@ -327,8 +365,10 @@ SegmentedChoice::SegmentedChoice (APVTS& s, const juce::String& id, juce::String
 void SegmentedChoice::resized()
 {
     auto r = getLocalBounds();
-    const int w = r.getWidth() / juce::jmax (1, buttons.size());
-    for (auto* b : buttons) b->setBounds (r.removeFromLeft (w));
+    const int gap = (int) getProperties().getWithDefault ("gap", 0);
+    const int n = juce::jmax (1, buttons.size());
+    const int w = (r.getWidth() - gap * (n - 1)) / n;
+    for (auto* b : buttons) { b->setBounds (r.removeFromLeft (w)); r.removeFromLeft (gap); }
 }
 
 //==============================================================================
@@ -352,6 +392,8 @@ TabRow::TabRow (juce::StringArray names)
     {
         auto* b = tabs.add (new juce::TextButton (names[i]));
         b->getProperties().set ("noOutline", true);
+        b->getProperties().set ("fontSize", 13.5);
+        b->getProperties().set ("corner", 6.0);
         b->onClick = [this, i] { setSelected (i); };
         addAndMakeVisible (b);
     }
@@ -362,7 +404,8 @@ void TabRow::setSelected (int i, bool notify)
 {
     selected = i;
     for (int k = 0; k < tabs.size(); ++k) tabs[k]->setToggleState (k == i, juce::dontSendNotification);
-    if (notify && onSelect) onSelect (i);
+    repaint();
+    if (notify && onSelect && i >= 0) onSelect (i);
 }
 
 void TabRow::resized()
@@ -374,8 +417,16 @@ void TabRow::resized()
 
 void TabRow::paint (juce::Graphics& g)
 {
-    g.setColour (panel2.withAlpha (0.6f));
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 5.0f);
+    auto r = getLocalBounds().toFloat();
+    juce::ColourGradient grad (juce::Colour (0xff0e1d26), r.getX(), r.getY(), juce::Colour (0xff060d12), r.getX(), r.getBottom(), false);
+    g.setGradientFill (grad);
+    g.fillRoundedRectangle (r, 7.0f);
+    g.setColour (juce::Colour (0xff22394a));
+    g.drawRoundedRectangle (r.reduced (0.5f), 7.0f, 1.0f);
+    g.setColour (juce::Colour (0xff1b2e3a));
+    for (int i = 1; i < tabs.size(); ++i)
+        if (i != selected && i - 1 != selected)
+            g.drawVerticalLine (tabs[i]->getX(), r.getY() + 7.0f, r.getBottom() - 7.0f);
 }
 
 //==============================================================================
@@ -386,11 +437,16 @@ IconButton::IconButton (const juce::String& name, juce::Path p, bool f) : juce::
 
 void IconButton::paintButton (juce::Graphics& g, bool over, bool down)
 {
-    auto r = getLocalBounds().toFloat().reduced (juce::jmin (getWidth(), getHeight()) * 0.2f);
+    auto r = getLocalBounds().toFloat().reduced (juce::jmin (getWidth(), getHeight()) * (boxed ? 0.27f : 0.2f));
     auto p = path;
     p.applyTransform (p.getTransformToScaleToFit (r, true));
     const bool on = getToggleState();
-    auto c = on ? colours::accent : (over ? colours::text : colours::textDim);
+    if (boxed)
+    {
+        auto b = getLocalBounds().toFloat().reduced (1.0f);
+        drawGlassControl (g, b, false, over, 5.0f);
+    }
+    auto c = on ? colours::accent : (over ? colours::glow : colours::text);
     if (down) c = c.brighter (0.2f);
     g.setColour (c);
     if (fill || (filledWhenOn && on)) g.fillPath (p);
@@ -417,8 +473,7 @@ void OscDisplay::timerCallback()
 void OscDisplay::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff0d0e11));
-    g.fillRoundedRectangle (r, 4.0f);
+    drawDisplayBackground (g, r);
 
     auto get = [this] (const char* n) { return apvts.getRawParameterValue (ids::osc (osc, n))->load(); };
     const bool on = get ("on") > 0.5f;
@@ -458,8 +513,12 @@ void OscDisplay::paint (juce::Graphics& g)
             }
             const bool cur = (k == current);
             const float depth = 1.0f - (float) k / frames;
-            g.setColour ((cur ? accent : accentStrong.withAlpha (0.18f + 0.25f * depth)).withMultipliedAlpha (alpha));
-            g.strokePath (p, juce::PathStrokeType (cur ? 1.6f : 0.8f));
+            if (cur) strokeGlow (g, p, 1.8f, accent.withMultipliedAlpha (alpha));
+            else
+            {
+                g.setColour (accentStrong.withAlpha ((0.14f + 0.22f * depth) * alpha));
+                g.strokePath (p, juce::PathStrokeType (0.8f));
+            }
         }
     }
     else
@@ -475,17 +534,12 @@ void OscDisplay::paint (juce::Graphics& g)
             const float x = area.getX() + area.getWidth() * (float) i / points;
             if (i == 0) p.startNewSubPath (x, mid - v * amp); else p.lineTo (x, mid - v * amp);
         }
-        g.setColour (accentStrong.withAlpha (0.25f * alpha));
-        g.strokePath (p, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved));
-        g.setColour (accent.withAlpha (alpha));
-        g.strokePath (p, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved));
+        juce::Path fill (p);
+        fill.lineTo (area.getRight(), r.getBottom()); fill.lineTo (area.getX(), r.getBottom()); fill.closeSubPath();
+        g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.16f * alpha), 0, area.getY(), accent.withAlpha (0.0f), 0, r.getBottom(), false));
+        g.fillPath (fill);
+        strokeGlow (g, p, 1.9f, accent.withMultipliedAlpha (alpha));
     }
-
-    // label (click target)
-    const auto label = wtMode ? wavetableNames()[table] : juce::StringArray { "Sine", "Triangle", "Saw", "Square", "Pulse" }[wave];
-    g.setFont (font (10.5f, Weight::Medium, 0.05f));
-    g.setColour (textDim.withAlpha (0.9f));
-    g.drawText (label.toUpperCase() + juce::String (juce::CharPointer_UTF8 (" \xe2\x96\xbe")), r.reduced (8.0f, 5.0f), juce::Justification::topLeft);
 }
 
 void OscDisplay::mouseUp (const juce::MouseEvent&)
@@ -519,11 +573,10 @@ void FilterResponse::timerCallback()
 void FilterResponse::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff0d0e11));
-    g.fillRoundedRectangle (r, 4.0f);
+    drawDisplayBackground (g, r);
 
     // grid
-    g.setColour (juce::Colours::white.withAlpha (0.04f));
+    g.setColour (accent.withAlpha (0.05f));
     for (int i = 1; i < 8; ++i) g.drawVerticalLine ((int) (r.getX() + r.getWidth() * i / 8.0f), r.getY(), r.getBottom());
     for (int i = 1; i < 6; ++i) g.drawHorizontalLine ((int) (r.getY() + r.getHeight() * i / 6.0f), r.getX(), r.getRight());
 
@@ -591,10 +644,9 @@ void FilterResponse::paint (juce::Graphics& g)
     fill.lineTo (r.getRight(), r.getBottom());
     fill.lineTo (r.getX(), r.getBottom());
     fill.closeSubPath();
-    g.setGradientFill (juce::ColourGradient (accentStrong.withAlpha (0.45f), 0, top, accentDeep.withAlpha (0.08f), 0, r.getBottom(), false));
+    g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.3f), 0, top, accent.withAlpha (0.0f), 0, r.getBottom(), false));
     g.fillPath (fill);
-    g.setColour (accent);
-    g.strokePath (curve, juce::PathStrokeType (1.6f));
+    strokeGlow (g, curve, 1.9f);
 }
 
 //==============================================================================
@@ -644,8 +696,7 @@ EnvelopeDisplay::Geometry EnvelopeDisplay::geometry() const
 void EnvelopeDisplay::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff0d0e11));
-    g.fillRoundedRectangle (r, 4.0f);
+    drawDisplayBackground (g, r);
     const auto geo = geometry();
     const float curve = apvts.getRawParameterValue (ids::env (env, "curve"))->load();
     const float aExp = std::pow (2.0f, curve * 2.0f), dExp = 3.0f * std::pow (2.0f, curve * 1.5f);
@@ -674,17 +725,18 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
 
     juce::Path fill (p);
     fill.lineTo (geo.end); fill.lineTo (geo.start); fill.closeSubPath();
-    g.setGradientFill (juce::ColourGradient (accentStrong.withAlpha (0.35f), 0, geo.area.getY(), accentDeep.withAlpha (0.05f), 0, geo.area.getBottom(), false));
+    g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.32f), 0, geo.area.getY(), accent.withAlpha (0.02f), 0, geo.area.getBottom(), false));
     g.fillPath (fill);
-    g.setColour (accent);
-    g.strokePath (p, juce::PathStrokeType (1.6f));
+    strokeGlow (g, p, 1.9f);
 
     for (auto pt : { geo.start, geo.peak, geo.decayEnd, geo.releaseStart, geo.end })
     {
-        g.setColour (juce::Colour (0xff0d0e11));
-        g.fillEllipse (juce::Rectangle<float> (9.0f, 9.0f).withCentre (pt));
+        g.setColour (accent.withAlpha (0.25f));
+        g.fillEllipse (juce::Rectangle<float> (14.0f, 14.0f).withCentre (pt));
         g.setColour (accent);
-        g.drawEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre (pt), 1.5f);
+        g.fillEllipse (juce::Rectangle<float> (9.0f, 9.0f).withCentre (pt));
+        g.setColour (glow);
+        g.fillEllipse (juce::Rectangle<float> (4.5f, 4.5f).withCentre (pt));
     }
 }
 
@@ -740,8 +792,7 @@ LfoDisplay::LfoDisplay (DivinityProcessor& p, int l) : proc (p), lfo (l) { start
 void LfoDisplay::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff0d0e11));
-    g.fillRoundedRectangle (r, 4.0f);
+    drawDisplayBackground (g, r);
     auto& s = proc.apvts;
     const int shape = (int) std::lround (s.getRawParameterValue (ids::lfo (lfo, "shape"))->load());
     const float depth = s.getRawParameterValue (ids::lfo (lfo, "depth"))->load();
@@ -770,18 +821,15 @@ void LfoDisplay::paint (juce::Graphics& g)
         const float x = area.getX() + area.getWidth() * (float) i / points;
         if (i == 0) p.startNewSubPath (x, mid - v * amp); else p.lineTo (x, mid - v * amp);
     }
-    g.setColour (accentStrong.withAlpha (0.25f));
-    g.strokePath (p, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved));
-    g.setColour (accent);
-    g.strokePath (p, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved));
+    strokeGlow (g, p, 1.9f);
 
     // live output marker
     const float live = juce::jlimit (-1.0f, 1.0f, proc.getLfoValue (lfo));
     const float y = mid - live * area.getHeight() * 0.45f;
-    g.setColour (accent.withAlpha (0.25f));
-    g.drawHorizontalLine ((int) y, area.getX(), area.getRight());
-    g.setColour (text);
-    g.fillEllipse (juce::Rectangle<float> (6.0f, 6.0f).withCentre ({ area.getRight() - 3.0f, y }));
+    g.setColour (accent.withAlpha (0.3f));
+    g.fillEllipse (juce::Rectangle<float> (11.0f, 11.0f).withCentre ({ area.getRight() - 3.0f, y }));
+    g.setColour (glow);
+    g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre ({ area.getRight() - 3.0f, y }));
 }
 
 //==============================================================================
@@ -823,9 +871,18 @@ void ScopeDisplay::paint (juce::Graphics& g)
     for (int i = 0; i < window; ++i) peak = juce::jmax (peak, std::abs (history[(size_t) ((start + i) % size)]));
     if (peak < 1.0e-4f)
     {
-        g.setColour (colours::textFaint);
-        g.setFont (font (12.0f, Weight::Medium, 0.3f));
-        g.drawText ("PLAY A NOTE", r.withTrimmedBottom (r.getHeight() * 0.5f - 34.0f).removeFromBottom (20.0f), juce::Justification::centred);
+        // idle: a single glowing pulse on the centre line
+        juce::Path beat;
+        const float mid = r.getCentreY(), cx = r.getCentreX(), u = r.getWidth() / 24.0f, hh = r.getHeight() * 0.36f;
+        const float xs[] = { -12, -3, -2, -1.2f, -0.5f, 0.2f, 0.9f, 1.6f, 2.4f, 3.2f, 12 };
+        const float ys[] = { 0, 0, -0.15f, 0.25f, -1.0f, 0.85f, -0.45f, 0.3f, -0.1f, 0, 0 };
+        for (int i = 0; i < 11; ++i)
+        {
+            const juce::Point<float> pt (cx + xs[i] * u, mid + ys[i] * hh);
+            if (i == 0) beat.startNewSubPath (pt); else beat.lineTo (pt);
+        }
+        strokeGlow (g, beat, 1.6f);
+        return;
     }
     const float gain = 0.9f / juce::jmax (0.05f, peak);
 
@@ -837,12 +894,7 @@ void ScopeDisplay::paint (juce::Graphics& g)
         const float x = r.getX() + r.getWidth() * (float) i / window;
         if (i == 0) p.startNewSubPath (x, mid - v * amp); else p.lineTo (x, mid - v * amp);
     }
-    g.setColour (accentStrong.withAlpha (0.12f));
-    g.strokePath (p, juce::PathStrokeType (9.0f, juce::PathStrokeType::curved));
-    g.setColour (accentStrong.withAlpha (0.3f));
-    g.strokePath (p, juce::PathStrokeType (3.5f, juce::PathStrokeType::curved));
-    g.setColour (accent);
-    g.strokePath (p, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved));
+    strokeGlow (g, p, 1.6f);
 }
 
 //==============================================================================
@@ -868,12 +920,15 @@ void LevelMeter::paint (juce::Graphics& g)
         juce::Rectangle<float> bar = vertical
             ? juce::Rectangle<float> (bounds.getX() + ch * bounds.getWidth() * 0.55f, bounds.getY(), bounds.getWidth() * 0.4f, bounds.getHeight())
             : juce::Rectangle<float> (bounds.getX(), bounds.getY() + ch * bounds.getHeight() * 0.55f, bounds.getWidth(), bounds.getHeight() * 0.4f);
-        g.setColour (border);
-        g.fillRoundedRectangle (bar, 1.5f);
+        g.setColour (juce::Colour (0xff0b1a22));
+        g.fillRoundedRectangle (bar, 2.0f);
         auto lit = vertical ? bar.withTrimmedTop (bar.getHeight() * (1.0f - vals[ch])) : bar.withWidth (bar.getWidth() * vals[ch]);
         const bool hot = (ch == 0 ? l : r) > 0.97f;
-        g.setColour (hot ? juce::Colour (0xffff6b7a) : accent);
-        g.fillRoundedRectangle (lit, 1.5f);
+        if (hot) g.setColour (juce::Colour (0xffff6b7a));
+        else g.setGradientFill (juce::ColourGradient (glow, lit.getX(), lit.getY(), accentStrong.withAlpha (0.6f), lit.getX(), bar.getBottom(), false));
+        g.fillRoundedRectangle (lit, 2.0f);
+        g.setColour (accent.withAlpha (0.18f));
+        g.drawRoundedRectangle (lit.expanded (1.0f), 2.5f, 1.5f);
     }
 }
 

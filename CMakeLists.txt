@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(DIVINITY VERSION 0.7.0 LANGUAGES C CXX)
+project(DIVINITY VERSION 0.7.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -56,7 +56,8 @@ juce_add_binary_data(DivinityAssets
         Resources/Fonts/Inter-Medium.ttf
         Resources/Fonts/Inter-SemiBold.ttf
         Resources/Images/triple_seven_logo.png
-        Resources/Images/barbed_frown.png)
+        Resources/Images/barbed_frown.png
+        Resources/Images/header_band.png)
 
 set(DIVINITY_CORE_SOURCES
     Source/Parameters.cpp

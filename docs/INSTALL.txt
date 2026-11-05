@@ -40,6 +40,14 @@ Bitwig        Settings > Locations > Rescan
 Studio One    Options > Locations > VST Plug-ins > Reset Blocklist, then restart
 
 
+NEW IN 0.7.1
+------------
+- Interface rebuilt to match the v0.7 reference image: black-glass
+  panels, glowing cyan displays and knobs, the DIVINITY header art,
+  grouped ENV / LFO / MATRIX tabs, value readouts, new keyboard bar.
+- Same sounds, same presets, same Guardian Angel (SHOW ANGEL).
+
+
 NEW IN 0.7.0
 ------------
 - Brand-new interface (CREATE / EFFECTS / PLAY / SOUL / LAB / BROWSER)

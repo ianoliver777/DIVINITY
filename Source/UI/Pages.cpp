@@ -44,7 +44,7 @@ void SpectrumAnalyzer::timerCallback()
 juce::Path SpectrumAnalyzer::curveFor (const Chan& c, juce::Rectangle<float> r, double sr) const
 {
     juce::Path curve;
-    const int points = juce::jmax (64, (int) r.getWidth() / 2);
+    const int points = juce::jmax (64, (int) r.getWidth());
     const float bottom = r.getBottom() - 16.0f, top = r.getY() + 6.0f;
     for (int i = 0; i <= points; ++i)
     {
@@ -63,21 +63,20 @@ juce::Path SpectrumAnalyzer::curveFor (const Chan& c, juce::Rectangle<float> r, 
 void SpectrumAnalyzer::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff060c18));
-    g.fillRoundedRectangle (r, 5.0f);
+    drawDisplayBackground (g, r);
     const double sr = juce::jmax (8000.0, proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000.0);
 
-    g.setFont (font (10.5f));
+    g.setFont (font (11.5f, Weight::Medium));
     const double freqs[] = { 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000 };
     const char* labels[] = { "20", "50", "100", "200", "500", "1k", "2k", "5k", "10k", "20k" };
     auto xFor = [&] (double f) { return r.getX() + (float) (std::log (f / 20.0) / std::log (1000.0)) * r.getWidth(); };
     for (int i = 0; i < 10; ++i)
     {
         const float x = juce::jlimit (r.getX() + 10.0f, r.getRight() - 12.0f, xFor (freqs[i]));
-        g.setColour (juce::Colours::white.withAlpha (0.05f));
-        g.drawVerticalLine ((int) x, r.getY(), r.getBottom() - 14.0f);
-        g.setColour (textFaint);
-        g.drawText (labels[i], (int) x - 20, (int) r.getBottom() - 14, 40, 12, juce::Justification::centred);
+        g.setColour (accent.withAlpha (0.05f));
+        g.drawVerticalLine ((int) x, r.getY(), r.getBottom() - 16.0f);
+        g.setColour (text.withAlpha (0.9f));
+        g.drawText (labels[i], (int) x - 20, (int) r.getBottom() - 15, 40, 13, juce::Justification::centred);
     }
     for (int i = 1; i < 4; ++i)
     {
@@ -92,17 +91,19 @@ void SpectrumAnalyzer::paint (juce::Graphics& g)
         {
             juce::Path fill (curve);
             fill.lineTo (r.getRight(), bottom); fill.lineTo (r.getX(), bottom); fill.closeSubPath();
-            g.setGradientFill (juce::ColourGradient (col.withAlpha (0.45f), 0, top, accentDeep.withAlpha (0.05f), 0, bottom, false));
+            juce::ColourGradient grad (col.withAlpha (0.75f), 0, top, col.withAlpha (0.04f), 0, bottom, false);
+            grad.addColour (0.35, col.withAlpha (0.45f));
+            g.setGradientFill (grad);
             g.fillPath (fill);
-            g.setColour (col.withAlpha (0.25f));
-            g.strokePath (curve, juce::PathStrokeType (5.0f));
+            strokeGlow (g, curve, 1.3f, col);
+            return;
         }
         g.setColour (col);
         g.strokePath (curve, juce::PathStrokeType (1.5f));
     };
-    if (mode == 1) drawCurve (pre, accentStrong, true);
-    else if (mode == 2) { drawCurve (post, accentStrong, true); drawCurve (pre, juce::Colour (0xffb58cff), false); }
-    else drawCurve (post, accentStrong, true);
+    if (mode == 1) drawCurve (pre, accent, true);
+    else if (mode == 2) { drawCurve (post, accent, true); drawCurve (pre, juce::Colour (0xffb58cff), false); }
+    else drawCurve (post, accent, true);
 }
 
 //==============================================================================
@@ -146,7 +147,7 @@ namespace
                 if (sel)
                 {
                     g.setColour (accent.withAlpha (0.16f)); g.drawRoundedRectangle (r.expanded (1.0f), 7.0f, 3.0f);
-                    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff12407a), 0, r.getY(), juce::Colour (0xff0a2547), 0, r.getBottom(), false));
+                    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff11587c), 0, r.getY(), juce::Colour (0xff083049), 0, r.getBottom(), false));
                     g.fillRoundedRectangle (r, 6.0f);
                     g.setColour (accent); g.drawRoundedRectangle (r, 6.0f, 1.2f);
                 }
