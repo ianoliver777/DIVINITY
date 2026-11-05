@@ -6,20 +6,21 @@ namespace divinity::ui
 {
 namespace colours
 {
-    // v0.3 "celestial blue" palette
-    const juce::Colour background   { 0xff04080f };
-    const juce::Colour panel        { 0xff09111f };
-    const juce::Colour card         { 0xff0c1628 };
-    const juce::Colour panel2       { 0xff0f1c31 };
-    const juce::Colour border       { 0xff1a2a44 };
-    const juce::Colour borderBright { 0xff2c4c7c };
-    const juce::Colour text         { 0xffeaf3ff };
-    const juce::Colour textDim      { 0xff8fa5c7 };
-    const juce::Colour textFaint    { 0xff4b5f80 };
-    const juce::Colour accent       { 0xff58c0ff };   // electric sky blue
-    const juce::Colour accentStrong { 0xff2f8cff };
-    const juce::Colour accentDeep   { 0xff113a6c };
-    const juce::Colour modulation   { 0xff8fe3ff };
+    // v0.7 "black glass + cyan" palette (sampled from the v0.7 mockup)
+    const juce::Colour background   { 0xff010205 };
+    const juce::Colour panel        { 0xff060c11 };
+    const juce::Colour card         { 0xff0b161d };
+    const juce::Colour panel2       { 0xff0f1d26 };
+    const juce::Colour border       { 0xff1c2f3b };
+    const juce::Colour borderBright { 0xff3a6278 };
+    const juce::Colour text         { 0xfff3f9fc };
+    const juce::Colour textDim      { 0xffb4c4cd };
+    const juce::Colour textFaint    { 0xff5b6f7c };
+    const juce::Colour accent       { 0xff3ccbff };   // glowing cyan
+    const juce::Colour accentStrong { 0xff1ba6ee };
+    const juce::Colour accentDeep   { 0xff0c4766 };
+    const juce::Colour modulation   { 0xffa8f2ff };
+    const juce::Colour glow         { 0xffbff6ff };   // hot core of glowing lines
 }
 
 enum class Weight { Regular, Medium, SemiBold };
@@ -28,6 +29,12 @@ enum class Weight { Regular, Medium, SemiBold };
 juce::Font font (float height, Weight w = Weight::Regular, float tracking = 0.0f);
 
 void drawPanelBackground (juce::Graphics& g, juce::Rectangle<float> r, bool highlighted = false);
+/** Inset "screen" behind displays (waveforms, envelopes, spectrum). */
+void drawDisplayBackground (juce::Graphics& g, juce::Rectangle<float> r);
+/** A path drawn as a glowing cyan line (wide soft halo + bright core). */
+void strokeGlow (juce::Graphics& g, const juce::Path& p, float width = 1.8f, juce::Colour c = colours::accent);
+/** Rounded glass control (rows, dropdowns, tabs); selected = cyan glow. */
+void drawGlassControl (juce::Graphics& g, juce::Rectangle<float> r, bool selected, bool hover = false, float corner = 6.0f);
 void drawCardBackground (juce::Graphics& g, juce::Rectangle<float> r, bool active = true);
 void drawSectionTitle (juce::Graphics& g, juce::Rectangle<int> area, const juce::String& text);
 
@@ -46,7 +53,7 @@ public:
     juce::Label* createSliderTextBox (juce::Slider&) override;
 
     void drawComboBox (juce::Graphics&, int w, int h, bool down, int bx, int by, int bw, int bh, juce::ComboBox&) override;
-    juce::Font getComboBoxFont (juce::ComboBox&) override { return font (12.5f); }
+    juce::Font getComboBoxFont (juce::ComboBox&) override { return font (13.5f); }
     void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
 
     void drawPopupMenuBackground (juce::Graphics&, int w, int h) override;
@@ -59,7 +66,7 @@ public:
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool over, bool down) override;
     juce::Font getTextButtonFont (juce::TextButton& b, int) override
     {
-        const double size = b.getProperties().getWithDefault ("fontSize", 12.5);
+        const double size = b.getProperties().getWithDefault ("fontSize", 13.5);
         return font ((float) size, Weight::Medium, size > 15.0 ? 0.02f : 0.04f);
     }
 

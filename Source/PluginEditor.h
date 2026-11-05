@@ -7,6 +7,16 @@
 namespace divinity
 {
 //==============================================================================
+/** Glossy keys with cyan glow on pressed notes (v0.7 look). */
+class GlassKeyboard : public juce::MidiKeyboardComponent
+{
+public:
+    using juce::MidiKeyboardComponent::MidiKeyboardComponent;
+    void drawWhiteNote (int note, juce::Graphics&, juce::Rectangle<float> area, bool isDown, bool isOver, juce::Colour, juce::Colour) override;
+    void drawBlackNote (int note, juce::Graphics&, juce::Rectangle<float> area, bool isDown, bool isOver, juce::Colour) override;
+};
+
+//==============================================================================
 /** Bottom bar on every tab: wheels, bend range, keyboard, PORTA / VEL / KEYTRK / PAN / VOL, scope. */
 class KeyboardStrip : public juce::Component
 {
@@ -16,9 +26,10 @@ public:
     void resized() override;
 private:
     DivinityProcessor& proc;
-    juce::MidiKeyboardComponent keyboard;
+    GlassKeyboard keyboard;
     juce::Slider pitch, mod;
     ui::NumberBox bend;
+    ui::IconButton bendMenu;
     juce::OwnedArray<ui::Knob> knobs;
     ui::ScopeDisplay scope;
 };
@@ -51,7 +62,8 @@ private:
         void paint (juce::Graphics&) override;
         void paintOverChildren (juce::Graphics&) override;
         DivinityEditor& owner;
-        ui::CrispImage logo;
+        DivinityProcessor& proc() const { return owner.proc; }
+        ui::CrispImage band;
     };
 
     /** Explain mode: captures the next click and asks Guardian Angel to explain the control underneath. */

@@ -60,12 +60,27 @@ namespace
         p.addEllipse (11.2f, 16.6f, 1.6f, 1.6f);
         return p;
     }
+    juce::Path wingIcon()
+    {
+        // two swept wings (Guardian Angel)
+        juce::Path p;
+        for (int side = -1; side <= 1; side += 2)
+        {
+            const float d = (float) side;
+            p.startNewSubPath (12.0f + d * 1.0f, 18.0f);
+            p.cubicTo (12.0f + d * 4.0f, 10.0f, 12.0f + d * 8.0f, 6.0f, 12.0f + d * 11.5f, 4.0f);
+            p.cubicTo (12.0f + d * 10.5f, 9.0f, 12.0f + d * 9.0f, 12.0f, 12.0f + d * 6.5f, 14.0f);
+            p.startNewSubPath (12.0f + d * 3.0f, 17.0f);
+            p.cubicTo (12.0f + d * 6.0f, 15.5f, 12.0f + d * 8.5f, 15.0f, 12.0f + d * 10.5f, 13.5f);
+        }
+        return p;
+    }
     juce::Path tabIcon (int i)
     {
         juce::Path p;
         switch (i)
         {
-            case 0: p.addStar ({ 12.0f, 12.0f }, 5, 4.5f, 10.0f, 0.0f); break;                               // CREATE
+            case 0: p.addStar ({ 12.0f, 12.5f }, 5, 4.6f, 10.5f, 0.0f); break;                               // CREATE
             case 1: for (int k = 0; k < 3; ++k) { p.startNewSubPath (4.0f + k * 8.0f, 4); p.lineTo (4.0f + k * 8.0f, 20); p.addEllipse (2.0f + k * 8.0f, 7.0f + k * 4.0f, 4, 4); } break;   // EFFECTS
             case 2: p.startNewSubPath (7, 4); p.lineTo (19, 12); p.lineTo (7, 20); p.closeSubPath(); break;   // PLAY
             case 3: p.startNewSubPath (2, 12); p.lineTo (7, 12); p.lineTo (9, 6); p.lineTo (12, 19); p.lineTo (15, 9); p.lineTo (17, 12); p.lineTo (22, 12); break;   // SOUL
@@ -103,8 +118,57 @@ namespace
 }
 
 //==============================================================================
+void GlassKeyboard::drawWhiteNote (int, juce::Graphics& g, juce::Rectangle<float> area, bool isDown, bool isOver, juce::Colour, juce::Colour)
+{
+    auto r = area.reduced (0.6f, 0.0f).withTrimmedBottom (1.0f);
+    juce::ColourGradient grad (juce::Colour (0xffc9d0d6), r.getX(), r.getY(), juce::Colour (0xfff4f7f9), r.getX(), r.getBottom(), false);
+    grad.addColour (0.75, juce::Colour (0xffeef2f5));
+    g.setGradientFill (grad);
+    g.fillRoundedRectangle (r, 2.5f);
+    if (isDown)
+    {
+        juce::ColourGradient lit (accent.withAlpha (0.55f), r.getX(), r.getY(), juce::Colour (0xffb6f1ff), r.getX(), r.getBottom(), false);
+        g.setGradientFill (lit);
+        g.fillRoundedRectangle (r, 2.5f);
+    }
+    else if (isOver)
+    {
+        g.setColour (accent.withAlpha (0.15f)); g.fillRoundedRectangle (r, 2.5f);
+    }
+    g.setColour (juce::Colour (0xff5e6a74));
+    g.drawRoundedRectangle (r.reduced (0.25f), 2.5f, 0.7f);
+    g.setColour (juce::Colours::black.withAlpha (0.18f));
+    g.fillRect (r.withHeight (5.0f));
+    if (isDown)
+    {
+        // glowing marker under the key
+        auto m = juce::Rectangle<float> (r.getWidth() * 0.55f, 2.0f).withCentre ({ r.getCentreX(), r.getBottom() - 3.0f });
+        g.setColour (accent.withAlpha (0.4f)); g.fillRect (m.expanded (1.5f, 1.5f));
+        g.setColour (glow); g.fillRect (m);
+    }
+}
+
+void GlassKeyboard::drawBlackNote (int, juce::Graphics& g, juce::Rectangle<float> area, bool isDown, bool isOver, juce::Colour)
+{
+    auto r = area.withTrimmedBottom (1.0f);
+    g.setColour (juce::Colours::black.withAlpha (0.45f));
+    g.fillRoundedRectangle (r.translated (1.0f, 1.5f), 2.0f);
+    juce::ColourGradient grad (juce::Colour (0xff0c0e10), r.getX(), 0, juce::Colour (0xff0c0e10), r.getRight(), 0, false);
+    grad.addColour (0.5, juce::Colour (0xff353b41));
+    g.setGradientFill (grad);
+    g.fillRoundedRectangle (r, 2.0f);
+    if (isDown) { g.setColour (accent.withAlpha (0.7f)); g.fillRoundedRectangle (r.reduced (1.5f), 2.0f); }
+    else if (isOver) { g.setColour (accent.withAlpha (0.2f)); g.fillRoundedRectangle (r.reduced (1.5f), 2.0f); }
+    // key top highlight
+    g.setColour (juce::Colours::white.withAlpha (0.12f));
+    g.fillRoundedRectangle (r.reduced (r.getWidth() * 0.18f, 0.0f).withTrimmedBottom (r.getHeight() * 0.12f).withTrimmedTop (2.0f).withWidth (r.getWidth() * 0.16f)
+                                .translated (r.getWidth() * 0.06f, 0.0f), 1.0f);
+}
+
+//==============================================================================
 KeyboardStrip::KeyboardStrip (DivinityProcessor& p)
-    : proc (p), keyboard (p.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard), bend (p.apvts, ids::bendRange), scope (p)
+    : proc (p), keyboard (p.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard), bend (p.apvts, ids::bendRange),
+      bendMenu ("Pick a bend range", chevron (true)), scope (p)
 {
     for (auto* s : { &pitch, &mod })
     {
@@ -128,10 +192,25 @@ KeyboardStrip::KeyboardStrip (DivinityProcessor& p)
                                            .withTimeStamp (juce::Time::getMillisecondCounterHiRes() * 0.001));
     };
     bend.getSlider().setTooltip (helpTextFor (ids::bendRange));
+    bend.getSlider().textFromValueFunction = [] (double v) { return juce::String (juce::CharPointer_UTF8 ("\xc2\xb1")) + juce::String (juce::roundToInt (v)); };
+    bend.getSlider().updateText();
+    bendMenu.onClick = [this]
+    {
+        juce::PopupMenu m;
+        const int cur = juce::roundToInt (proc.apvts.getRawParameterValue (ids::bendRange)->load());
+        for (int r : { 1, 2, 3, 5, 7, 12, 24 }) m.addItem (r, juce::String (juce::CharPointer_UTF8 ("\xc2\xb1")) + juce::String (r) + " semitones", true, r == cur);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&bendMenu), [this] (int r)
+        {
+            if (r <= 0) return;
+            if (auto* prm = proc.apvts.getParameter (ids::bendRange)) { prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->convertTo0to1 ((float) r)); prm->endChangeGesture(); }
+        });
+    };
+    addAndMakeVisible (bendMenu);
 
     keyboard.setAvailableRange (24, 108);
     keyboard.setLowestVisibleKey (36);
-    keyboard.setScrollButtonsVisible (true);
+    keyboard.setOctaveForMiddleC (4);
+    keyboard.setScrollButtonsVisible (false);
     keyboard.setColour (juce::MidiKeyboardComponent::whiteNoteColourId, juce::Colour (0xffe9edf4));
     keyboard.setColour (juce::MidiKeyboardComponent::blackNoteColourId, juce::Colour (0xff0d1018));
     keyboard.setColour (juce::MidiKeyboardComponent::keySeparatorLineColourId, juce::Colour (0xff8d96a8));
@@ -150,35 +229,48 @@ KeyboardStrip::KeyboardStrip (DivinityProcessor& p)
     knobs.add (new Knob (s, ids::filt (0, "keytrack"), "Keytrk"));
     knobs.add (new Knob (s, ids::masterPan, "Pan", ModDest::None, 1.0f, true));
     knobs.add (new Knob (s, ids::master, "Vol"));
-    for (auto* k : knobs) { k->setCaptionSize (10.5f); addAndMakeVisible (k); }
+    knobs[0]->formatValue = [] (float v) { return juce::String (juce::roundToInt (v)) + " ms"; };
+    knobs[1]->formatValue = [] (float v) { return juce::String (juce::roundToInt (v * 100.0f)) + "%"; };
+    knobs[2]->formatValue = [] (float v) { return juce::String (juce::roundToInt (v * 100.0f)) + "%"; };
+    knobs[3]->formatValue = [] (float v)
+    {
+        const int pc = juce::roundToInt (v * 100.0f);
+        return pc == 0 ? juce::String ("C") : (pc < 0 ? "L" + juce::String (-pc) : "R" + juce::String (pc));
+    };
+    knobs[4]->formatValue = [] (float v) { return juce::String (v, 1) + " dB"; };
+    for (auto* k : knobs) { k->setCaptionSize (12.0f); k->setValueStyle (2); k->setMaxKnobSize (40); addAndMakeVisible (k); }
     addAndMakeVisible (scope);
 }
 
 void KeyboardStrip::paint (juce::Graphics& g)
 {
-    auto b = getLocalBounds().toFloat();
-    drawPanelBackground (g, { 0.0f, 0.0f, 120.0f, b.getHeight() });
-    drawPanelBackground (g, { 128.0f, 0.0f, 62.0f, b.getHeight() });
-    drawPanelBackground (g, { b.getWidth() - 444.0f, 0.0f, 330.0f, b.getHeight() });
-    drawPanelBackground (g, { b.getWidth() - 106.0f, 0.0f, 106.0f, b.getHeight() });
-    g.setColour (textDim);
-    g.setFont (font (10.5f, Weight::Medium, 0.1f));
-    g.drawText ("PITCH", 8, getHeight() - 22, 52, 16, juce::Justification::centred);
-    g.drawText ("MOD", 60, getHeight() - 22, 52, 16, juce::Justification::centred);
-    g.drawText ("BEND", 128, 14, 62, 16, juce::Justification::centred);
+    // panels measured from the v0.7 mockup (strip is 1424 x 122)
+    const float h = (float) getHeight();
+    drawPanelBackground (g, { 0.0f, 0.0f, 119.0f, h });
+    drawPanelBackground (g, { 129.0f, 0.0f, 63.0f, h });
+    drawPanelBackground (g, { 201.0f, 0.0f, 783.0f, h });
+    drawPanelBackground (g, { 991.0f, 0.0f, 328.0f, h });
+    drawPanelBackground (g, { 1328.0f, 0.0f, 96.0f, h });
+    g.setColour (text);
+    g.setFont (font (12.0f, Weight::Medium, 0.03f));
+    g.drawText ("PITCH", 14, getHeight() - 26, 56, 16, juce::Justification::centred);
+    g.drawText ("MOD", 62, getHeight() - 26, 56, 16, juce::Justification::centred);
+    g.drawText ("BEND", 129, 22, 63, 16, juce::Justification::centred);
 }
 
 void KeyboardStrip::resized()
 {
-    const int w = getWidth(), h = getHeight();
-    pitch.setBounds (22, 10, 24, h - 36);
-    mod.setBounds (74, 10, 24, h - 36);
-    bend.setBounds (136, 38, 46, 28);
-    keyboard.setBounds (200, 8, w - 200 - 456, h - 16);
-    keyboard.setKeyWidth ((float) keyboard.getWidth() / 29.0f);
-    const int kx = w - 440;
-    for (int i = 0; i < knobs.size(); ++i) knobs[i]->setBounds (kx + i * 64, 6, 64, h - 10);
-    scope.setBounds (w - 100, 8, 94, h - 16);
+    const int h = getHeight();
+    pitch.setBounds (28, 14, 30, h - 46);
+    mod.setBounds (76, 14, 30, h - 46);
+    bend.setBounds (140, 44, 41, 24);
+    bendMenu.setBounds (148, 78, 26, 24);
+    keyboard.setBounds (207, 6, 771, h - 12);
+    keyboard.setKeyWidth ((float) keyboard.getWidth() / 36.0f);
+    keyboard.setBlackNoteLengthProportion (0.62f);
+    const int kx = 997, kw = 63;
+    for (int i = 0; i < knobs.size(); ++i) knobs[i]->setBounds (kx + i * kw, 8, kw, h - 14);
+    scope.setBounds (1334, 8, 84, h - 16);
 }
 
 //==============================================================================
@@ -207,14 +299,13 @@ DivinityEditor::DivinityEditor (DivinityProcessor& p)
     for (auto* name : { "CREATE", "EFFECTS", "PLAY", "SOUL", "LAB", "BROWSER" })
     {
         auto* b = tabs.add (new juce::TextButton (name));
-        b->getProperties().set ("fontSize", 16.0);
-        b->getProperties().set ("corner", 6.0);
+        b->getProperties().set ("corner", 7.0);
+        b->setButtonText ({});   // label + icon are drawn by Content::paintOverChildren
         const juce::String tab (name);
         b->onClick = [this, tab] { showTab (tab); angel.showTabTip (tab); };
         content.addAndMakeVisible (b);
     }
-    angelToggle.getProperties().set ("fontSize", 13.0);
-    angelToggle.getProperties().set ("corner", 6.0);
+    angelToggle.getProperties().set ("corner", 7.0);
     angelToggle.setTooltip ("Show or hide Guardian Angel. Hiding him makes the window narrower.");
     angelToggle.onClick = [this] { setAngelOpen (! proc.uiAngelOpen); };
     content.addAndMakeVisible (angelToggle);
@@ -225,6 +316,7 @@ DivinityEditor::DivinityEditor (DivinityProcessor& p)
     presetName.setColour (juce::TextButton::textColourOffId, text);
     presetName.setTooltip ("Click to browse presets.");
     star.filledWhenOn = true;
+    savePlus.boxed = true;
     star.setClickingTogglesState (false);
     for (auto* c : std::initializer_list<juce::Component*> { &folder, &save, &undo, &redo, &copy, &favs, &prevPreset, &presetName, &star, &nextPreset, &savePlus, &voiceMode, &voices, &glideBox })
         content.addAndMakeVisible (c);
@@ -247,7 +339,8 @@ DivinityEditor::DivinityEditor (DivinityProcessor& p)
 
     arpButton.setClickingTogglesState (true);
     arpButton.getProperties().set ("fontSize", 13.0);
-    arpButton.getProperties().set ("corner", 5.0);
+    arpButton.getProperties().set ("corner", 6.0);
+    voiceMode.getProperties().set ("gap", 7);
     arpButton.setTooltip (helpTextFor (arpids::on) + "\n\nMode, rate, octaves, gate and swing are on the PLAY tab.");
     arpAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, arpids::on, arpButton);
     content.addAndMakeVisible (arpButton);
@@ -300,8 +393,9 @@ void DivinityEditor::startExplain()
 
 void DivinityEditor::updateAngelToggleText()
 {
-    angelToggle.setButtonText (proc.uiAngelOpen ? juce::String (juce::CharPointer_UTF8 ("HIDE ANGEL  \xe2\x80\xba"))
-                                                : juce::String (juce::CharPointer_UTF8 ("\xe2\x80\xb9  SHOW ANGEL")));
+    angelToggle.setButtonText ({});   // drawn with the wing icon by Content::paintOverChildren
+    angelToggle.setToggleState (true, juce::dontSendNotification);
+    content.repaint();
 }
 
 void DivinityEditor::applySizeLimits()
@@ -337,30 +431,33 @@ void DivinityEditor::resized()
     constexpr int M = kBaseWidth;   // main column width (angel sits to its right)
 
     // header icons (top right of the main column)
-    settings.setBounds (M - 132, 20, 34, 34);
-    help.setBounds (M - 92, 20, 34, 34);
-    menu.setBounds (M - 52, 20, 34, 34);
+    settings.setBounds (1313, 17, 34, 34);
+    help.setBounds (1357, 17, 34, 34);
+    menu.setBounds (1402, 17, 34, 34);
 
-    // tabs
-    const int tabW = 178, gap = 10;
-    for (int i = 0; i < tabs.size(); ++i) tabs[i]->setBounds (124 + i * (tabW + gap), 96, tabW, 46);
-    angelToggle.setBounds (M - 160, 96, 148, 46);
+    // tabs (positions measured from the v0.7 mockup)
+    const int tabX[] = { 125, 311, 496, 685, 874, 1063 }, tabW[] = { 175, 174, 178, 178, 178, 180 };
+    for (int i = 0; i < tabs.size(); ++i) tabs[i]->setBounds (tabX[i], 97, tabW[i], 44);
+    angelToggle.setBounds (1289, 97, 144, 44);
 
     // preset strip
     constexpr int y = 158, h = 40;
     int x = 26;
-    for (auto* b : std::initializer_list<juce::Component*> { &folder, &save, &undo, &redo, &copy, &favs }) { b->setBounds (x, y, 40, h); x += 47; }
-    presetField = { 400, y, 312, h };
-    prevPreset.setBounds (presetField.getX() + 4, y + 4, 32, 32);
-    presetName.setBounds (presetField.getX() + 38, y + 2, presetField.getWidth() - 110, h - 4);
-    star.setBounds (presetField.getRight() - 70, y + 6, 28, 28);
-    nextPreset.setBounds (presetField.getRight() - 36, y + 4, 32, 32);
-    savePlus.setBounds (presetField.getRight() + 12, y, 42, h);
-    arpButton.setBounds (786, y + 2, 66, h - 4);
-    voiceMode.setBounds (872, y + 2, 228, h - 4);
-    voices.setBounds (1184, y + 4, 56, h - 8);
-    glideKnob.setBounds (1304, y + 1, 38, 38);
-    glideBox.setBounds (1350, y + 4, 76, h - 8);
+    juce::ignoreUnused (x);
+    const int iconX[] = { 38, 94, 156, 206, 265, 324 };
+    int k = 0;
+    for (auto* b : std::initializer_list<juce::Component*> { &folder, &save, &undo, &redo, &copy, &favs }) b->setBounds (iconX[k++], y, 38, h);
+    presetField = { 402, 160, 309, 37 };
+    prevPreset.setBounds (presetField.getX() + 12, 162, 32, 33);
+    presetName.setBounds (presetField.getX() + 46, 162, presetField.getWidth() - 120, 33);
+    star.setBounds (presetField.getRight() - 72, 164, 30, 30);
+    nextPreset.setBounds (presetField.getRight() - 40, 162, 32, 33);
+    savePlus.setBounds (715, 160, 40, 37);
+    arpButton.setBounds (788, 163, 68, 31);
+    voiceMode.setBounds (872, 163, 220, 31);
+    voices.setBounds (1183, 164, 57, 30);
+    glideKnob.setBounds (1311, 162, 34, 34);
+    glideBox.setBounds (1357, 164, 71, 30);
 
     // pages
     const juce::Rectangle<int> page (12, 210, 1424, 646);
@@ -374,108 +471,82 @@ void DivinityEditor::resized()
 //==============================================================================
 DivinityEditor::Content::Content (DivinityEditor& e) : owner (e)
 {
-    logo.setSource (juce::ImageCache::getFromMemory (DivinityAssets::triple_seven_logo_png, DivinityAssets::triple_seven_logo_pngSize));
+    band.setSource (juce::ImageCache::getFromMemory (DivinityAssets::header_band_png, DivinityAssets::header_band_pngSize));
 }
 
 void DivinityEditor::Content::paintOverChildren (juce::Graphics& g)
 {
     using namespace ui::colours;
-    // tab icons, drawn over the tab buttons so the selected tab keeps its icon too
-    for (int i = 0; i < owner.tabs.size(); ++i)
+    // tab labels: icon + name, centred as a group (matches the v0.7 mockup)
+    auto drawLabel = [&g] (juce::Rectangle<float> b, juce::Path ic, const juce::String& name, float size, bool selected, bool fillIcon)
     {
-        auto b = owner.tabs[i]->getBounds().toFloat();
-        auto ic = tabIcon (i);
-        ic.applyTransform (ic.getTransformToScaleToFit ({ b.getX() + 22.0f, b.getCentreY() - 10.0f, 20.0f, 20.0f }, true));
-        g.setColour (owner.tabs[i]->getToggleState() ? text : textDim);
-        g.strokePath (ic, juce::PathStrokeType (1.5f));
+        const auto f = font (size, Weight::Medium, 0.03f);
+        const float tw = f.getStringWidthFloat (name), iw = 22.0f, gap = 14.0f;
+        const float x0 = b.getCentreX() - (iw + gap + tw) * 0.5f;
+        ic.applyTransform (ic.getTransformToScaleToFit ({ x0, b.getCentreY() - 11.0f, iw, 22.0f }, true));
+        g.setColour (selected ? glow : text);
+        if (fillIcon) { g.setColour (accent.withAlpha (0.25f)); g.fillPath (ic); g.setColour (selected ? glow : text); }
+        g.strokePath (ic, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setFont (f);
+        g.setColour (text);
+        g.drawText (name, juce::Rectangle<float> (x0 + iw + gap, b.getY(), tw + 4.0f, b.getHeight()), juce::Justification::centredLeft, false);
+    };
+    const juce::StringArray names { "CREATE", "EFFECTS", "PLAY", "SOUL", "LAB", "BROWSER" };
+    for (int i = 0; i < owner.tabs.size(); ++i)
+        drawLabel (owner.tabs[i]->getBounds().toFloat(), tabIcon (i), names[i], 16.5f, owner.tabs[i]->getToggleState(), false);
+    // VOICES box chevron (over the number box)
+    {
+        const float cx = (float) owner.voices.getRight() - 12.0f, cy = (float) owner.voices.getBounds().getCentreY();
+        juce::Path ch; ch.startNewSubPath (cx - 3.5f, cy - 1.8f); ch.lineTo (cx, cy + 1.8f); ch.lineTo (cx + 3.5f, cy - 1.8f);
+        g.setColour (textDim); g.strokePath (ch, juce::PathStrokeType (1.3f));
     }
+    drawLabel (owner.angelToggle.getBounds().toFloat(), wingIcon(), proc().uiAngelOpen ? "HIDE ANGEL" : "SHOW ANGEL", 14.0f, true, true);
 }
 
 void DivinityEditor::Content::paint (juce::Graphics& g)
 {
     constexpr int M = kBaseWidth;
-    const float cx = (float) M * 0.5f;
     g.fillAll (background);
 
-    // night-sky backdrop: deep blue haze, faint ridges, a few stars
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff0b1d3a), cx, 40.0f, background, cx, 420.0f, true));
-    g.fillRect (0, 0, M, 420);
+    // header art (logo, DIVINITY wordmark, mountains) from the v0.7 mockup, 2x resolution
+    if (band.isValid())
     {
-        juce::Path ridge;
-        ridge.startNewSubPath (0, 150);
-        juce::Random rr (777);
-        for (int x = 0; x <= M; x += 48) ridge.lineTo ((float) x, 70.0f + 60.0f * rr.nextFloat() + 30.0f * std::sin (x * 0.004f));
-        ridge.lineTo ((float) M, 150); ridge.closeSubPath();
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0x3326466f), 0, 60, juce::Colour (0x00000000), 0, 150, false));
-        g.fillPath (ridge);
-        juce::Random st (7);
-        for (int i = 0; i < 70; ++i)
+        band.draw (g, { 0.0f, 0.0f, (float) M, 152.0f });
+        if (getWidth() > M)
         {
-            const float sx = st.nextFloat() * M, sy = st.nextFloat() * 92.0f, a = 0.15f + 0.5f * st.nextFloat();
-            g.setColour (juce::Colours::white.withAlpha (a));
-            g.fillEllipse (sx, sy, 1.4f, 1.4f);
+            // Guardian Angel open: continue the night sky by mirroring the right edge
+            juce::Graphics::ScopedSaveState ss (g);
+            g.reduceClipRegion (M, 0, getWidth() - M, 152);
+            g.addTransform (juce::AffineTransform::scale (-1.0f, 1.0f).translated ((float) M * 2.0f, 0.0f));
+            band.draw (g, { 0.0f, 0.0f, (float) M, 152.0f });
         }
     }
 
-    // TRIPLE SEVEN AUDIO logo (top left, deliberately understated so DIVINITY leads)
-    if (logo.isValid())
-    {
-        const float lw = 172.0f;
-        logo.draw (g, { 30.0f, 20.0f, lw, lw * (float) logo.getHeight() / (float) logo.getWidth() }, 0.5f);
-    }
-
-    // DIVINITY wordmark: wide chrome-blue letters with a flare
-    {
-        const float tw = 540.0f, ty = 16.0f;
-        const juce::Rectangle<float> tr (cx - tw * 0.5f, ty, tw, 66.0f);
-        auto f = font (64.0f, Weight::SemiBold, 0.12f);
-        f.setHorizontalScale (1.28f);
-        juce::GlyphArrangement ga;
-        ga.addFittedText (f, "DIVINITY", tr.getX(), tr.getY(), tr.getWidth(), tr.getHeight(), juce::Justification::centred, 1);
-        juce::Path letters;
-        ga.createPath (letters);
-        g.setColour (accent.withAlpha (0.25f));
-        for (float d : { 4.0f, 2.0f })
-            g.strokePath (letters, juce::PathStrokeType (d * 2.0f, juce::PathStrokeType::curved));
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xffeaf6ff), 0, tr.getY() + 6.0f, juce::Colour (0xff3d9bff), 0, tr.getBottom() - 4.0f, false));
-        g.fillPath (letters);
-        g.setColour (juce::Colours::white.withAlpha (0.55f));
-        g.strokePath (letters, juce::PathStrokeType (0.8f));
-        // flare above the centre
-        const float fx = cx, fy = 10.0f;
-        g.setGradientFill (juce::ColourGradient (juce::Colours::white, fx, fy, juce::Colours::transparentWhite, fx + 120.0f, fy, true));
-        g.fillRect (fx - 120.0f, fy - 0.8f, 240.0f, 1.6f);
-        g.setGradientFill (juce::ColourGradient (juce::Colours::white, fx, fy, juce::Colours::transparentWhite, fx, fy + 18.0f, true));
-        g.fillRect (fx - 0.8f, fy - 18.0f, 1.6f, 36.0f);
-        g.setColour (juce::Colours::white);
-        g.fillEllipse (fx - 3.0f, fy - 3.0f, 6.0f, 6.0f);
-        g.setColour (textDim);
-        g.setFont (font (13.0f, Weight::Medium, 1.1f));
-        g.drawText ("SYNTHESIZER", (int) (cx - 200), 76, 400, 16, juce::Justification::centred);
-    }
-
     // stats (top right)
-    g.setColour (textDim);
-    g.setFont (font (11.5f, Weight::Medium, 0.04f));
-    g.drawText (owner.cpuText + "     " + owner.ramText, M - 400, 20, 250, 15, juce::Justification::centredLeft);
-    g.drawText (owner.voicesText, M - 400, 38, 250, 15, juce::Justification::centredLeft);
-    auto bar = juce::Rectangle<float> ((float) M - 400.0f, 58.0f, 124.0f, 4.0f);
-    g.setColour (panel2); g.fillRoundedRectangle (bar, 2.0f);
-    g.setColour (accent); g.fillRoundedRectangle (bar.withWidth (juce::jmax (2.0f, bar.getWidth() * owner.voiceFill)), 2.0f);
-
+    g.setColour (text.withAlpha (0.92f));
+    g.setFont (font (12.0f, Weight::Medium, 0.02f));
+    g.drawText (owner.cpuText, 1153, 20, 60, 15, juce::Justification::centredLeft);
+    g.drawText (owner.ramText, 1208, 20, 100, 15, juce::Justification::centredLeft);
+    g.drawText (owner.voicesText, 1153, 37, 160, 15, juce::Justification::centredLeft);
+    auto bar = juce::Rectangle<float> (1153.0f, 57.0f, 125.0f, 5.0f);
+    g.setColour (juce::Colour (0xff15232c)); g.fillRoundedRectangle (bar, 2.5f);
+    auto lit = bar.withWidth (juce::jmax (4.0f, bar.getWidth() * owner.voiceFill));
+    g.setColour (accent.withAlpha (0.25f)); g.fillRoundedRectangle (lit.expanded (1.5f), 3.5f);
+    g.setGradientFill (juce::ColourGradient (accentStrong, lit.getX(), 0, glow, lit.getRight(), 0, false));
+    g.fillRoundedRectangle (lit, 2.5f);
 
     // preset strip
-    drawPanelBackground (g, { 12.0f, 152.0f, (float) M - 24.0f, 52.0f });
+    drawPanelBackground (g, { 14.0f, 153.0f, (float) M - 28.0f, 51.0f });
     const auto pf = owner.presetField.toFloat();
-    g.setColour (juce::Colour (0xff081224)); g.fillRoundedRectangle (pf, 6.0f);
-    g.setColour (borderBright); g.drawRoundedRectangle (pf.reduced (0.5f), 6.0f, 1.0f);
-    g.drawRoundedRectangle (owner.savePlus.getBounds().toFloat().reduced (0.5f), 6.0f, 1.0f);
-    g.setColour (border);
-    g.drawVerticalLine (owner.arpButton.getX() - 10, 162.0f, 194.0f);
+    drawGlassControl (g, pf, false, false, 7.0f);
+    g.setColour (juce::Colour (0xff22394a));
+    for (int x : { 146, 258, 316 }) g.drawVerticalLine (x, 165.0f, 193.0f);
+    g.drawVerticalLine (owner.arpButton.getX() - 16, 165.0f, 193.0f);
+    g.drawVerticalLine (owner.voiceMode.getRight() + 16, 165.0f, 193.0f);
     g.setColour (text);
-    g.setFont (font (12.5f, Weight::Medium, 0.06f));
-    g.drawText ("VOICES", owner.voices.getX() - 70, 158, 62, 40, juce::Justification::centredRight);
-    g.drawText ("GLIDE", owner.glideKnob.getX() - 60, 158, 54, 40, juce::Justification::centredRight);
+    g.setFont (font (13.5f, Weight::Medium, 0.03f));
+    g.drawText ("VOICES", owner.voices.getX() - 66, 158, 58, 40, juce::Justification::centredRight);
+    g.drawText ("GLIDE", owner.glideKnob.getX() - 66, 158, 56, 40, juce::Justification::centredRight);
 }
 
 void DivinityEditor::ExplainOverlay::paint (juce::Graphics& g)

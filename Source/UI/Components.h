@@ -94,6 +94,11 @@ public:
     void resized() override;
     void paint (juce::Graphics&) override;
     void setCaptionSize (float s) { captionSize = s; repaint(); }
+    /** 0 = caption only (value on hover), 1 = small value line above the caption, 2 = caption then a value pill below. */
+    void setValueStyle (int style) { valueStyle = style; resized(); repaint(); }
+    void setMaxKnobSize (int px) { maxKnob = px; resized(); }
+    /** Optional formatter for the value text (e.g. "28%", "C", "-3.0 dB"). */
+    std::function<juce::String (float)> formatValue;
     void updateModulation();
     juce::Slider& getSlider() { return slider; }
 
@@ -108,6 +113,9 @@ private:
     ModDest dest;
     float modScale, captionSize = 10.5f;
     bool showingValue = false;
+    int valueStyle = 0, maxKnob = 1000;
+    juce::String lastValueText;
+    juce::String valueText() const;
 };
 
 //==============================================================================
@@ -116,6 +124,7 @@ class PowerButton : public juce::ToggleButton
 public:
     PowerButton (APVTS& apvts, const juce::String& paramID);
     void paintButton (juce::Graphics&, bool over, bool down) override;
+    int glyph = 0;   // 0 = power symbol, 1 = diamond (LFO)
 private:
     APVTS::ButtonAttachment attachment;
 };
@@ -131,6 +140,7 @@ public:
     void step (int delta);
     std::function<void()> onChange;
     int getIndex() const noexcept { return index; }
+    bool centreText = false;
 
 private:
     juce::AudioParameterChoice& param;
@@ -197,6 +207,7 @@ public:
     void paintButton (juce::Graphics&, bool over, bool down) override;
     void setPath (juce::Path p) { path = std::move (p); repaint(); }
     bool filledWhenOn = false;
+    bool boxed = false;   // draw a small glass square behind the icon (panel header buttons)
 private:
     juce::Path path;
     bool fill;
