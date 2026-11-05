@@ -3,7 +3,7 @@
 **TRIPLE SEVEN AUDIO — Engineered to Feel.**
 Hybrid software synthesizer · VST3 / AU / Standalone · macOS (Apple Silicon + Intel) & Windows · JUCE / C++17
 
-Current version: **0.5.0 — arpeggiator, 220 presets (110 wave + 90 neogrime), collapsible Guardian Angel**. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
+Current version: **0.6.0 — Sound Engine 2.0** (alias-free oscillators, living unison + analog drift, new FDN reverb and stereo chorus, warmer filters; old projects auto-load on the Classic 1.0 engine). Measurements: [`docs/SOUND_ENGINE_2.md`](docs/SOUND_ENGINE_2.md). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
 
 ---
 
@@ -47,6 +47,8 @@ Push to GitHub and `.github/workflows/build.yml` builds a **universal macOS** zi
 ## Test
 ```bash
 ./build/DivinityTests_artefacts/Release/DivinityTests test-output
+# objective sound measurements (+ every factory preset as a WAV)
+./build/DivinitySoundLab_artefacts/Release/DivinitySoundLab soundlab-output --wavs
 ```
 72 automated checks: pitch accuracy, envelope timing, filter stability, modulation routing, state round-trip & older-session compatibility, deterministic recall, user preset save/load, MIDI/sustain/legato/voice stealing, 60 random-patch fuzz runs, 44.1–192 kHz × 32–1024 sample sweeps, 60 s sustained notes, denormal/silence, CPU, factory preset levels. It also writes a WAV demo of every factory preset and PNG snapshots of both workspaces to `test-output/`.
 

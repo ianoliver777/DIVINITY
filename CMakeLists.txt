@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(DIVINITY VERSION 0.5.0 LANGUAGES C CXX)
+project(DIVINITY VERSION 0.6.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -123,6 +123,16 @@ if(DIVINITY_BUILD_TESTS)
     target_compile_definitions(DivinityTests PRIVATE ${DIVINITY_COMMON_DEFS}
         JUCE_STANDALONE_APPLICATION=1 DIVINITY_TESTS=1 JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(DivinityTests PRIVATE
+        DivinityAssets ${DIVINITY_JUCE_MODULES}
+        juce::juce_recommended_config_flags)
+
+    # Sound Lab: objective audio measurements (aliasing, unison, filter, reverb, presets)
+    juce_add_console_app(DivinitySoundLab PRODUCT_NAME "DivinitySoundLab")
+    target_sources(DivinitySoundLab PRIVATE Tests/SoundLab.cpp ${DIVINITY_CORE_SOURCES})
+    target_include_directories(DivinitySoundLab PRIVATE Source)
+    target_compile_definitions(DivinitySoundLab PRIVATE ${DIVINITY_COMMON_DEFS}
+        JUCE_STANDALONE_APPLICATION=1 DIVINITY_TESTS=1 JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(DivinitySoundLab PRIVATE
         DivinityAssets ${DIVINITY_JUCE_MODULES}
         juce::juce_recommended_config_flags)
 endif()

@@ -322,6 +322,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         group->addChild (std::make_unique<APF> (pid (ids::revDamp), "Reverb Damping", juce::NormalisableRange<float> (0.0f, 1.0f), 0.4f, pct()));
         group->addChild (std::make_unique<APF> (pid (ids::revWidth), "Reverb Width", juce::NormalisableRange<float> (0.0f, 1.0f), 1.0f, pct()));
         group->addChild (std::make_unique<APF> (pid (ids::revMix), "Reverb Mix", juce::NormalisableRange<float> (0.0f, 1.0f), 0.3f, pct()));
+        group->addChild (std::make_unique<APF> (pid (ids::revPredelay), "Reverb Pre-Delay", juce::NormalisableRange<float> (0.0f, 250.0f, 0.0f, 0.6f), 18.0f, ms()));
 
         group->addChild (std::make_unique<APB> (pid (ids::limOn), "Limiter On", true));
         group->addChild (std::make_unique<APF> (pid (ids::limCeiling), "Limiter Ceiling", juce::NormalisableRange<float> (-12.0f, 0.0f), -0.3f, db()));
@@ -337,6 +338,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         group->addChild (std::make_unique<APC> (pid (ids::voiceMode), "Voice Mode", juce::StringArray { "Poly", "Legato", "Mono" }, 0));
         group->addChild (std::make_unique<APF> (pid (ids::masterTune), "Master Tune", juce::NormalisableRange<float> (-100.0f, 100.0f), 0.0f, cents()));
         group->addChild (std::make_unique<APF> (pid (ids::master), "Master Volume", juce::NormalisableRange<float> (-60.0f, 6.0f, 0.0f, 2.5f), -6.0f, db()));
+        group->addChild (std::make_unique<APC> (pid (ids::engineMode), "Engine", juce::StringArray { "Classic 1.0", "Divine 2.0" }, 1));
+        group->addChild (std::make_unique<APF> (pid (ids::analog), "Analog Drift", juce::NormalisableRange<float> (0.0f, 1.0f), 0.3f, pct()));
         layout.add (std::move (group));
     }
 
@@ -455,6 +458,9 @@ juce::String helpTextFor (const juce::String& id)
     if (id == ids::master)     return "Master Volume: final output level.";
     if (id == ids::masterTune) return "Master Tune: shifts the tuning of the whole instrument in cents.";
     if (id == ids::limCeiling) return "Limiter Ceiling: the loudest the output is allowed to get.";
+    if (id == ids::engineMode) return "Engine: Divine 2.0 is the overhauled sound engine (cleaner highs, living unison, warmer filters, new reverb and chorus). Classic 1.0 keeps the original sound so older projects play back exactly as they were made.";
+    if (id == ids::analog)     return "Analog Drift: slow, organic wander in unison voices, pitch and filter cutoff, a little different on every note. 0% is perfectly static and digital; 30% feels alive; 100% is a worn-out tape machine. (Divine 2.0 engine.)";
+    if (id == ids::revPredelay) return "Reverb Pre-Delay: a short gap before the reverb starts, so the dry note stays clear in front of the space.";
     if (auto t = arpHelpText (id); t.isNotEmpty()) return t;
     return fxHelpText (id);
 }

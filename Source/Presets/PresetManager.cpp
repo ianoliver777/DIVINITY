@@ -189,9 +189,17 @@ bool PresetManager::applyPresetXml (const juce::XmlElement& xml)
     setAllToDefault();
     if (xml.hasAttribute ("fxOrder"))
         apvts.state.setProperty (fxOrderProperty, sanitiseFxOrder (juce::StringArray::fromTokens (xml.getStringAttribute ("fxOrder"), ",", "")).joinIntoString (","), nullptr);
+    bool hasEngineMode = false;
     for (auto* e : params->getChildWithTagNameIterator ("P"))
         if (auto* p = apvts.getParameter (e->getStringAttribute ("id")))
+        {
             p->setValueNotifyingHost (p->convertTo0to1 ((float) e->getDoubleAttribute ("v")));
+            hasEngineMode |= e->getStringAttribute ("id") == ids::engineMode;
+        }
+    // presets saved before Sound Engine 2.0 keep their original (Classic) sound
+    if (! hasEngineMode)
+        if (auto* em = apvts.getParameter (ids::engineMode))
+            em->setValueNotifyingHost (em->convertTo0to1 ((float) EngineMode::Classic));
     loading = wasLoading;
     return true;
 }

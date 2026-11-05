@@ -31,6 +31,7 @@ namespace divinity
     enum class FilterRouting { Serial = 0, Parallel };
     enum class LfoShape { Sine = 0, Square, Triangle, Random };
     enum class VoiceMode { Poly = 0, Legato, Mono };
+    enum class EngineMode { Classic = 0, Divine2 };
 
     enum class ModSource
     {
@@ -107,6 +108,10 @@ namespace divinity
         inline const juce::String voiceMode = "voice_mode";
         inline const juce::String masterTune = "master_tune";
         inline const juce::String master    = "master";
+        // appended in 0.6.0 (Sound Engine 2.0)
+        inline const juce::String engineMode = "engine_mode";    // 0 = Classic (v1 sound, old sessions), 1 = Divine 2.0
+        inline const juce::String analog     = "analog";         // organic drift: unison / pitch / cutoff wander
+        inline const juce::String revPredelay = "reverb_predelay";
     }
 
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

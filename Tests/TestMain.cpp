@@ -38,6 +38,7 @@ static void cleanPatch (DivinityProcessor& p)
     setP (p, ids::satOn, 0); setP (p, ids::limOn, 0); setP (p, ids::master, 0.0f);
     setP (p, ids::env (0, "attack"), 0.001f); setP (p, ids::env (0, "sustain"), 1.0f);
     setP (p, ids::osc (0, "randphase"), 0);
+    setP (p, ids::analog, 0.0f);   // DSP accuracy checks want a fixed pitch (drift has its own tests)
 }
 
 struct Note { double start, length; int note; float vel; };
@@ -301,7 +302,8 @@ static void testStateRoundTrip (DivinityProcessor& p)
         auto* rp = dynamic_cast<juce::RangedAudioParameter*> (prm);
         bool present = false;
         for (auto* e : params->getChildIterator()) if (e->getStringAttribute ("id") == rp->getParameterID()) present = true;
-        if (! present && std::abs (rp->getValue() - rp->getDefaultValue()) > 1.0e-6f) ++wrong;
+        // engine_mode is the one deliberate exception: a session without it predates 2.0 and loads as Classic
+        if (! present && rp->getParameterID() != ids::engineMode && std::abs (rp->getValue() - rp->getDefaultValue()) > 1.0e-6f) ++wrong;
     }
     CHECK (wrong == 0, "parameters missing from an older session fall back to defaults");
 
@@ -1057,6 +1059,149 @@ static void testGuardianAngel (DivinityProcessor& p)
     CHECK (brain.explain ("Cutoff help.\n\nShift-drag: fine").text == "Cutoff help.", "explain strips the shortcut footer");
 }
 
+
+//==============================================================================
+static double correlationLR (const juce::AudioBuffer<float>& b, int from, int len)
+{
+    const float* l = b.getReadPointer (0); const float* r = b.getReadPointer (1);
+    double lr = 0, ll = 0, rr = 0;
+    for (int i = from; i < from + len; ++i) { lr += l[i] * r[i]; ll += l[i] * l[i]; rr += r[i] * r[i]; }
+    return lr / std::sqrt (ll * rr + 1e-30);
+}
+
+/** Energy below 16 kHz away from the harmonics of f0, relative to total below 16 kHz (dB). */
+static double audibleAliasDb (const juce::AudioBuffer<float>& b, double sr, double f0, int from)
+{
+    constexpr int order = 15, N = 1 << order;
+    juce::dsp::FFT fft (order);
+    std::vector<float> d ((size_t) N * 2, 0.0f);
+    for (int i = 0; i < N; ++i)
+    {
+        const double x = (double) i / (N - 1);
+        const double w = 0.35875 - 0.48829 * std::cos (2 * juce::MathConstants<double>::pi * x) + 0.14128 * std::cos (4 * juce::MathConstants<double>::pi * x) - 0.01168 * std::cos (6 * juce::MathConstants<double>::pi * x);
+        d[(size_t) i] = b.getSample (0, from + i) * (float) w;
+    }
+    fft.performFrequencyOnlyForwardTransform (d.data());
+    const double binHz = sr / N;
+    double harm = 0, other = 0;
+    for (int k = 2; k < N / 2 && k * binHz < 16000.0; ++k)
+    {
+        const double h = k * binHz / f0, nearest = std::round (h);
+        const double e = (double) d[(size_t) k] * d[(size_t) k];
+        (nearest >= 1.0 && std::abs (h - nearest) * f0 < 4.0 * binHz ? harm : other) += e;
+    }
+    return 10.0 * std::log10 ((other + 1e-30) / (harm + other + 1e-30));
+}
+
+static void testSoundEngine2 (DivinityProcessor& p)
+{
+    std::cout << "\n== Sound Engine 2.0\n";
+    auto engineMode = [] (DivinityProcessor& q) { return (int) std::lround (q.apvts.getRawParameterValue (ids::engineMode)->load()); };
+
+    {
+        DivinityProcessor fresh;
+        CHECK (engineMode (fresh) == (int) EngineMode::Divine2, "new instances start on the Divine 2.0 engine");
+        fresh.presets.loadPreset (5);
+        CHECK (engineMode (fresh) == (int) EngineMode::Divine2, "factory presets load on the Divine 2.0 engine");
+    }
+
+    // a session saved before 2.0 (no engine_mode) must come back on the Classic engine
+    {
+        p.presets.loadPreset (0);
+        juce::MemoryBlock state; p.getStateInformation (state);
+        auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
+        auto* params = xml->getChildByName ("PARAMETERS");
+        juce::XmlElement* em = nullptr;
+        for (auto* e : params->getChildIterator()) if (e->getStringAttribute ("id") == ids::engineMode) em = e;
+        CHECK (em != nullptr, "engine mode is saved with the session");
+        DivinityProcessor same; same.setStateInformation (state.getData(), (int) state.getSize());
+        CHECK (engineMode (same) == (int) EngineMode::Divine2, "a 2.0 session restores on the 2.0 engine");
+        if (em != nullptr) params->removeChildElement (em, true);
+        juce::MemoryBlock old; juce::AudioProcessor::copyXmlToBinary (*xml, old);
+        DivinityProcessor r; r.setStateInformation (old.getData(), (int) old.getSize());
+        CHECK (engineMode (r) == (int) EngineMode::Classic, "a pre-2.0 session restores on the Classic engine (sounds exactly as saved)");
+    }
+
+    // ...and so must a user preset file written before 2.0
+    {
+        p.presets.loadPreset (0);
+        auto xml = p.presets.createPresetXml ({});
+        auto* params = xml->getChildByName ("Params");
+        juce::XmlElement* em = nullptr;
+        for (auto* e : params->getChildIterator()) if (e->getStringAttribute ("id") == ids::engineMode) em = e;
+        if (em != nullptr) params->removeChildElement (em, true);
+        p.presets.applyPresetXml (*xml);
+        CHECK (engineMode (p) == (int) EngineMode::Classic, "a pre-2.0 user preset loads on the Classic engine");
+        p.presets.loadPreset (0);
+    }
+
+    // band-limited analog oscillators
+    for (auto* wave : { "Saw", "Pulse" })
+    {
+        cleanPatch (p);
+        setP (p, ids::analog, 0.0f);
+        setChoice (p, ids::osc (0, "engine"), "Analog"); setChoice (p, ids::osc (0, "wave"), wave);
+        setP (p, ids::osc (0, "pw"), 0.2f);
+        auto b = render (p, 48000, 256, 1.2, { { 0.0, 1.2, 96, 1.0f } });
+        const double a = audibleAliasDb (b, 48000, 440.0 * std::pow (2.0, 27.0 / 12.0), 12000);
+        CHECK (a < -70.0, "2.0 analog " << wave << " is alias-free in the audible band at C7 (" << a << " dB)");
+    }
+
+    // organic drift: off = every note identical, on = every note a little different, pitch stays put
+    {
+        cleanPatch (p);
+        setChoice (p, ids::osc (0, "engine"), "Analog"); setChoice (p, ids::osc (0, "wave"), "Sine");
+        setP (p, ids::osc (0, "randphase"), 0);
+        setP (p, ids::analog, 0.0f);
+        auto a1 = render (p, 48000, 256, 0.5, { { 0.0, 0.5, 69, 1.0f } });
+        auto a2 = render (p, 48000, 256, 0.5, { { 0.0, 0.5, 69, 1.0f } });
+        double diff = 0; for (int i = 0; i < a1.getNumSamples(); ++i) diff += std::abs (a1.getSample (0, i) - a2.getSample (0, i));
+        CHECK (diff < 1.0e-6, "drift 0%: repeated notes are identical");
+        setP (p, ids::analog, 1.0f);
+        std::vector<Note> notes; for (int i = 0; i < 6; ++i) notes.push_back ({ i * 1.0, 0.9, 69, 1.0f });
+        auto d = render (p, 48000, 256, 6.0, notes);
+        double worst = 0;
+        for (int i = 0; i < 6; ++i)
+        {
+            const double f = measureFrequency (d, 48000, (int) ((i + 0.2) * 48000), (int) ((i + 0.85) * 48000));
+            worst = juce::jmax (worst, std::abs (1200.0 * std::log2 (f / 440.0)));
+        }
+        CHECK (worst > 0.2 && worst < 12.0, "drift 100%: notes wander a few cents, never out of tune (max " << worst << " cents)");
+    }
+
+    // dimension chorus is genuinely stereo; FDN reverb stays bounded at its extremes
+    {
+        cleanPatch (p);
+        setChoice (p, ids::osc (0, "engine"), "Analog"); setChoice (p, ids::osc (0, "wave"), "Saw");
+        setP (p, ids::choOn, 1); setP (p, ids::choMix, 0.5f); setP (p, ids::choDepth, 0.6f);
+        auto b = render (p, 48000, 256, 2.0, { { 0.0, 2.0, 57, 1.0f } });
+        const double c = correlationLR (b, 24000, 48000);
+        CHECK (c < 0.95 && allFinite (b), "2.0 chorus widens a mono source (L/R correlation " << c << ")");
+
+        setP (p, ids::choOn, 0);
+        setP (p, ids::revOn, 1); setP (p, ids::revMix, 1.0f); setP (p, ids::revSize, 1.0f); setP (p, ids::revDamp, 0.0f); setP (p, ids::revPredelay, 250.0f);
+        std::vector<Note> stab; for (int i = 0; i < 8; ++i) stab.push_back ({ i * 0.5, 0.3, 40 + i * 5, 1.0f });
+        auto r = render (p, 48000, 256, 20.0, stab, [&p] (int blk) { if (blk % 40 == 0) setP (p, ids::revSize, (blk / 40) % 2 ? 0.0f : 1.0f); });
+        const float pk = juce::Decibels::gainToDecibels (r.getMagnitude (0, r.getNumSamples()), -120.0f);
+        const float endRms = juce::Decibels::gainToDecibels (r.getRMSLevel (0, r.getNumSamples() - 48000, 48000), -150.0f);
+        CHECK (allFinite (r) && pk < 12.0f && endRms < -20.0f, "2.0 reverb: max size, zero damping, size jumps -> bounded and decaying (peak " << pk << " dBFS, last second " << endRms << " dBFS)");
+    }
+
+    // every factory preset: the mod wheel and aftertouch are wired to something
+    {
+        int missing = 0;
+        for (auto& fp : createFactoryPresets())
+        {
+            if (fp.name == "Init" || fp.category.contains ("Sub") || fp.category.contains ("808") || fp.category == "Percussion") continue;
+            bool wheel = false, touch = false;
+            for (auto& [id, v] : fp.values) { wheel |= v.toString() == "Mod Wheel"; touch |= v.toString() == "Aftertouch"; }
+            if (! (wheel && touch)) { ++missing; std::cout << "    no wheel/aftertouch: " << fp.name << "\n"; }
+        }
+        CHECK (missing == 0, "factory presets respond to mod wheel and aftertouch (" << missing << " missing)");
+    }
+    p.presets.loadPreset (0);
+}
+
 //==============================================================================
 int main (int argc, char** argv)
 {
@@ -1083,6 +1228,7 @@ int main (int argc, char** argv)
         testFuzzAndExtremes (p);
         testRatesAndBuffers (p);
         testLongNotesAndSilence (p);
+        testSoundEngine2 (p);
         testPerformance (p);
         renderPresetDemos (p, outDir.getChildFile ("preset-demos"));
         snapshotEditor (p, outDir);

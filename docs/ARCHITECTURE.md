@@ -117,6 +117,16 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 ### Guardian Angel (v0.3.0)
 - Fully offline. Answers questions from a knowledge base + every parameter's help text; builds sounds from plain-English descriptions (type + vibe words → factory base + SOUL/macro/mod adjustments); suggests one idea at a time with one-click DO IT; musically-safe randomiser (all outputs tested audible, finite and under the ceiling); explain mode (click any control); "make it brighter / wider / grittier..." tweaks. Every change is undoable.
 
+### v0.6.0 — Sound Engine 2.0
+Full write-up, audit and before/after measurements: [`docs/SOUND_ENGINE_2.md`](SOUND_ENGINE_2.md).
+- **Engine switch** (`engine_mode`, LAB → GLOBAL "1.0 / 2.0"): Divine 2.0 is the default for new instances and factory presets. Sessions and user preset files saved before 0.6 have no `engine_mode` and load on **Classic 1.0**, which is measured to reproduce v0.5 exactly (`DivinitySoundLab --classic`).
+- **Oscillators:** half-octave wavetable mipmaps (Classic reads the even levels = the old tables, bit-identical); analog saw/square/triangle/pulse read exact Fourier-series tables, pulse = difference of two band-limited saws (alias-free PWM); first-order ADAA wavefold; BLAMP triangle sub.
+- **Unison / organic motion:** irregular detune spacing, per-unison-voice drift, whole-voice pitch + cutoff wander and per-note variation, all scaled by **Analog Drift** (`analog`, LAB → GLOBAL "DRIFT"). 0% = static and deterministic.
+- **Filters:** SVF band-pass integrator softly saturated (self-limiting resonance, warmer drive), loudness-compensated filter drive, stronger ladder passband compensation, velocity → brightness (±0.6 oct around velocity 0.8).
+- **FX:** 8-line modulated FDN reverb with pre-delay (`reverb_predelay`), early reflections, input + in-loop diffusion and RT-matched damping; 3-voice-per-side dimension chorus (true stereo); delay feedback high-passed and softly saturated. Classic mode keeps the old FX.
+- **Presets:** finishing pass sets drift, pre-delay, mod wheel and aftertouch routes per category; wave/neogrime level trims re-measured.
+- **Tools:** `DivinitySoundLab` measures aliasing, top-end, unison width/mono-compat/motion, filter levels, reverb smoothness/density/decay/level, chorus width, CPU, and renders every factory preset.
+
 ### v0.5.0
 - **Arpeggiator** (`DSP/Arpeggiator`): rewrites the MIDI buffer before the engine. Up, Down, Up/Down, Down/Up, Random (no back-to-back repeats), As Played, Chord; 12 synced rates; 1-4 octaves; gate; swing; latch. Follows the host grid while the transport plays (starts on the next step), free-runs from the first key otherwise. Fixed-size storage, no allocation on the audio thread. Turning it off hands held keys back to the synth so nothing hangs.
 - **Voice modes:** Poly, Legato, Mono (appended so old sessions keep their meaning). Mono retriggers envelopes from their current level (click-free); Legato slides without retriggering.
@@ -130,8 +140,9 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 - Distortion uses first-order ADAA shapers; the frequency shifter is a Hilbert-pair design; the multiband is a 3-band Linkwitz-Riley up/down compressor.
 
 ### Known limitations (honest list)
-- Wavefold isn't oversampled yet → some aliasing at high fold on high notes (Phase 2, M11).
-- Reverb is JUCE's Freeverb-style reverb — fine for Phase 1, will be replaced by a custom design.
+- Wavefold uses first-order ADAA in 2.0 (not oversampled): extreme fold on top-octave notes still leaves some residue (≈ −55 dB at fold 0.9, note 100).
+- Classic 1.0 keeps the original Freeverb-style reverb and mono chorus on purpose (old sessions must not change).
+- Not in 2.0 yet: oscillator sync, FM / phase distortion, spectral warp, comb/formant filter models beyond the existing set, per-oscillator filter routing. See SOUND_ENGINE_2.md.
 - Filter display draws the analog prototype response (very close, not bit-exact above ~10 kHz).
 - No MIDI learn or MPE yet. AU and Windows builds are produced by CI and haven't been run in a real DAW by us.
 - Windows CI earlier reported pluginval "crashes": that was the CI script not waiting for pluginval.exe (a GUI-subsystem app), not the plugin. Fixed in v0.3.0 with Start-Process -Wait.

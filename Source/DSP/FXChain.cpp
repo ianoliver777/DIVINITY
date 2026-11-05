@@ -1,4 +1,5 @@
 #include "FXChain.h"
+#include "Spaces.h"
 
 namespace divinity
 {
@@ -389,8 +390,8 @@ namespace
     public:
         ChorusModule (juce::AudioProcessorValueTreeState& s, FXChain::Display& d)
             : FxModule (s, ids::choOn), disp (d), rate (p (ids::choRate)), depth (p (ids::choDepth)), mix (p (ids::choMix)) {}
-        void prepare (double sr, int maxBlock) override { chorus.prepare ({ sr, (juce::uint32) maxBlock, 2 }); mixS.reset (sr, 0.03); reset(); }
-        void reset() override { chorus.reset(); mixS.setCurrentAndTargetValue (0); }
+        void prepare (double sr, int maxBlock) override { chorus.prepare ({ sr, (juce::uint32) maxBlock, 2 }); dim.prepare (sr); mixS.reset (sr, 0.03); reset(); }
+        void reset() override { chorus.reset(); dim.reset(); mixS.setCurrentAndTargetValue (0); lastMix = 0.0f; }
         bool wantsToRun (const FxContext& c) const noexcept override { return isOn() || c.macros[1] > 0.001f; }
         void process (float* L, float* R, int n, const FxContext& c) noexcept override
         {
@@ -399,6 +400,15 @@ namespace
             mixS.setTargetValue (clamp01 (on ? mix->load() : c.macros[1] * 0.6f));
             mixS.skip (n);
             disp.chorus = depthT;
+            if (engine->load() > 0.5f)
+            {
+                // Divine 2.0: dimension chorus (true stereo; per-sample mix ramp)
+                const float m1 = mixS.getCurrentValue();
+                dim.process (L, R, n, rate->load(), depthT, lastMix, m1);
+                lastMix = m1;
+                return;
+            }
+            lastMix = mixS.getCurrentValue();
             chorus.setRate (rate->load()); chorus.setDepth (depthT); chorus.setCentreDelay (7.0f);
             chorus.setFeedback (0.0f); chorus.setMix (mixS.getCurrentValue());
             float* chans[2] = { L, R };
@@ -409,8 +419,11 @@ namespace
     private:
         FXChain::Display& disp;
         std::atomic<float> *rate, *depth, *mix;
+        std::atomic<float>* engine = p (ids::engineMode);
         juce::dsp::Chorus<float> chorus;
+        dsp::DimensionChorus dim;
         juce::SmoothedValue<float> mixS;
+        float lastMix = 0.0f;
     };
 
     //==========================================================================
@@ -605,9 +618,10 @@ namespace
             time.reset (sr, 0.25);
             reset();
         }
-        void reset() { std::fill (bufL.begin(), bufL.end(), 0.0f); std::fill (bufR.begin(), bufR.end(), 0.0f); writePos = 0; lpL = lpR = 0.0f; }
-        void process (float* L, float* R, int n, float delaySeconds, float feedback, float mix, float tone, bool pingPong) noexcept
+        void reset() { std::fill (bufL.begin(), bufL.end(), 0.0f); std::fill (bufR.begin(), bufR.end(), 0.0f); writePos = 0; lpL = lpR = hpL = hpR = 0.0f; }
+        void process (float* L, float* R, int n, float delaySeconds, float feedback, float mix, float tone, bool pingPong, bool v2 = false) noexcept
         {
+            const float hpA = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 140.0f / (float) sampleRate);
             const int size = (int) bufL.size();
             if (size < 8) return;
             time.setTargetValue (juce::jlimit (0.001f, (float) (size - 4) / (float) sampleRate, delaySeconds));
@@ -626,9 +640,17 @@ namespace
                 const float rp = (float) writePos - d;
                 const float outL = read (bufL, rp), outR = read (bufR, rp);
                 lpL = dsp::sanitise (lpL + a * (outL - lpL)); lpR = dsp::sanitise (lpR + a * (outR - lpR));
+                float fbL = lpL, fbR = lpR;
+                if (v2)
+                {
+                    // Divine 2.0: repeats lose their low-end mud and saturate softly instead of piling up
+                    hpL = dsp::sanitise (hpL + hpA * (lpL - hpL)); hpR = dsp::sanitise (hpR + hpA * (lpR - hpR));
+                    fbL = dsp::fastTanh ((lpL - hpL) * 1.15f) / 1.15f;
+                    fbR = dsp::fastTanh ((lpR - hpR) * 1.15f) / 1.15f;
+                }
                 const float inL = L[s], inR = R[s];
-                if (pingPong) { bufL[(size_t) writePos] = 0.5f * (inL + inR) + feedback * lpR; bufR[(size_t) writePos] = feedback * lpL; }
-                else          { bufL[(size_t) writePos] = inL + feedback * lpL; bufR[(size_t) writePos] = inR + feedback * lpR; }
+                if (pingPong) { bufL[(size_t) writePos] = 0.5f * (inL + inR) + feedback * fbR; bufR[(size_t) writePos] = feedback * fbL; }
+                else          { bufL[(size_t) writePos] = inL + feedback * fbL; bufR[(size_t) writePos] = inR + feedback * fbR; }
                 L[s] += mix * outL; R[s] += mix * outR;
                 writePos = (writePos + 1) % size;
             }
@@ -638,7 +660,7 @@ namespace
         std::vector<float> bufL, bufR;
         int writePos = 0;
         juce::SmoothedValue<float> time;
-        float lpL = 0, lpR = 0;
+        float lpL = 0, lpR = 0, hpL = 0, hpR = 0;
     };
 
     class DelayModule : public FxModule
@@ -657,11 +679,12 @@ namespace
             mixS.setTargetValue (mixT); mixS.skip (n);
             const double beats = delayDivisionInBeats ((int) std::lround (div->load()));
             const float secs = (float) (beats * 60.0 / juce::jmax (20.0, c.bpm));
-            delay.process (L, R, n, secs, fb->load(), mixS.getCurrentValue(), tone->load(), ping->load() > 0.5f);
+            delay.process (L, R, n, secs, fb->load(), mixS.getCurrentValue(), tone->load(), ping->load() > 0.5f, engine->load() > 0.5f);
         }
     private:
         FXChain::Display& disp;
         std::atomic<float> *div, *fb, *mix, *ping, *tone;
+        std::atomic<float>* engine = p (ids::engineMode);
         StereoDelay delay;
         juce::SmoothedValue<float> mixS;
     };
@@ -672,14 +695,38 @@ namespace
     public:
         ReverbModule (juce::AudioProcessorValueTreeState& s, FXChain::Display& d)
             : FxModule (s, ids::revOn), disp (d), size (p (ids::revSize)), damp (p (ids::revDamp)), width (p (ids::revWidth)), mix (p (ids::revMix)) {}
-        void prepare (double sr, int maxBlock) override { reverb.prepare ({ sr, (juce::uint32) maxBlock, 2 }); wet.setSize (2, maxBlock); mixS.reset (sr, 0.03); reset(); }
-        void reset() override { reverb.reset(); mixS.setCurrentAndTargetValue (0); }
+        void prepare (double sr, int maxBlock) override
+        {
+            reverb.prepare ({ sr, (juce::uint32) maxBlock, 2 }); divine.prepare (sr);
+            wet.setSize (2, maxBlock); mixS.reset (sr, 0.03); sizeS.reset (sr, 0.1); preS.reset (sr, 0.15); reset();
+        }
+        void reset() override { reverb.reset(); divine.reset(); mixS.setCurrentAndTargetValue (0); sizeS.setCurrentAndTargetValue (size->load()); preS.setCurrentAndTargetValue (predelay->load()); }
         bool wantsToRun (const FxContext& c) const noexcept override { return isOn() || c.macros[3] > 0.001f || c.mods.reverbMix > 0.001f; }
         void process (float* L, float* R, int n, const FxContext& c) noexcept override
         {
             const float mixT = clamp01 ((isOn() ? mix->load() : 0.0f) + c.macros[3] * 0.5f + c.mods.reverbMix);
             disp.reverb = mixT;
             mixS.setTargetValue (mixT);
+            if (engine->load() > 0.5f)
+            {
+                // Divine 2.0: FDN hall (smooth, dense, modulated tail; pre-delay + early reflections)
+                sizeS.setTargetValue (clamp01 (size->load() + c.macros[3] * 0.2f + c.mods.reverbSize));
+                preS.setTargetValue (predelay->load());
+                sizeS.skip (n); preS.skip (n);
+                divine.process (L, R, wet.getWritePointer (0), wet.getWritePointer (1), n, sizeS.getCurrentValue(), damp->load(),
+                                clamp01 (width->load() + c.mods.width), preS.getCurrentValue());
+                const float* wl = wet.getReadPointer (0); const float* wr = wet.getReadPointer (1);
+                // wet gain tracks room size (calibrated with SoundLab: ~3 dB under the Classic
+                // reverb at every size, so presets keep their space without drowning in it)
+                const float g = kDivineWet * juce::Decibels::decibelsToGain (4.0f * (sizeS.getCurrentValue() - 0.6f));   // bigger rooms bloom louder, like the Classic reverb
+                for (int s = 0; s < n; ++s)
+                {
+                    const float m = mixS.getNextValue(), dryG = 1.0f - 0.4f * m;
+                    L[s] = L[s] * dryG + wl[s] * m * g;
+                    R[s] = R[s] * dryG + wr[s] * m * g;
+                }
+                return;
+            }
             juce::dsp::Reverb::Parameters rp;
             rp.roomSize = clamp01 (size->load() + c.macros[3] * 0.2f + c.mods.reverbSize);
             rp.damping = damp->load();
@@ -701,9 +748,13 @@ namespace
     private:
         FXChain::Display& disp;
         std::atomic<float> *size, *damp, *width, *mix;
+        std::atomic<float>* predelay = p (ids::revPredelay);
+        std::atomic<float>* engine = p (ids::engineMode);
         juce::dsp::Reverb reverb;
+        dsp::DivineReverb divine;
         juce::AudioBuffer<float> wet;
-        juce::SmoothedValue<float> mixS;
+        juce::SmoothedValue<float> mixS, sizeS, preS;
+        static constexpr float kDivineWet = 1.6f;   // calibrated with SoundLab: wet sits ~3 dB under the Classic reverb (less wash, same space)
     };
 
     //==========================================================================

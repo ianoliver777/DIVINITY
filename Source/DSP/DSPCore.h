@@ -25,6 +25,64 @@ inline double polyBlep (double t, double dt) noexcept
     return 0.0;
 }
 
+/** PolyBLAMP residual (integrated BLEP) for slope discontinuities. Scale by the slope change * dt. */
+inline double polyBlamp (double t, double dt) noexcept
+{
+    if (t < dt)       { t = t / dt - 1.0;         return -1.0 / 3.0 * t * t * t; }
+    if (t > 1.0 - dt) { t = (t - 1.0) / dt + 1.0; return  1.0 / 3.0 * t * t * t; }
+    return 0.0;
+}
+
+/** Engine 2.0 analog waveforms: PolyBLEP saw/pulse + PolyBLAMP triangle (no corner aliasing). */
+inline float analogSample2 (int wave, double phase, double inc, double pw) noexcept
+{
+    if (wave == 1)
+    {
+        double v = phase < 0.5 ? 4.0 * phase - 1.0 : 3.0 - 4.0 * phase;
+        // slope flips by -8 at phase 0.5 and +8 at phase 0
+        v += 8.0 * inc * polyBlamp (phase, inc);
+        double t2 = phase + 0.5; if (t2 >= 1.0) t2 -= 1.0;
+        v -= 8.0 * inc * polyBlamp (t2, inc);
+        return (float) v;
+    }
+    if (wave == 0) return (float) std::sin (phase * kTwoPi);
+    if (wave == 2) return (float) ((2.0 * phase - 1.0) - polyBlep (phase, inc));
+    if (wave == 3) pw = 0.5;
+    double v = phase < pw ? 1.0 : -1.0;
+    v += polyBlep (phase, inc);
+    double t2 = phase - pw; if (t2 < 0.0) t2 += 1.0;
+    v -= polyBlep (t2, inc);
+    return (float) (v - (2.0 * pw - 1.0));
+}
+
+/** Fast, smooth tanh approximation (exact enough for in-loop saturation, |err| < 2% in range). */
+inline float fastTanh (float x) noexcept
+{
+    x = juce::jlimit (-3.0f, 3.0f, x);
+    const float x2 = x * x;
+    return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+}
+
+/** Wavefolder with first-order antiderivative anti-aliasing (ADAA).
+    f(x)  = (1-a)x + a sin(g x pi/2)   (same curve as the Classic engine)
+    F(x)  = (1-a)x^2/2 - a cos(g x pi/2) / (g pi/2)                         */
+struct FoldAdaa
+{
+    static float f (float x, float a, float w) noexcept  { return (1.0f - a) * x + a * std::sin (w * x); }
+    static float F (float x, float a, float w) noexcept  { return 0.5f * (1.0f - a) * x * x - a * std::cos (w * x) / w; }
+
+    static float process (float x, float& prev, float a) noexcept
+    {
+        const float x0 = prev;
+        prev = x;
+        if (a < 1.0e-4f) return x;
+        const float w = (1.0f + a * 5.0f) * juce::MathConstants<float>::halfPi;
+        const float d = x - x0;
+        if (std::abs (d) < 1.0e-3f) return f (0.5f * (x + x0), a, w);
+        return (F (x, a, w) - F (x0, a, w)) / d;
+    }
+};
+
 inline float analogSample (int wave, double phase, double inc, double pw) noexcept
 {
     switch (wave)
@@ -54,6 +112,20 @@ struct Rng
     uint32_t next() noexcept { state ^= state << 13; state ^= state >> 17; state ^= state << 5; return state; }
     float bipolar() noexcept  { return (float) ((int32_t) next()) * (1.0f / 2147483648.0f); }
     float unipolar() noexcept { return (float) (next() >> 8) * (1.0f / 16777216.0f); }
+};
+
+/** Slow smoothed random walk used for analog drift (evaluated at control rate). */
+struct DriftGen
+{
+    float value = 0.0f, target = 0.0f, timer = 0.0f;
+    void reset() noexcept { value = target = timer = 0.0f; }
+    float advance (Rng& rng, float seconds, float meanPeriod) noexcept
+    {
+        timer -= seconds;
+        if (timer <= 0.0f) { target = rng.bipolar(); timer = meanPeriod * (0.5f + rng.unipolar()); }
+        value += (1.0f - std::exp (-seconds / (meanPeriod * 0.6f))) * (target - value);
+        return value;
+    }
 };
 
 struct NoiseGen
@@ -224,7 +296,20 @@ inline void svfTick (SvfState& st, const FilterCoeffs& c, float x, float& lp, fl
     lp = v2; bp = v1; hp = x - c.k * v1 - v2;
 }
 
-inline float ladderTick (LadderState& st, const FilterCoeffs& c, float x) noexcept
+/** Engine 2.0 SVF: the band-pass integrator is softly saturated, so resonance self-limits musically
+    and the filter warms up when driven (headroom shrinks as `sat` grows). */
+inline void svfTickNL (SvfState& st, const FilterCoeffs& c, float x, float sat, float& lp, float& bp, float& hp) noexcept
+{
+    const float v3 = x - st.ic2;
+    float v1 = c.a1 * st.ic1 + c.a2 * v3;
+    v1 = fastTanh (v1 * sat) / sat;
+    const float v2 = st.ic2 + c.g * v1;
+    st.ic1 = sanitise (2.0f * v1 - st.ic1);
+    st.ic2 = sanitise (2.0f * v2 - st.ic2);
+    lp = v2; bp = v1; hp = x - c.k * v1 - v2;
+}
+
+inline float ladderTick (LadderState& st, const FilterCoeffs& c, float x, float passbandComp = 0.3f) noexcept
 {
     const float G = c.G, inv = 1.0f / (1.0f + c.g);
     const float S = G * G * G * st.s[0] * inv + G * G * st.s[1] * inv + G * st.s[2] * inv + st.s[3] * inv;
@@ -239,7 +324,7 @@ inline float ladderTick (LadderState& st, const FilterCoeffs& c, float x) noexce
         st.s[i] = sanitise (y + v);
         u = y;
     }
-    return u * (1.0f + c.ladderK * 0.3f);  // passband compensation
+    return u * (1.0f + c.ladderK * passbandComp);  // passband compensation
 }
 
 /** Feedback comb tuned to the cutoff frequency. */

@@ -688,9 +688,11 @@ void FxSection::resized()
 GlobalSection::GlobalSection (DivinityProcessor& p)
     : Panel ("GLOBAL"),
       voices (p.apvts, ids::voices), bend (p.apvts, ids::bendRange), glide (p.apvts, ids::glide), tune (p.apvts, ids::masterTune),
-      mode (p.apvts, ids::voiceMode, { "POLY", "MONO", "LEGATO" }, { 0, 2, 1 })
+      analog (p.apvts, ids::analog),
+      mode (p.apvts, ids::voiceMode, { "POLY", "MONO", "LEGATO" }, { 0, 2, 1 }),
+      engine (p.apvts, ids::engineMode, { "1.0", "2.0" }, { 0, 1 })
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &voices, &bend, &glide, &tune, &mode }) addAndMakeVisible (c);
+    for (auto* c : std::initializer_list<juce::Component*> { &voices, &bend, &glide, &tune, &analog, &mode, &engine }) addAndMakeVisible (c);
 }
 
 void GlobalSection::paint (juce::Graphics& g)
@@ -702,6 +704,7 @@ void GlobalSection::paint (juce::Graphics& g)
     g.drawText ("BEND", 22, 68, 70, 22, juce::Justification::centredLeft);
     g.drawText ("GLIDE", 22, 96, 70, 22, juce::Justification::centredLeft);
     g.drawText ("TUNE", 208, 40, 50, 22, juce::Justification::centredLeft);
+    g.drawText ("DRIFT", 208, 68, 50, 22, juce::Justification::centredLeft);
 }
 
 void GlobalSection::resized()
@@ -710,7 +713,9 @@ void GlobalSection::resized()
     bend.setBounds (90, 68, 62, 22);
     glide.setBounds (90, 96, 62, 22);
     tune.setBounds (261, 40, 138, 24);
-    mode.setBounds (207, 84, 193, 28);
+    analog.setBounds (261, 68, 62, 22);
+    engine.setBounds (330, 68, 70, 22);
+    mode.setBounds (207, 96, 193, 24);
 }
 
 //==============================================================================

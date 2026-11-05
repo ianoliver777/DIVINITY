@@ -446,7 +446,7 @@ void OscDisplay::paint (juce::Graphics& g)
         for (int k = frames - 1; k >= 0; --k)
         {
             const int fi = juce::roundToInt ((float) k / (frames - 1) * (WavetableBank::kFrames - 1));
-            const float* data = bank.getFrame (table, fi, 3);
+            const float* data = bank.getFrame (table, fi, 6);   // 128 harmonics (half-octave levels)
             const float ox = area.getX() + dx * (float) k;
             const float oy = area.getBottom() - amp - 4.0f - dy * (float) k;
             juce::Path p;

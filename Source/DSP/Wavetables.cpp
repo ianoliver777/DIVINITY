@@ -158,6 +158,24 @@ namespace
         return s;
     }
 
+    /** Internal analog table: exact Fourier series of the Analog engine's waveforms
+        (same phase and polarity as the PolyBLEP versions, amplitude +-1, no DC). */
+    Spectrum makeAnalogSpectrum (int frame)
+    {
+        Spectrum s ((size_t) Half + 1);
+        for (int k = 1; k <= Half; ++k)
+        {
+            switch (frame)
+            {
+                case 0:  if (k == 1) setSine (s, 1, 1.0); break;                                  // sine
+                case 1:  if (k % 2) s[(size_t) k] = { -8.0 / (kPi * kPi) / ((double) k * k), 0.0 }; break; // triangle: -cos series
+                case 3:  if (k % 2) setSine (s, k, 4.0 / (kPi * k)); break;                       // square: +1 then -1
+                default: setSine (s, k, -2.0 / (kPi * k)); break;                                 // saw 2p-1
+            }
+        }
+        return s;
+    }
+
     Spectrum makeSpectrum (int table, double t)
     {
         switch (table)
@@ -176,26 +194,28 @@ namespace
 WavetableBank::WavetableBank()
 {
     numTables = wavetableNames().size();
-    data.assign ((size_t) numTables * kFrames * kLevels * kStride, 0.0f);
+    data.assign ((size_t) (numTables + 1) * kFrames * kLevels * kStride, 0.0f);
 
-    for (int t = 0; t < numTables; ++t)
+    for (int t = 0; t <= numTables; ++t)   // + the internal analog table
         buildTable (t, numTables);
 }
 
-void WavetableBank::buildTable (int tableIndex, int)
+void WavetableBank::buildTable (int tableIndex, int numPublicTables)
 {
     juce::dsp::FFT fft (kSizeOrder);
     std::vector<juce::dsp::Complex<float>> in ((size_t) N), out ((size_t) N);
+    const bool analogTable = tableIndex == numPublicTables;
+    float analogScale = 1.0f;   // inverse-FFT scale: makes a unit sine partial peak at exactly 1
 
     for (int frame = 0; frame < kFrames; ++frame)
     {
         const double t = (double) frame / (kFrames - 1);
-        const auto spec = makeSpectrum (tableIndex, t);
+        const auto spec = analogTable ? makeAnalogSpectrum (frame) : makeSpectrum (tableIndex, t);
         float normalise = 1.0f;
 
         for (int level = 0; level < kLevels; ++level)
         {
-            const int maxHarm = Half >> level;
+            const int maxHarm = harmonicsForLevel (level);
             std::fill (in.begin(), in.end(), juce::dsp::Complex<float> {});
             for (int k = 1; k <= juce::jmin (maxHarm, Half - 1); ++k)
             {
@@ -212,7 +232,14 @@ void WavetableBank::buildTable (int tableIndex, int)
             {
                 float peak = 0.0f;
                 for (int i = 0; i < N; ++i) peak = juce::jmax (peak, std::abs (dest[i]));
-                normalise = peak > 1.0e-9f ? 0.9f / peak : 0.0f;
+                if (analogTable)
+                {
+                    // frame 0 is a unit sine: its peak is the FFT scale for the whole table
+                    if (frame == 0) analogScale = peak > 1.0e-9f ? 1.0f / peak : 1.0f;
+                    normalise = analogScale;
+                }
+                else
+                    normalise = peak > 1.0e-9f ? 0.9f / peak : 0.0f;
             }
             for (int i = 0; i < N; ++i) dest[i] *= normalise;
             dest[N] = dest[0];

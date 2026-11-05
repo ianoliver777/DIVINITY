@@ -138,6 +138,15 @@ void DivinityProcessor::setStateInformation (const void* data, int sizeInBytes)
         rp->setValueNotifyingHost (norm);
     }
 
+    // Sessions saved before Sound Engine 2.0 have no engine_mode: keep them on the
+    // Classic engine so old projects play back exactly as they were made.
+    bool hasEngineMode = false;
+    for (auto* e : params->getChildWithTagNameIterator ("PARAM"))
+        if (e->getStringAttribute ("id") == ids::engineMode) { hasEngineMode = true; break; }
+    if (! hasEngineMode)
+        if (auto* em = apvts.getParameter (ids::engineMode))
+            em->setValueNotifyingHost (em->convertTo0to1 ((float) EngineMode::Classic));
+
     setFxOrder (juce::StringArray::fromTokens (params->getStringAttribute (fxOrderProperty.toString(), defaultFxOrder().joinIntoString (",")), ",", ""), false);
     uiWorkspace = xml->getStringAttribute ("uiWorkspace", "CREATE");
     if (! juce::StringArray { "CREATE", "EFFECTS", "PLAY", "SOUL", "LAB" }.contains (uiWorkspace)) uiWorkspace = "CREATE";

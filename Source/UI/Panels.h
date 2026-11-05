@@ -171,8 +171,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 private:
-    NumberBox voices, bend, glide, tune;
-    SegmentedChoice mode;
+    NumberBox voices, bend, glide, tune, analog;
+    SegmentedChoice mode, engine;
 };
 
 //==============================================================================

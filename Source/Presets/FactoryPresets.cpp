@@ -78,6 +78,65 @@ namespace
     }
 }
 
+//==============================================================================
+/** Sound Engine 2.0 finishing pass, applied to every factory preset by category:
+    - organic drift amount that suits the role (alive pads, steady subs)
+    - reverb pre-delay so the dry note stays in front of the space
+    - expressive mappings: the mod wheel and aftertouch always do something musical
+      (velocity -> brightness is built into the 2.0 engine for every patch). */
+void applySoundEngine2Finish (FactoryPreset& p)
+{
+    if (p.name == "Init") return;
+    const auto& c = p.category;
+    auto is = [&c] (std::initializer_list<const char*> words) { for (auto* w : words) if (c.contains (w)) return true; return false; };
+
+    const bool lowEnd = is ({ "Sub", "808", "Percussion" });
+    const bool bass   = is ({ "Bass" });
+    const bool pad    = is ({ "Pad", "Ambient", "Atmos", "Vocal", "Vox", "Cinematic" });
+    const bool lead   = is ({ "Lead" });
+    const bool fx     = is ({ "FX", "Experimental" });
+
+    p.set (ids::analog, lowEnd ? 0.05 : bass ? 0.15 : pad ? 0.42 : lead ? 0.3 : fx ? 0.35 : 0.22);
+    p.set (ids::revPredelay, lowEnd || bass ? 8.0 : pad ? 32.0 : lead ? 45.0 : fx ? 0.0 : 22.0);
+
+    // what's already routed, and which slots are free
+    auto value = [&p] (const juce::String& id) -> juce::var
+    {
+        juce::var v;
+        for (auto& [k, x] : p.values) if (k == id) v = x;   // last write wins (same as loading)
+        return v;
+    };
+    bool wheelUsed = false, touchUsed = false;
+    std::vector<int> free;
+    for (int s = 0; s < kNumModSlots; ++s)
+    {
+        const auto src = value (ids::mod (s, "src"));
+        if (src.isVoid() || src.toString() == "-") { free.push_back (s); continue; }
+        wheelUsed |= src.toString() == "Mod Wheel";
+        touchUsed |= src.toString() == "Aftertouch";
+    }
+    const auto ftype = value (ids::filt (0, "type"));
+    const bool filterOn = ftype.isVoid() || ftype.toString() != "Off";   // default type is MG Low 24
+    size_t next = 0;
+    auto route = [&] (const char* src, const char* dst, double amt)
+    {
+        if (next >= free.size()) return;
+        const int s = free[next++];
+        p.choice (ids::mod (s, "src"), src).choice (ids::mod (s, "dst"), dst).set (ids::mod (s, "amt"), amt);
+    };
+
+    if (! wheelUsed && ! lowEnd)
+    {
+        if (filterOn) route ("Mod Wheel", "Filter 1 Cutoff", bass ? 0.3 : pad ? 0.22 : 0.18);
+        else          route ("Mod Wheel", "Osc A Fold", 0.25);
+    }
+    if (! touchUsed && ! lowEnd)
+    {
+        if (filterOn) route ("Aftertouch", "Filter 1 Cutoff", 0.15);
+        else          route ("Aftertouch", "Amp", 0.15);
+    }
+}
+
 std::vector<FactoryPreset> createFactoryPresets()
 {
     std::vector<FactoryPreset> list;
@@ -340,6 +399,9 @@ std::vector<FactoryPreset> createFactoryPresets()
                     p.set (ids::soul (t, "x"), m.w[t][0]).set (ids::soul (t, "y"), m.w[t][1]);
                 p.choice (ids::divineMode, st.divine);
             }
+
+    for (auto& p : list)
+        applySoundEngine2Finish (p);
     return list;
 }
 

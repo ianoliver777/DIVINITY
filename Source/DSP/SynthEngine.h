@@ -30,6 +30,8 @@ struct EngineSnapshot
     std::array<float, kNumMacros> macro {};
     int maxVoices = 8, bendRange = 2, voiceMode = 0;
     float glideMs = 0, masterTune = 0;
+    bool v2 = true;          // Divine 2.0 engine (false = Classic 1.0, bit-compatible with v0.5)
+    float analog = 0.3f;     // organic drift amount (v2)
 };
 
 /** Holds the APVTS atomics and produces snapshots without locks or allocation. */
@@ -50,6 +52,8 @@ private:
     std::array<std::array<std::atomic<float>*, 3>, kNumModSlots> mod;
     std::array<std::atomic<float>*, kNumMacros> macro;
     std::atomic<float>* global[5];
+    std::atomic<float>* engineMode;
+    std::atomic<float>* analog;
 };
 
 /** Host transport info needed by the engine. */
@@ -112,6 +116,13 @@ private:
         float lastPanL = 1, lastPanR = 1, lastSub = 0, lastNoise = 0;
         float drift = 0, driftTarget = 0, driftTimer = 0;   // SOUL instability state
         bool  rampsValid = false;
+
+        // ---- Divine 2.0 ----
+        std::array<std::array<float, kMaxUnison>, kNumOscs> foldPrev {};          // ADAA fold memory
+        std::array<std::array<dsp::DriftGen, kMaxUnison>, kNumOscs> uniDrift;    // per unison voice wander
+        dsp::DriftGen pitchDrift, cutoffDrift;                                    // whole-voice wander
+        dsp::Rng driftRng;                                                        // own generator: drift never depends on other random state
+        float noteCents = 0.0f, noteCutOct = 0.0f;                                // per-note static variation
     };
 
     void handleMidi (const juce::MidiMessage& m);

@@ -48,6 +48,7 @@ EngineParamRefs::EngineParamRefs (juce::AudioProcessorValueTreeState& s)
 
     global[0] = get (ids::voices); global[1] = get (ids::bendRange); global[2] = get (ids::glide);
     global[3] = get (ids::voiceMode); global[4] = get (ids::masterTune);
+    engineMode = get (ids::engineMode); analog = get (ids::analog);
 }
 
 void EngineParamRefs::read (EngineSnapshot& s) const noexcept
@@ -90,6 +91,8 @@ void EngineParamRefs::read (EngineSnapshot& s) const noexcept
     for (int k = 0; k < kNumMacros; ++k) s.macro[(size_t) k] = f (macro[(size_t) k]);
     s.maxVoices = juce::jlimit (1, kMaxVoices, i (global[0]));
     s.bendRange = i (global[1]); s.glideMs = f (global[2]); s.voiceMode = i (global[3]); s.masterTune = f (global[4]);
+    s.v2 = i (engineMode) == (int) EngineMode::Divine2;
+    s.analog = juce::jlimit (0.0f, 1.0f, f (analog));
 }
 
 //==============================================================================
@@ -116,6 +119,7 @@ void SynthEngine::prepare (double sr, int maxBlockSize)
         v.rng.seed (0x1234567u + (uint32_t) idx * 7919u);
         v.noiseL.rng.seed (0xA5A5u + (uint32_t) idx * 31u);
         v.noiseR.rng.seed (0x5A5Au + (uint32_t) idx * 131u);
+        v.driftRng.seed (0xD1F7u + (uint32_t) idx * 104729u);
         ++idx;
     }
     reset();
@@ -257,7 +261,18 @@ void SynthEngine::startVoice (Voice& v, int note, float velocity, bool fresh)
             for (int u = 0; u < kMaxUnison; ++u)
                 v.phase[(size_t) o][(size_t) u] = op.randPhase ? (double) v.rng.unipolar() : (double) op.phase;
         }
+        if (snap.v2)
+        {
+            for (auto& o : v.foldPrev) o.fill (0.0f);
+            // start each drift somewhere different so voices never move in lockstep
+            for (auto& o : v.uniDrift) for (auto& d : o) { d.reset(); d.value = d.target = v.driftRng.bipolar(); }
+            v.pitchDrift.reset(); v.pitchDrift.value = v.driftRng.bipolar();
+            v.cutoffDrift.reset(); v.cutoffDrift.value = v.driftRng.bipolar();
+        }
     }
+    // Divine 2.0: every note is a slightly different "take" (like a real analog voice card)
+    v.noteCents  = snap.v2 ? v.driftRng.bipolar() * snap.analog * 2.5f : 0.0f;
+    v.noteCutOct = snap.v2 ? v.driftRng.bipolar() * snap.analog * 0.06f : 0.0f;
     // Stolen / retriggered voices keep their phase, filter and envelope levels: no clicks.
 
     for (int e = 0; e < kNumEnvs; ++e)
@@ -474,6 +489,19 @@ namespace
         const float g = 1.0f + amount * 7.0f;
         return std::tanh (x * g) / (1.0f + amount * 1.5f);
     }
+
+    /** Divine 2.0 filter drive: same curve family, but loudness-compensated by the
+        actual small-signal gain so turning drive up adds harmonics, not just volume. */
+    inline float drive2 (float x, float amount) noexcept
+    {
+        if (amount < 1.0e-4f) return x;
+        const float g = 1.0f + amount * 7.0f;
+        return dsp::fastTanh (x * g) / (0.5f + 0.5f * std::sqrt (g));
+    }
+
+    // fixed, slightly irregular unison spacing: breaks up the perfectly periodic beating
+    // (and the periodic centre cancellation) of evenly spaced detune
+    constexpr float kUnisonIrregular[kMaxUnison] = { 1.0f, 0.93f, 1.06f, 0.97f, 1.03f, 0.91f, 1.08f, 0.96f };
 }
 
 void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const float* globalSrc)
@@ -501,6 +529,15 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
         v.drift += (1.0f - std::exp (-secs / 0.3f)) * (v.driftTarget - v.drift);
     }
     const float invN = 1.0f / (float) n;
+    const float blockSecs = (float) n / (float) sampleRate;
+    const bool v2 = snap.v2;
+    const float analogAmt = v2 ? snap.analog : 0.0f;
+    float pitchDriftCents = 0.0f, cutDriftOct = 0.0f;
+    if (v2)
+    {
+        pitchDriftCents = v.pitchDrift.advance (v.driftRng, blockSecs, 1.7f) * analogAmt * 3.0f + v.noteCents;
+        cutDriftOct     = v.cutoffDrift.advance (v.driftRng, blockSecs, 2.3f) * analogAmt * 0.12f + v.noteCutOct;
+    }
 
     // ---- glide ----
     const double glideSec = snap.glideMs * 0.001;
@@ -513,7 +550,8 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
 
     if (! std::isfinite (v.pitch)) v.pitch = v.targetPitch;
     const double basePitch = v.pitch + snap.masterTune / 100.0 + pitchBend * snap.bendRange
-                           + (double) (v.drift * juce::jlimit (0.0f, 100.0f, perf.driftCents)) / 100.0;
+                           + (double) (v.drift * juce::jlimit (0.0f, 100.0f, perf.driftCents)) / 100.0
+                           + (double) pitchDriftCents / 100.0;
 
     float* mixL = scratchL.data();
     float* mixR = scratchR.data();
@@ -549,7 +587,13 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
         for (int u = 0; u < nU; ++u)
         {
             const float spreadPos = nU > 1 ? ((float) u / (float) (nU - 1)) * 2.0f - 1.0f : 0.0f;
-            const double cents = spreadPos * std::pow (detune, 1.5f) * 50.0;
+            double cents = spreadPos * std::pow (detune, 1.5f) * 50.0;
+            if (v2)
+            {
+                cents *= kUnisonIrregular[u];
+                // each unison voice wanders on its own: the stack breathes instead of phasing mechanically
+                cents += v.uniDrift[(size_t) o][(size_t) u].advance (v.driftRng, blockSecs, 0.9f) * analogAmt * (nU > 1 ? 4.0f : 1.5f);
+            }
             // alternate sides so neighbouring detune values don't stack on one side
             const float pan = (u % 2 == 0 ? 1.0f : -1.0f) * std::abs (spreadPos) * width;
             float gL, gR; panGains (pan, gL, gR);
@@ -560,7 +604,8 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
 
             if (wt)
             {
-                const int lvl = WavetableBank::levelForIncrement (inc);
+                const int lvl = WavetableBank::levelForIncrement (inc, v2 ? 0.6 : 0.45, v2 ? 1 : 2);
+                float& fprev = v.foldPrev[(size_t) o][(size_t) u];
                 for (int s = 0; s < n; ++s)
                 {
                     const float t = (float) s * invN;
@@ -575,7 +620,8 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
                     const float frac = (float) (idx - i0);
                     const float a = A[i0] + frac * (A[i0 + 1] - A[i0]);
                     const float b = B[i0] + frac * (B[i0 + 1] - B[i0]);
-                    float x = fold (a + fr * (b - a), fold0 + (foldT - fold0) * t);
+                    const float fAmt = fold0 + (foldT - fold0) * t;
+                    float x = v2 ? dsp::FoldAdaa::process (a + fr * (b - a), fprev, fAmt) : fold (a + fr * (b - a), fAmt);
                     x *= level0 + (levelT - level0) * t;
                     mixL[s] += x * gL; mixR[s] += x * gR;
                     ph += inc; if (ph >= 1.0) ph -= 1.0;
@@ -583,11 +629,58 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
             }
             else
             {
+                float& fprev = v.foldPrev[(size_t) o][(size_t) u];
+                if (v2 && op.wave != (int) AnalogWave::Sine)
+                {
+                    // Divine 2.0: read the exact Fourier-series waveform from the band-limited analog
+                    // table (half-octave mips). Pulse = difference of two band-limited saws, so PWM
+                    // is alias-free too. Same phase, polarity and level as the PolyBLEP originals.
+                    const int lvl = WavetableBank::levelForIncrement (inc, 0.6, 1);
+                    const int at = bank.getAnalogTable();
+                    const bool pulse = op.wave == (int) AnalogWave::Pulse;
+                    const int frame = op.wave == (int) AnalogWave::Triangle ? WavetableBank::kAnalogTriangle
+                                    : op.wave == (int) AnalogWave::Square   ? WavetableBank::kAnalogSquare
+                                                                             : WavetableBank::kAnalogSaw;
+                    const float* T = bank.getFrame (at, frame, lvl);
+                    auto look = [T] (double phase) noexcept
+                    {
+                        const double idx = phase * WavetableBank::kSize;
+                        const int i0 = juce::jlimit (0, WavetableBank::kSize - 1, (int) idx);
+                        const float fr = (float) (idx - i0);
+                        return T[i0] + fr * (T[i0 + 1] - T[i0]);
+                    };
+                    for (int s = 0; s < n; ++s)
+                    {
+                        const float t = (float) s * invN;
+                        float x;
+                        if (pulse)
+                        {
+                            double p2 = ph - pw; if (p2 < 0.0) p2 += 1.0;
+                            x = look (p2) - look (ph);
+                        }
+                        else x = look (ph);
+                        x = dsp::FoldAdaa::process (x * 0.9f, fprev, fold0 + (foldT - fold0) * t);
+                        x *= level0 + (levelT - level0) * t;
+                        mixL[s] += x * gL; mixR[s] += x * gR;
+                        ph += inc; if (ph >= 1.0) ph -= 1.0;
+                    }
+                }
+                else
                 for (int s = 0; s < n; ++s)
                 {
                     const float t = (float) s * invN;
-                    float x = analogSample (op.wave, ph, inc, op.wave == (int) AnalogWave::Pulse ? pw : 0.5);
-                    x = fold (x * 0.9f, fold0 + (foldT - fold0) * t);
+                    const float fAmt = fold0 + (foldT - fold0) * t;
+                    float x;
+                    if (v2)
+                    {
+                        x = (float) std::sin (ph * kTwoPi);
+                        x = dsp::FoldAdaa::process (x * 0.9f, fprev, fAmt);
+                    }
+                    else
+                    {
+                        x = analogSample (op.wave, ph, inc, op.wave == (int) AnalogWave::Pulse ? pw : 0.5);
+                        x = fold (x * 0.9f, fAmt);
+                    }
                     x *= level0 + (levelT - level0) * t;
                     mixL[s] += x * gL; mixR[s] += x * gR;
                     ph += inc; if (ph >= 1.0) ph -= 1.0;
@@ -610,7 +703,7 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
             const int aw = wave == 0 ? 0 : (wave == 1 ? 1 : 3);
             for (int s = 0; s < n; ++s)
             {
-                const float x = analogSample (aw, v.subPhase, inc, 0.5) * 0.9f * (sub0 + (subT - sub0) * (float) s * invN);
+                const float x = (v2 ? analogSample2 (aw, v.subPhase, inc, 0.5) : analogSample (aw, v.subPhase, inc, 0.5)) * 0.9f * (sub0 + (subT - sub0) * (float) s * invN);
                 mixL[s] += x; mixR[s] += x;
                 v.subPhase += inc; if (v.subPhase >= 1.0) v.subPhase -= 1.0;
             }
@@ -633,18 +726,20 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
 
     // ---- filters ----
     FilterCoeffs cEnd[2], cStart[2];
-    float drives[2], mixes[2], combDelay[2], combFb[2];
+    float drives[2], mixes[2], combDelay[2], combFb[2], svfSat[2];
     for (int f = 0; f < 2; ++f)
     {
         const auto& fp = snap.filt[(size_t) f];
         const auto cutDest = f == 0 ? ModDest::Filter1Cutoff : ModDest::Filter2Cutoff;
         const auto resDest = f == 0 ? ModDest::Filter1Res : ModDest::Filter2Res;
         const auto drvDest = f == 0 ? ModDest::Filter1Drive : ModDest::Filter2Drive;
-        const double octaves = D (cutDest) * 6.0 + tone * 4.0 + fp.keytrack * (v.note - 60) / 12.0 + perf.brightOct;
+        double octaves = D (cutDest) * 6.0 + tone * 4.0 + fp.keytrack * (v.note - 60) / 12.0 + perf.brightOct;
+        if (v2) octaves += cutDriftOct + (v.velocity - 0.8f) * 0.6f;   // organic wander + velocity brightness
         const float cutoff = juce::jlimit (16.0f, (float) (sampleRate * 0.45), (float) (fp.cutoff * std::pow (2.0, octaves)));
         const float res = juce::jlimit (0.0f, 1.0f, fp.res + D (resDest));
         drives[f] = juce::jlimit (0.0f, 1.0f, fp.drive + D (drvDest) + juce::jmax (0.0f, perf.drive) * 0.4f);
         mixes[f]  = juce::jlimit (0.0f, 1.0f, fp.mix);
+        svfSat[f] = 0.3f + drives[f] * 1.2f;   // v2 in-loop saturation: more drive = less headroom = more growl
         cEnd[f]   = makeCoeffs (cutoff, res, sampleRate);
         cStart[f] = v.rampsValid ? v.lastCoeffs[(size_t) f] : cEnd[f];
         v.lastCoeffs[(size_t) f] = cEnd[f];
@@ -656,16 +751,17 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
     {
         const int type = snap.filt[(size_t) f].type;
         if (type == (int) FilterType::Off) return x;
-        const float in = drive (x, drives[f]);
+        const float in = v2 ? drive2 (x, drives[f]) : drive (x, drives[f]);
         float y = in;
         if (type == (int) FilterType::Ladder24)
-            y = ladderTick (v.ladder[(size_t) f][(size_t) ch], c, in);
+            y = ladderTick (v.ladder[(size_t) f][(size_t) ch], c, in, v2 ? 0.55f : 0.3f);
         else if (type == (int) FilterType::Comb)
             y = v.comb[(size_t) f][(size_t) ch].tick (in, combDelay[f], combFb[f]);
         else
         {
             float lp, bp, hp;
-            svfTick (v.svf[(size_t) f][(size_t) ch], c, in, lp, bp, hp);
+            if (v2) svfTickNL (v.svf[(size_t) f][(size_t) ch], c, in, svfSat[f], lp, bp, hp);
+            else    svfTick (v.svf[(size_t) f][(size_t) ch], c, in, lp, bp, hp);
             switch (type)
             {
                 case (int) FilterType::LowPass12:  y = lp; break;
@@ -685,7 +781,7 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
     const float panR0 = v.rampsValid ? v.lastPanR : panR;
     v.lastPanL = panL; v.lastPanR = panR;
     const float ampMod = juce::jlimit (0.0f, 2.0f, 1.0f + D (ModDest::Amp));
-    const float velGain = 0.3f + 0.7f * v.velocity;
+    const float velGain = v2 ? 0.22f + 0.78f * std::pow (v.velocity, 1.25f) : 0.3f + 0.7f * v.velocity;
     const bool f1On = snap.filt[0].type != 0, f2On = snap.filt[1].type != 0;
     const bool parallel = snap.routing == (int) FilterRouting::Parallel && f1On && f2On;
 
