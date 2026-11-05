@@ -446,15 +446,14 @@ void OscDisplay::paint (juce::Graphics& g)
         for (int k = frames - 1; k >= 0; --k)
         {
             const int fi = juce::roundToInt ((float) k / (frames - 1) * (WavetableBank::kFrames - 1));
-            const float* data = bank.getFrame (table, fi, 6);   // 128 harmonics (half-octave levels)
+            const auto frameView = bank.getFrame (table, fi, 6);   // 128 harmonics
             const float ox = area.getX() + dx * (float) k;
             const float oy = area.getBottom() - amp - 4.0f - dy * (float) k;
             juce::Path p;
             for (int i = 0; i <= points; ++i)
             {
-                const int idx = (i * WavetableBank::kSize / points) % WavetableBank::kSize;
                 const float x = ox + w * (float) i / points;
-                const float y = oy - folded (data[idx]) * amp;
+                const float y = oy - folded (frameView.at ((double) (i % points) / points)) * amp;
                 if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
             }
             const bool cur = (k == current);
@@ -550,6 +549,26 @@ void FilterResponse::paint (juce::Graphics& g)
             case 5: h = (s * s + 1.0) / den; break;
             case 6: h = (1.0 - s * s) / den; break;
             case 7: { const double fb = 0.97 * res; h = 0.6 / (1.0 - fb * std::exp (C (0.0, -2.0 * juce::MathConstants<double>::pi * f / fc))); break; }
+            case 8: { const C d2 = s * s + 1.414 * s + 1.0; h = 1.0 / (den * d2); break; }               // LP 24
+            case 9: { const C d2 = s * s + 1.414 * s + 1.0; h = (s * s) * (s * s) / (den * d2); break; } // HP 24
+            case 10: { const double fb = -0.97 * res; h = 0.6 / (1.0 - fb * std::exp (C (0.0, -2.0 * juce::MathConstants<double>::pi * f / fc))); break; }
+            case 11:
+            {
+                // formant: three vowel peaks chosen by the cutoff (same mapping as the engine)
+                static const double vowels[5][3] = { { 800, 1150, 2900 }, { 400, 1600, 2700 }, { 300, 2300, 3000 }, { 450, 800, 2830 }, { 325, 700, 2530 } };
+                static const double gains[3] = { 1.0, 0.6, 0.35 };
+                const double x = juce::jlimit (0.0, 1.0, std::log2 (fc / 200.0) / std::log2 (25.0)) * 4.0;
+                const int a = juce::jmin (3, (int) x); const double fr = x - a;
+                const double kk = 2.0 - 1.96 * (0.55 + 0.42 * res);
+                C sum (0.0);
+                for (int q = 0; q < 3; ++q)
+                {
+                    const double hz = vowels[a][q] + (vowels[a + 1][q] - vowels[a][q]) * fr;
+                    const C sq (0.0, f / hz);
+                    sum += gains[q] * kk * 1.6 * kk * sq / (sq * sq + kk * sq + 1.0);
+                }
+                h = sum; break;
+            }
             default: break;
         }
         h = 1.0 + mix * (h - 1.0);

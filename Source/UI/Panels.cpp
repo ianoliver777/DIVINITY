@@ -31,11 +31,11 @@ OscCard::OscCard (DivinityProcessor& p, int i)
       more ("More oscillator settings", dotsPath(), true)
 {
     auto& s = p.apvts;
-    const auto posDest = (ModDest) ((int) ModDest::OscAPos + i);
-    const auto lvlDest = (ModDest) ((int) ModDest::OscALevel + i);
-    const auto foldDest = (ModDest) ((int) ModDest::OscAFold + i);
-    const auto pwmDest = (ModDest) ((int) ModDest::OscAPwm + i);
-    const auto detDest = (ModDest) ((int) ModDest::OscADetune + i);
+    const auto posDest = (ModDest) oscModDest (1, i);
+    const auto lvlDest = (ModDest) oscModDest (2, i);
+    const auto foldDest = (ModDest) oscModDest (3, i);
+    const auto pwmDest = (ModDest) oscModDest (4, i);
+    const auto detDest = (ModDest) oscModDest (5, i);
 
     wtKnobs.add (new Knob (s, ids::osc (i, "pos"), "Pos", posDest));
     wtKnobs.add (new Knob (s, ids::osc (i, "fold"), "Fold", foldDest));
@@ -137,7 +137,7 @@ void OscCard::showMore()
     strip->add (new Knob (s, ids::osc (index, "fine"), "Fine", ModDest::None, 1.0f, true));
     strip->add (new Knob (s, ids::osc (index, "unison"), "Unison"));
     strip->add (new Knob (s, ids::osc (index, "width"), "Width"));
-    strip->add (new Knob (s, ids::osc (index, "fold"), "Fold", (ModDest) ((int) ModDest::OscAFold + index)));
+    strip->add (new Knob (s, ids::osc (index, "fold"), "Fold", (ModDest) oscModDest (3, index)));
     strip->add (new Knob (s, ids::osc (index, "phase"), "Phase"));
     strip->add (new Knob (s, ids::osc (index, "oct"), "Oct", ModDest::None, 1.0f, true));
     auto* rp = new juce::TextButton ("RAND PHASE");
@@ -531,7 +531,7 @@ void ModMatrixSection::resized()
 //==============================================================================
 MacroSection::MacroSection (DivinityProcessor& p, bool big) : Panel ("MACROS"), large (big)
 {
-    const char* names[] = { "Tone", "Movement", "Texture", "Space" };
+    const char* names[] = { "Tone", "Movement", "Texture", "Space", "Character", "Width", "Punch", "Air" };
     const ModDest none = ModDest::None;
     for (int i = 0; i < kNumMacros; ++i)
     {
@@ -546,15 +546,15 @@ void MacroSection::resized()
     auto r = getLocalBounds().reduced (10, 0).withTrimmedTop (large ? 56 : 40).withTrimmedBottom (large ? 20 : 8);
     if (large)
     {
-        // 2x2 grid of big knobs
-        const int cw = r.getWidth() / 2, ch = r.getHeight() / 2;
-        for (int i = 0; i < 4; ++i)
-            knobs[i]->setBounds (juce::Rectangle<int> (r.getX() + (i % 2) * cw, r.getY() + (i / 2) * ch, cw, ch).reduced (18, 6));
+        // 4x2 grid of big knobs
+        const int cw = r.getWidth() / 4, ch = r.getHeight() / 2;
+        for (int i = 0; i < kNumMacros; ++i)
+            knobs[i]->setBounds (juce::Rectangle<int> (r.getX() + (i % 4) * cw, r.getY() + (i / 4) * ch, cw, ch).reduced (8, 6));
     }
     else
     {
-        const int w = r.getWidth() / 4;
-        for (int i = 0; i < 4; ++i) knobs[i]->setBounds (r.getX() + i * w, r.getY(), w, r.getHeight());
+        const int w = r.getWidth() / kNumMacros;
+        for (int i = 0; i < kNumMacros; ++i) knobs[i]->setBounds (r.getX() + i * w, r.getY(), w, r.getHeight());
     }
 }
 

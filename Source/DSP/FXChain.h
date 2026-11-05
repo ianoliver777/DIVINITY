@@ -70,7 +70,9 @@ private:
     double sampleRate = 44100.0;
     int maxBlock = 512;
     juce::dsp::Limiter<float> limiter;
-    juce::SmoothedValue<float> masterS;
+    juce::SmoothedValue<float> masterS, widthS, airS, panS;
+    std::atomic<float>* pan = nullptr;
+    float airL = 0, airR = 0, sideLo = 0;
     juce::AudioBuffer<float> dry;
     bool limiterWasOn = false;
 };

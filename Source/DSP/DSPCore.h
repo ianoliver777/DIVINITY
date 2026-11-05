@@ -245,6 +245,8 @@ public:
             case 0:  raw = (float) std::sin (p * kTwoPi); break;
             case 1:  raw = p < 0.5 ? 1.0f : -1.0f; break;
             case 2:  raw = (float) (p < 0.5 ? 4.0 * p - 1.0 : 3.0 - 4.0 * p); break;
+            case 4:  raw = (float) (2.0 * p - 1.0); break;    // saw up
+            case 5:  raw = (float) (1.0 - 2.0 * p); break;    // saw down
             default: raw = held; break;
         }
         // Smooth: one-pole slew, time constant up to ~0.25 of a cycle (min 2 ms for de-clicking).

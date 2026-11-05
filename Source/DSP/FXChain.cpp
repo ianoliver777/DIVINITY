@@ -83,11 +83,11 @@ namespace
             : FxModule (s, ids::satOn), disp (d), drive (p (ids::satDrive)), mix (p (ids::satMix)) {}
         void prepare (double sr, int) override { driveS.reset (sr, 0.03); mixS.reset (sr, 0.03); reset(); }
         void reset() override { adaa.reset(); driveS.setCurrentAndTargetValue (0); mixS.setCurrentAndTargetValue (0); }
-        bool wantsToRun (const FxContext& c) const noexcept override { return isOn() || c.macros[2] > 0.001f || c.mods.satDrive > 0.001f; }
+        bool wantsToRun (const FxContext& c) const noexcept override { return isOn() || c.macros[2] > 0.001f || c.macros[4] > 0.001f || c.mods.satDrive > 0.001f; }
         void process (float* L, float* R, int n, const FxContext& c) noexcept override
         {
             const bool on = isOn();
-            const float driveT = clamp01 ((on ? drive->load() : 0.0f) + c.macros[2] * 0.5f + c.mods.satDrive);
+            const float driveT = clamp01 ((on ? drive->load() : 0.0f) + c.macros[2] * 0.5f + c.macros[4] * 0.35f + c.mods.satDrive);
             driveS.setTargetValue (driveT);
             mixS.setTargetValue (on ? mix->load() : 1.0f);
             disp.sat = driveT;
@@ -831,6 +831,7 @@ FXChain::FXChain (juce::AudioProcessorValueTreeState& s) : apvts (s)
     limOn = s.getRawParameterValue (ids::limOn);
     limCeiling = s.getRawParameterValue (ids::limCeiling);
     master = s.getRawParameterValue (ids::master);
+    pan = s.getRawParameterValue (ids::masterPan);
     setOrder (defaultFxOrder());
 }
 
@@ -867,6 +868,7 @@ void FXChain::prepare (double sr, int maxBlockSize)
     limiter.prepare ({ sr, (juce::uint32) maxBlock, 2 });
     dry.setSize (2, maxBlock);
     masterS.reset (sr, 0.03);
+    for (auto* sv : { &widthS, &airS, &panS }) sv->reset (sr, 0.03);
     reset();
 }
 
@@ -875,6 +877,8 @@ void FXChain::reset()
     for (auto& m : modules) { m->reset(); m->enable.setCurrentAndTargetValue (0.0f); m->running = false; }
     limiter.reset();
     masterS.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (master->load(), -60.0f));
+    widthS.setCurrentAndTargetValue (0.0f); airS.setCurrentAndTargetValue (0.0f); panS.setCurrentAndTargetValue (pan->load());
+    airL = airR = sideLo = 0.0f;
 }
 
 void FXChain::process (juce::AudioBuffer<float>& buffer, double bpm, const SynthEngine::GlobalMods& mods,
@@ -928,6 +932,36 @@ void FXChain::process (juce::AudioBuffer<float>& buffer, double bpm, const Synth
             }
             else
                 m.process (L, R, n, ctx);
+        }
+
+        // WIDTH / AIR macros + master pan: a final polish stage before the master gain.
+        // Width only widens above ~180 Hz (the low end stays mono); AIR is a gentle high shelf.
+        {
+            widthS.setTargetValue (macros[5]); airS.setTargetValue (macros[7]); panS.setTargetValue (pan->load());
+            if (widthS.isSmoothing() || airS.isSmoothing() || panS.isSmoothing()
+                || widthS.getCurrentValue() > 1.0e-4f || airS.getCurrentValue() > 1.0e-4f || std::abs (panS.getCurrentValue()) > 1.0e-4f)
+            {
+                const float aLo = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 180.0f / (float) sampleRate);
+                const float aHi = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 7000.0f / (float) sampleRate);
+                for (int s = 0; s < n; ++s)
+                {
+                    const float w = widthS.getNextValue(), air = airS.getNextValue(), pn = panS.getNextValue();
+                    float l = L[s], r = R[s];
+                    // AIR: add the band above ~7 kHz back in (shelf up to +7 dB)
+                    airL += aHi * (l - airL); airR += aHi * (r - airR);
+                    l += (l - airL) * air * 1.25f; r += (r - airR) * air * 1.25f;
+                    // WIDTH: scale the side signal of everything above the crossover
+                    sideLo += aLo * (0.5f * (l - r) - sideLo);
+                    const float side = 0.5f * (l - r), mid = 0.5f * (l + r);
+                    const float sideOut = sideLo + (side - sideLo) * (1.0f + w * 1.3f);
+                    l = mid + sideOut; r = mid - sideOut;
+                    // PAN: constant-power balance
+                    const float a = (pn + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
+                    L[s] = l * juce::MathConstants<float>::sqrt2 * std::cos (a);
+                    R[s] = r * juce::MathConstants<float>::sqrt2 * std::sin (a);
+                }
+                airL = dsp::sanitise (airL); airR = dsp::sanitise (airR); sideLo = dsp::sanitise (sideLo);
+            }
         }
 
         // master + limiter (always last)

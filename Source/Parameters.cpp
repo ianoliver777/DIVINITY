@@ -2,6 +2,7 @@
 #include "DSP/SoulEngine.h"
 #include "DSP/FxCatalog.h"
 #include "DSP/Arpeggiator.h"
+#include "DSP/Wavetables.h"
 
 namespace divinity
 {
@@ -16,7 +17,8 @@ juce::StringArray modSourceNames()
 {
     return { "-", "LFO 1", "LFO 2", "LFO 3", "LFO 4", "ENV 1", "ENV 2", "ENV 3",
              "Velocity", "Mod Wheel", "Aftertouch", "Pitch Bend", "Note",
-             "Macro 1", "Macro 2", "Macro 3", "Macro 4", "Soul X", "Soul Y" };
+             "Macro 1", "Macro 2", "Macro 3", "Macro 4", "Soul X", "Soul Y",
+             "ENV 4", "Macro 5", "Macro 6", "Macro 7", "Macro 8", "Random", "Step" };
 }
 
 juce::StringArray modDestNames()
@@ -34,17 +36,23 @@ juce::StringArray modDestNames()
              "Amp", "Pan",
              "LFO 1 Rate", "LFO 2 Rate", "LFO 3 Rate", "LFO 4 Rate",
              "Saturation", "Chorus Depth", "Delay Mix", "Reverb Mix",
-             "Soul X", "Soul Y", "Divine Amount" };
+             "Soul X", "Soul Y", "Divine Amount",
+             "Osc D Pitch", "Osc D WT Pos", "Osc D Level", "Osc D Fold", "Osc D PWM", "Osc D Detune",
+             "Sampler Level", "Sampler Pitch", "Sampler Start" };
 }
 
 juce::StringArray wavetableNames()
 {
-    return { "Basic Shapes", "Harmonic Sweep", "Formant Vox", "Pulse Grit", "Glass Halo", "Hollow Organ" };
+    // the six originals keep their indices (sessions store the index); the 0.7.0 library is appended
+    juce::StringArray n { "Basic Shapes", "Harmonic Sweep", "Formant Vox", "Pulse Grit", "Glass Halo", "Hollow Organ" };
+    for (int i = 0; i < libraryTableCount(); ++i) n.add (libraryTableName (i));
+    return n;
 }
 
 juce::StringArray filterTypeNames()
 {
-    return { "Off", "MG Low 24", "Low Pass 12", "High Pass 12", "Band Pass", "Notch", "Peak", "Comb" };
+    return { "Off", "MG Low 24", "Low Pass 12", "High Pass 12", "Band Pass", "Notch", "Peak", "Comb +",
+             "Low Pass 24", "High Pass 24", "Comb -", "Formant" };
 }
 
 static const double kLfoBeats[] = { 16.0, 8.0, 4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 1.5, 0.75, 2.0 / 3.0, 1.0 / 3.0 };
@@ -69,6 +77,26 @@ juce::StringArray delayDivisionNames()
 double delayDivisionInBeats (int index)
 {
     return kDelayBeats[juce::jlimit (0, (int) std::size (kDelayBeats) - 1, index)];
+}
+
+static const double kStepBeats[] = { 1.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125, 1.0 / 12.0, 0.75, 0.375 };
+
+juce::StringArray stepRateNames()
+{
+    return { "1/4", "1/8", "1/8 T", "1/16", "1/16 T", "1/32", "1/32 T", "1/8 D", "1/16 D" };
+}
+
+double stepRateBeats (int index)
+{
+    return kStepBeats[juce::jlimit (0, (int) std::size (kStepBeats) - 1, index)];
+}
+
+juce::StringArray samplerSampleNames()
+{
+    return { "Hat Closed", "Hat Open", "Hat Metal", "Clap", "Snap", "Rim", "Shaker", "Perc Tick", "Kick Thump",
+             "Sub Drop", "Impact Boom", "Reverse Swell", "Noise Riser", "Vinyl Crackle", "Tape Hiss", "Rain",
+             "Wind", "Air Breath", "Choir Ahh", "Vox Chop Oh", "Vox Chop Ee", "Glass Hit", "Bell Strike",
+             "Metal Hit", "Pluck Body", "Music Box", "User Sample" };
 }
 
 juce::StringArray subModeNames()
@@ -160,13 +188,114 @@ static juce::NormalisableRange<float> skewed (float lo, float hi, float centre)
 }
 
 //==============================================================================
+/** Everything added in 0.7.0 lives in its own groups at the end of the layout, so
+    existing parameters keep their positions for hosts that care about order. */
+static void addVersion07Parameters (juce::AudioProcessorValueTreeState::ParameterLayout& layout)
+{
+    auto pid = [] (const juce::String& id) { return juce::ParameterID { id, kParamVersion }; };
+
+    // ---- Oscillator D (same parameter set as A-C) ---------------------------
+    {
+        const int i = 3;
+        const juce::String letter = "D";
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("oscD", "Osc D", " | ");
+        group->addChild (std::make_unique<APB> (pid (ids::osc (i, "on")), "Osc D On", false));
+        group->addChild (std::make_unique<APC> (pid (ids::osc (i, "engine")), "Osc D Engine", juce::StringArray { "Wavetable", "Analog" }, 0));
+        group->addChild (std::make_unique<APC> (pid (ids::osc (i, "table")), "Osc D Wavetable", wavetableNames(), 0));
+        group->addChild (std::make_unique<APF> (pid (ids::osc (i, "pos")), "Osc D WT Position", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct()));
+        group->addChild (std::make_unique<APF> (pid (ids::osc (i, "fold")), "Osc D Fold", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct()));
+        group->addChild (std::make_unique<APC> (pid (ids::osc (i, "wave")), "Osc D Analog Wave", juce::StringArray { "Sine", "Triangle", "Saw", "Square", "Pulse" }, 2));
+        group->addChild (std::make_unique<APF> (pid (ids::osc (i, "pw")), "Osc D Pulse Width", juce::NormalisableRange<float> (0.05f, 0.95f), 0.5f, pct()));
+        group->addChild (std::make_unique<API> (pid (ids::osc (i, "unison")), "Osc D Unison", 1, kMaxUnison, 1));
+        group->addChild (std::make_unique<APF> (pid (ids::osc (i, "detune")), "Osc D Detune", juce::NormalisableRange<float> (0.0f, 1.0f), 0.25f, pct()));
+        group->addChild (std::make_unique<APF> (pid (ids::osc (i, "width")), "Osc D Stereo Width", juce::NormalisableRange<float> (0.0f, 1.0f), 0.7f, pct()));
+        group->addChild (std::make_unique<APF> (pid (ids::osc (i, "phase")), "Osc D Phase", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f,
+                                                Attr().withStringFromValueFunction ([] (float v, int) { return juce::String (juce::roundToInt (v * 360.0f)) + juce::String (juce::CharPointer_UTF8 ("\xc2\xb0")); })));
+        group->addChild (std::make_unique<APB> (pid (ids::osc (i, "randphase")), "Osc D Random Phase", true));
+        group->addChild (std::make_unique<API> (pid (ids::osc (i, "oct")), "Osc D Octave", -3, 3, 0));
+        group->addChild (std::make_unique<API> (pid (ids::osc (i, "semi")), "Osc D Semitone", -12, 12, 0));
+        group->addChild (std::make_unique<APF> (pid (ids::osc (i, "fine")), "Osc D Fine", juce::NormalisableRange<float> (-100.0f, 100.0f), 0.0f, cents()));
+        group->addChild (std::make_unique<APF> (pid (ids::osc (i, "level")), "Osc D Level", juce::NormalisableRange<float> (0.0f, 1.0f), 0.75f, pct()));
+        layout.add (std::move (group));
+    }
+
+    // ---- Unison blend (all four oscillators), ENV 4, macros 5-8, LFO power --
+    {
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("v07", "Voice + Modulation (0.7)", " | ");
+        for (int i = 0; i < kNumOscs; ++i)
+        {
+            const auto letter = juce::String::charToString ((juce::juce_wchar) ('A' + i));
+            group->addChild (std::make_unique<APF> (pid (ids::osc (i, "blend")), "Osc " + letter + " Unison Blend",
+                                                    juce::NormalisableRange<float> (0.0f, 1.0f), 1.0f, pct()));
+        }
+        const int e = 3;
+        group->addChild (std::make_unique<APF> (pid (ids::env (e, "attack")), "Env 4 Attack", skewed (0.0005f, 20.0f, 0.5f), 0.01f, seconds()));
+        group->addChild (std::make_unique<APF> (pid (ids::env (e, "decay")), "Env 4 Decay", skewed (0.001f, 20.0f, 0.8f), 0.6f, seconds()));
+        group->addChild (std::make_unique<APF> (pid (ids::env (e, "sustain")), "Env 4 Sustain", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct()));
+        group->addChild (std::make_unique<APF> (pid (ids::env (e, "release")), "Env 4 Release", skewed (0.001f, 30.0f, 1.0f), 0.4f, seconds()));
+        group->addChild (std::make_unique<APF> (pid (ids::env (e, "curve")), "Env 4 Curve", juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f, bipolarPct()));
+
+        const char* names[] = { "Character", "Width", "Punch", "Air" };
+        for (int m = 4; m < kNumMacros; ++m)
+            group->addChild (std::make_unique<APF> (pid (ids::macro (m)), juce::String ("Macro ") + juce::String (m + 1) + " " + names[m - 4],
+                                                    juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct()));
+        for (int l = 0; l < kNumLfos; ++l)
+            group->addChild (std::make_unique<APB> (pid (ids::lfo (l, "on")), "LFO " + juce::String (l + 1) + " On", false));
+
+        group->addChild (std::make_unique<APF> (pid (ids::velSens), "Velocity Sensitivity", juce::NormalisableRange<float> (0.0f, 1.0f), 1.0f, pct()));
+        group->addChild (std::make_unique<APF> (pid (ids::masterPan), "Master Pan", juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f, bipolarPct()));
+        group->addChild (std::make_unique<APF> (pid (ids::rndRate), "Random Rate", skewed (0.05f, 30.0f, 2.0f), 2.0f, hz()));
+        group->addChild (std::make_unique<APF> (pid (ids::rndSmooth), "Random Smooth", juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f, pct()));
+        group->addChild (std::make_unique<APB> (pid (ids::rndSync), "Random Sync", false));
+        group->addChild (std::make_unique<APC> (pid (ids::rndDiv), "Random Division", lfoDivisionNames(), 5));
+        layout.add (std::move (group));
+    }
+
+    // ---- Step sequencer -----------------------------------------------------
+    {
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("step", "Step Sequencer", " | ");
+        group->addChild (std::make_unique<APB> (pid (ids::stepOn), "Step On", false));
+        group->addChild (std::make_unique<APC> (pid (ids::stepMode), "Step Mode", juce::StringArray { "Modulate", "Trigger" }, 0));
+        group->addChild (std::make_unique<APC> (pid (ids::stepRate), "Step Rate", stepRateNames(), 3));
+        group->addChild (std::make_unique<API> (pid (ids::stepLength), "Step Length", 1, kNumSteps, 16));
+        group->addChild (std::make_unique<APF> (pid (ids::stepSwing), "Step Swing", juce::NormalisableRange<float> (0.0f, 0.75f), 0.0f, pct()));
+        group->addChild (std::make_unique<APF> (pid (ids::stepSmooth), "Step Smooth", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct()));
+        for (int st = 0; st < kNumSteps; ++st)
+        {
+            const auto n = juce::String (st + 1);
+            group->addChild (std::make_unique<APF> (pid (ids::step (st, "lvl")), "Step " + n + " Level", juce::NormalisableRange<float> (0.0f, 1.0f), st % 4 == 0 ? 1.0f : 0.6f, pct()));
+            group->addChild (std::make_unique<API> (pid (ids::step (st, "rat")), "Step " + n + " Ratchet", 1, 4, 1));
+            group->addChild (std::make_unique<APF> (pid (ids::step (st, "len")), "Step " + n + " Gate", juce::NormalisableRange<float> (0.05f, 1.0f), 0.5f, pct()));
+            group->addChild (std::make_unique<API> (pid (ids::step (st, "pitch")), "Step " + n + " Pitch", -24, 24, 0));
+        }
+        layout.add (std::move (group));
+    }
+
+    // ---- Sampler ------------------------------------------------------------
+    {
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("sampler", "Sampler", " | ");
+        group->addChild (std::make_unique<APB> (pid (ids::smpOn), "Sampler On", false));
+        group->addChild (std::make_unique<APC> (pid (ids::smpSample), "Sampler Sample", samplerSampleNames(), 0));
+        group->addChild (std::make_unique<APF> (pid (ids::smpLevel), "Sampler Level", juce::NormalisableRange<float> (0.0f, 1.0f), 0.75f, pct()));
+        group->addChild (std::make_unique<API> (pid (ids::smpTune), "Sampler Tune", -36, 36, 0));
+        group->addChild (std::make_unique<APF> (pid (ids::smpFine), "Sampler Fine", juce::NormalisableRange<float> (-100.0f, 100.0f), 0.0f, cents()));
+        group->addChild (std::make_unique<APF> (pid (ids::smpStart), "Sampler Start", juce::NormalisableRange<float> (0.0f, 0.95f), 0.0f, pct()));
+        group->addChild (std::make_unique<APB> (pid (ids::smpLoop), "Sampler Loop", false));
+        group->addChild (std::make_unique<APF> (pid (ids::smpLoopStart), "Sampler Loop Start", juce::NormalisableRange<float> (0.0f, 0.95f), 0.1f, pct()));
+        group->addChild (std::make_unique<APF> (pid (ids::smpLoopEnd), "Sampler Loop End", juce::NormalisableRange<float> (0.05f, 1.0f), 1.0f, pct()));
+        group->addChild (std::make_unique<APB> (pid (ids::smpReverse), "Sampler Reverse", false));
+        group->addChild (std::make_unique<APB> (pid (ids::smpKeytrack), "Sampler Key Track", true));
+        layout.add (std::move (group));
+    }
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     auto pid = [] (const juce::String& id) { return juce::ParameterID { id, kParamVersion }; };
 
-    // ---- Oscillators --------------------------------------------------------
-    for (int i = 0; i < kNumOscs; ++i)
+    // ---- Oscillators A-C (D is appended in addVersion07Parameters) --------
+    for (int i = 0; i < 3; ++i)
     {
         const auto letter = juce::String::charToString ((juce::juce_wchar) ('A' + i));
         auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("osc" + letter, "Osc " + letter, " | ");
@@ -234,8 +363,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     }
     layout.add (std::make_unique<APC> (pid (ids::filterRouting), "Filter Routing", juce::StringArray { "Serial", "Parallel" }, 0));
 
-    // ---- Envelopes ----------------------------------------------------------
-    for (int i = 0; i < kNumEnvs; ++i)
+    // ---- Envelopes 1-3 (ENV 4 is appended in addVersion07Parameters) -------
+    for (int i = 0; i < 3; ++i)
     {
         const auto n = juce::String (i + 1);
         auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("env" + n, "Env " + n, " | ");
@@ -259,7 +388,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         const auto n = juce::String (i + 1);
         auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("lfo" + n, "LFO " + n, " | ");
         group->addChild (std::make_unique<APC> (pid (ids::lfo (i, "shape")), "LFO " + n + " Shape",
-                                                juce::StringArray { "Sine", "Square", "Triangle", "Random" }, 0));
+                                                juce::StringArray { "Sine", "Square", "Triangle", "Random", "Saw Up", "Saw Down" }, 0));
         group->addChild (std::make_unique<APF> (pid (ids::lfo (i, "rate")), "LFO " + n + " Rate",
                                                 skewed (0.01f, 30.0f, 2.0f), 1.0f, hz()));
         group->addChild (std::make_unique<APB> (pid (ids::lfo (i, "sync")), "LFO " + n + " Sync", false));
@@ -292,7 +421,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     {
         const char* names[] = { "Tone", "Movement", "Texture", "Space" };
         auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("macros", "Macros", " | ");
-        for (int i = 0; i < kNumMacros; ++i)
+        for (int i = 0; i < 4; ++i)
             group->addChild (std::make_unique<APF> (pid (ids::macro (i)), juce::String ("Macro ") + juce::String (i + 1) + " " + names[i],
                                                     juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct()));
         layout.add (std::move (group));
@@ -346,7 +475,20 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     addSoulParameters (layout);
     addFxRackParameters (layout);
     addArpParameters (layout);
+    addVersion07Parameters (layout);
     return layout;
+}
+
+//==============================================================================
+void applyPre07Defaults (const juce::XmlElement& params, const char* tag, const char* idAttr, juce::AudioProcessorValueTreeState& apvts)
+{
+    bool hasLfoPower = false;
+    for (auto* e : params.getChildWithTagNameIterator (tag))
+        if (e->getStringAttribute (idAttr) == ids::lfo (0, "on")) { hasLfoPower = true; break; }
+    if (hasLfoPower) return;
+    for (int i = 0; i < kNumLfos; ++i)
+        if (auto* p = apvts.getParameter (ids::lfo (i, "on")))
+            p->setValueNotifyingHost (1.0f);
 }
 
 //==============================================================================
@@ -372,6 +514,7 @@ juce::String helpTextFor (const juce::String& id)
         if (has ("_engine"))    return "Engine: choose Wavetable (scannable waveforms) or Analog (classic sine/triangle/saw/square/pulse).";
         if (has ("_wave"))      return "Analog Wave: the classic waveform this oscillator generates.";
         if (has ("_on"))        return "Turns this oscillator on or off.";
+        if (has ("_blend"))     return "Unison Blend: level of the outer unison voices against the centre. 100% = all equal (widest); lower keeps the centre focused and the spread as a halo.";
     }
     if (id.startsWith ("filter"))
     {
@@ -380,7 +523,7 @@ juce::String helpTextFor (const juce::String& id)
         if (has ("_drive"))    return "Drive: pushes the filter input for warmth and grit.";
         if (has ("_mix"))      return "Mix: blends the filtered signal with the unfiltered signal.";
         if (has ("_keytrack")) return "Key Track: makes the cutoff follow the notes you play, so high notes stay bright.";
-        if (has ("_type"))     return "Filter Type: MG Low 24 is a warm 4-pole ladder; others are clean state-variable shapes. Comb adds metallic resonance.";
+        if (has ("_type"))     return "Filter Type: MG Low 24 is a warm 4-pole ladder; Low/High Pass 12 and 24, Band Pass, Notch and Peak are state-variable shapes. Comb + / Comb - ring at the cutoff pitch (bright or hollow). Formant sweeps through vowels as you move the cutoff.";
     }
     if (id == ids::filterRouting) return "Filter Routing: Serial runs Filter 1 into Filter 2. Parallel runs them side by side.";
     if (id.startsWith ("env"))
@@ -400,6 +543,7 @@ juce::String helpTextFor (const juce::String& id)
         if (has ("_sync"))   return "Sync: locks the LFO to your project tempo.";
         if (has ("_shape"))  return "Shape: the waveform the LFO follows.";
         if (has ("_div"))    return "Division: the tempo-synced LFO cycle length.";
+        if (has ("_on"))     return "LFO power: an LFO only moves anything while it's switched on. Off by default, so patches stay still unless the sound calls for motion.";
     }
     if (id.startsWith ("mod"))
     {
@@ -411,6 +555,44 @@ juce::String helpTextFor (const juce::String& id)
     if (id == ids::macro (1)) return "MOVEMENT: increases LFO motion and adds chorus shimmer.";
     if (id == ids::macro (2)) return "TEXTURE: adds harmonic grit with wavefolding and saturation.";
     if (id == ids::macro (3)) return "SPACE: adds reverb, delay and stereo width.";
+    if (id == ids::macro (4)) return "CHARACTER: drives the filters, folds the oscillators a touch and leans into saturation. Low = clean, high = gritty.";
+    if (id == ids::macro (5)) return "WIDTH: spreads the unison and widens everything above the low end (the bass stays mono).";
+    if (id == ids::macro (6)) return "PUNCH: snappier attacks and a short transient kick at the start of every note.";
+    if (id == ids::macro (7)) return "AIR: lifts the very top end for sparkle and presence.";
+    if (id.startsWith ("env4")) return helpTextFor (id.replace ("env4", "env1")).replace ("after you press a key", "after you press a key (ENV 4 is a free modulation envelope: route it in the matrix)");
+    if (id == ids::velSens)   return "Velocity: how much playing harder makes the sound louder (and brighter on the 2.0 engine). 0% = every note the same.";
+    if (id == ids::masterPan) return "Pan: places the whole instrument left or right.";
+    if (id == ids::rndRate)   return "Random Rate: how often the RANDOM modulation source picks a new value.";
+    if (id == ids::rndSmooth) return "Random Smooth: 0% jumps (sample and hold), 100% glides smoothly between random values.";
+    if (id == ids::rndSync)   return "Random Sync: picks new random values on the project tempo grid.";
+    if (id == ids::rndDiv)    return "Random Division: the tempo-synced rate of the RANDOM source.";
+    if (id == ids::stepOn)    return "Step Sequencer: 16 steps locked to your project tempo. MODULATE uses it as a mod source; TRIGGER plays held keys as a rhythm (hat rolls, perc loops, gated chords).";
+    if (id == ids::stepMode)  return "Step Mode: MODULATE outputs the step levels as the STEP mod source. TRIGGER plays the keys you hold on every active step.";
+    if (id == ids::stepRate)  return "Step Rate: length of one step. T = triplet, D = dotted.";
+    if (id == ids::stepLength) return "Step Length: how many steps the pattern loops over.";
+    if (id == ids::stepSwing) return "Step Swing: delays every second step for a shuffled groove.";
+    if (id == ids::stepSmooth) return "Step Smooth: glides between step values in MODULATE mode.";
+    if (id.startsWith ("step"))
+    {
+        if (has ("_lvl"))   return "Step Level: the value of this step (MODULATE) or its velocity (TRIGGER). 0% = rest.";
+        if (has ("_rat"))   return "Ratchet: repeats this step 1-4 times inside its length. 2-4 = trap hat rolls.";
+        if (has ("_len"))   return "Gate: how long this step's note holds. Long = open hat, short = closed hat.";
+        if (has ("_pitch")) return "Step Pitch: transposes this step in semitones.";
+    }
+    if (id.startsWith ("smp_"))
+    {
+        if (id == ids::smpOn)        return "Sampler: plays a sample through the same filters, envelopes and effects as the oscillators.";
+        if (id == ids::smpSample)    return "Sample: built-in sounds, or User Sample for a WAV/AIFF you dropped on the sampler.";
+        if (id == ids::smpLevel)     return "Sampler Level: how loud the sample is in the mix.";
+        if (id == ids::smpTune)      return "Sampler Tune: transposes the sample in semitones.";
+        if (id == ids::smpFine)      return "Sampler Fine: small pitch offset in cents.";
+        if (id == ids::smpStart)     return "Sample Start: skips into the sample. Great for cutting transients or finding a vowel.";
+        if (id == ids::smpLoop)      return "Loop: keeps the sample playing between the loop points while the key is held.";
+        if (id == ids::smpLoopStart) return "Loop Start: where the loop begins.";
+        if (id == ids::smpLoopEnd)   return "Loop End: where the loop ends.";
+        if (id == ids::smpReverse)   return "Reverse: plays the sample backwards.";
+        if (id == ids::smpKeytrack)  return "Key Track: on = the sample follows the keyboard; off = every key plays it at its original pitch (drums).";
+    }
     if (id == ids::soulX)         return "SOUL ENGINE horizontal axis: left is SOFT, right is AGGRESSIVE. Centre leaves the patch untouched.";
     if (id == ids::soulY)         return "SOUL ENGINE vertical axis: down is MELANCHOLY, up is EUPHORIA. Centre leaves the patch untouched.";
     if (id == ids::soulIntensity) return "Soul Intensity: how strongly the XY position changes the sound.";

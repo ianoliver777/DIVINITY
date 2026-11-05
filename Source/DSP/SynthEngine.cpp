@@ -13,10 +13,10 @@ EngineParamRefs::EngineParamRefs (juce::AudioProcessorValueTreeState& s)
         jassert (p != nullptr);
         return p;
     };
-    static const char* oscNames[16] = { "on", "engine", "table", "pos", "fold", "wave", "pw", "unison", "detune",
-                                        "width", "phase", "randphase", "oct", "semi", "fine", "level" };
+    static const char* oscNames[17] = { "on", "engine", "table", "pos", "fold", "wave", "pw", "unison", "detune",
+                                        "width", "phase", "randphase", "oct", "semi", "fine", "level", "blend" };
     for (int i = 0; i < kNumOscs; ++i)
-        for (int k = 0; k < 16; ++k)
+        for (int k = 0; k < 17; ++k)
             osc[(size_t) i].p[k] = get (ids::osc (i, oscNames[k]));
 
     sub[0] = get (ids::subOn); sub[1] = get (ids::subMode); sub[2] = get (ids::subLevel);
@@ -33,9 +33,9 @@ EngineParamRefs::EngineParamRefs (juce::AudioProcessorValueTreeState& s)
         for (int k = 0; k < 5; ++k)
             env[(size_t) i][(size_t) k] = get (ids::env (i, eNames[k]));
 
-    static const char* lNames[7] = { "shape", "rate", "sync", "div", "depth", "phase", "smooth" };
+    static const char* lNames[8] = { "shape", "rate", "sync", "div", "depth", "phase", "smooth", "on" };
     for (int i = 0; i < kNumLfos; ++i)
-        for (int k = 0; k < 7; ++k)
+        for (int k = 0; k < 8; ++k)
             lfo[(size_t) i][(size_t) k] = get (ids::lfo (i, lNames[k]));
 
     static const char* mNames[3] = { "src", "dst", "amt" };
@@ -49,6 +49,14 @@ EngineParamRefs::EngineParamRefs (juce::AudioProcessorValueTreeState& s)
     global[0] = get (ids::voices); global[1] = get (ids::bendRange); global[2] = get (ids::glide);
     global[3] = get (ids::voiceMode); global[4] = get (ids::masterTune);
     engineMode = get (ids::engineMode); analog = get (ids::analog);
+    velSens = get (ids::velSens);
+    rnd[0] = get (ids::rndRate); rnd[1] = get (ids::rndSmooth); rnd[2] = get (ids::rndSync); rnd[3] = get (ids::rndDiv);
+    stepG[0] = get (ids::stepOn); stepG[1] = get (ids::stepMode); stepG[2] = get (ids::stepRate);
+    stepG[3] = get (ids::stepLength); stepG[4] = get (ids::stepSwing); stepG[5] = get (ids::stepSmooth);
+    for (int i = 0; i < kNumSteps; ++i) stepLvl[(size_t) i] = get (ids::step (i, "lvl"));
+    const juce::String smpIds[11] = { ids::smpOn, ids::smpSample, ids::smpLevel, ids::smpTune, ids::smpFine, ids::smpStart,
+                                      ids::smpLoop, ids::smpLoopStart, ids::smpLoopEnd, ids::smpReverse, ids::smpKeytrack };
+    for (int i = 0; i < 11; ++i) smp[i] = get (smpIds[i]);
 }
 
 void EngineParamRefs::read (EngineSnapshot& s) const noexcept
@@ -63,7 +71,7 @@ void EngineParamRefs::read (EngineSnapshot& s) const noexcept
         o.on = b (p[0]); o.engine = i (p[1]); o.table = i (p[2]); o.pos = f (p[3]); o.fold = f (p[4]);
         o.wave = i (p[5]); o.pw = f (p[6]); o.unison = juce::jlimit (1, kMaxUnison, i (p[7])); o.detune = f (p[8]);
         o.width = f (p[9]); o.phase = f (p[10]); o.randPhase = b (p[11]); o.oct = i (p[12]); o.semi = i (p[13]);
-        o.fine = f (p[14]); o.level = f (p[15]);
+        o.fine = f (p[14]); o.level = f (p[15]); o.blend = f (p[16]);
     }
     s.subOn = b (sub[0]); s.subMode = i (sub[1]); s.subLevel = f (sub[2]);
     s.noiseOn = b (noise[0]); s.noiseType = i (noise[1]); s.noiseLevel = f (noise[2]);
@@ -82,6 +90,7 @@ void EngineParamRefs::read (EngineSnapshot& s) const noexcept
     {
         auto& l = s.lfo[(size_t) k]; const auto& p = lfo[(size_t) k];
         l.shape = i (p[0]); l.rate = f (p[1]); l.sync = b (p[2]); l.div = i (p[3]); l.depth = f (p[4]); l.phase = f (p[5]); l.smooth = f (p[6]);
+        l.on = b (p[7]);
     }
     for (int k = 0; k < kNumModSlots; ++k)
     {
@@ -93,11 +102,20 @@ void EngineParamRefs::read (EngineSnapshot& s) const noexcept
     s.bendRange = i (global[1]); s.glideMs = f (global[2]); s.voiceMode = i (global[3]); s.masterTune = f (global[4]);
     s.v2 = i (engineMode) == (int) EngineMode::Divine2;
     s.analog = juce::jlimit (0.0f, 1.0f, f (analog));
+    s.velSens = f (velSens);
+    s.rndRate = f (rnd[0]); s.rndSmooth = f (rnd[1]); s.rndSync = b (rnd[2]); s.rndDiv = i (rnd[3]);
+    s.stepOn = b (stepG[0]); s.stepMode = i (stepG[1]); s.stepRate = i (stepG[2]); s.stepLength = juce::jlimit (1, kNumSteps, i (stepG[3]));
+    s.stepSwing = f (stepG[4]); s.stepSmooth = f (stepG[5]);
+    for (int k = 0; k < kNumSteps; ++k) s.stepLvl[(size_t) k] = f (stepLvl[(size_t) k]);
+    s.smpOn = b (smp[0]); s.smpSample = i (smp[1]); s.smpLevel = f (smp[2]); s.smpTune = i (smp[3]); s.smpFine = f (smp[4]);
+    s.smpStart = f (smp[5]); s.smpLoop = b (smp[6]); s.smpLoopStart = f (smp[7]); s.smpLoopEnd = f (smp[8]);
+    s.smpReverse = b (smp[9]); s.smpKeytrack = b (smp[10]);
 }
 
 //==============================================================================
-SynthEngine::SynthEngine (juce::AudioProcessorValueTreeState& apvts, const WavetableBank& b)
-    : refs (apvts), soul (apvts), bank (b)
+SynthEngine::SynthEngine (juce::AudioProcessorValueTreeState& apvts, const WavetableBank& b,
+                          const FactorySamples& fs, const UserSampleSlot& us)
+    : refs (apvts), soul (apvts), bank (b), factorySamples (fs), userSample (us)
 {
     heldNotes.reserve (128);
     refs.read (snap);
@@ -139,6 +157,8 @@ void SynthEngine::reset()
     }
     uint32_t seed = 0xC0FFEEu;
     for (auto& l : lfos) l.reset (seed++);
+    rndRng.seed (0x7A11D0u); rndPhase = 0.0; rndTarget = rndValue = rndPrevTarget = 0.0f;
+    stepFreeBeats = 0.0; stepValue = 0.0f; stepIndexDisplay = -1;
     lfoValues.fill (0.0f);
     lastGlobalDest.fill (0.0f);
     heldNotes.clear();
@@ -258,9 +278,13 @@ void SynthEngine::startVoice (Voice& v, int note, float velocity, bool fresh)
         for (int o = 0; o < kNumOscs; ++o)
         {
             const auto& op = snap.osc[(size_t) o];
+            // Osc D draws from its own generator so A-C keep exactly the random-phase sequence of v0.5 (Classic recall)
+            auto& r = o < 3 ? v.rng : v.driftRng;
             for (int u = 0; u < kMaxUnison; ++u)
-                v.phase[(size_t) o][(size_t) u] = op.randPhase ? (double) v.rng.unipolar() : (double) op.phase;
+                v.phase[(size_t) o][(size_t) u] = op.randPhase ? (double) r.unipolar() : (double) op.phase;
         }
+        for (auto& f : v.svf2) for (auto& c : f) c.reset();
+        for (auto& f : v.formant) for (auto& ch : f) for (auto& c : ch) c.reset();
         if (snap.v2)
         {
             for (auto& o : v.foldPrev) o.fill (0.0f);
@@ -274,6 +298,9 @@ void SynthEngine::startVoice (Voice& v, int note, float velocity, bool fresh)
     v.noteCents  = snap.v2 ? v.driftRng.bipolar() * snap.analog * 2.5f : 0.0f;
     v.noteCutOct = snap.v2 ? v.driftRng.bipolar() * snap.analog * 0.06f : 0.0f;
     // Stolen / retriggered voices keep their phase, filter and envelope levels: no clicks.
+    v.ageSamples = 0;
+    v.smpDone = false;
+    v.smpPos = -1.0;   // set on the first rendered block (needs the current sample + start point)
 
     for (int e = 0; e < kNumEnvs; ++e)
     {
@@ -390,6 +417,7 @@ void SynthEngine::computeVoiceMods (const Voice& v, const float* globalSrc, floa
     src[(size_t) ModSource::Env1] = v.env[0].getLevel();
     src[(size_t) ModSource::Env2] = v.env[1].getLevel();
     src[(size_t) ModSource::Env3] = v.env[2].getLevel();
+    src[(size_t) ModSource::Env4] = v.env[3].getLevel();
     src[(size_t) ModSource::Velocity] = v.velocity;
     src[(size_t) ModSource::NoteNumber] = (float) (v.note - 60) / 60.0f;
     src[(size_t) ModSource::Aftertouch] = juce::jmax (channelPressure, v.aftertouch);
@@ -426,6 +454,7 @@ void SynthEngine::renderChunk (float* outL, float* outR, int n, const TransportI
         rate = juce::jlimit (0.0, 2000.0, rate);
         float raw = lfos[(size_t) i].advance (lp.shape, rate, seconds, lp.smooth, lp.phase, locked && std::isfinite (ppqNow), ppqNow / beats);
         if (! std::isfinite (raw)) { lfos[(size_t) i].reset (0xC0FFEEu + (uint32_t) i); raw = 0.0f; }
+        if (! lp.on) raw = 0.0f;   // LFO power (0.7): an LFO that's off moves nothing
         lfoValues[(size_t) i] = raw * lp.depth * (1.0f + 2.0f * movement) * juce::jmax (0.1f, 1.0f + perf.motion);
         lfoDisplay[(size_t) i].store (raw * lp.depth);
     }
@@ -438,6 +467,46 @@ void SynthEngine::renderChunk (float* outL, float* outR, int n, const TransportI
     for (int i = 0; i < kNumMacros; ++i) globalSrc[(size_t) ModSource::Macro1 + (size_t) i] = snap.macro[(size_t) i];
     globalSrc[(size_t) ModSource::SoulX] = soul.getEffectiveX();
     globalSrc[(size_t) ModSource::SoulY] = soul.getEffectiveY();
+    for (int i = 4; i < kNumMacros; ++i) globalSrc[(size_t) ModSource::Macro5 + (size_t) (i - 4)] = snap.macro[(size_t) i];
+
+    // ---- RANDOM: sample-and-hold with adjustable glide (free rate or tempo-synced) ----
+    {
+        const double period = snap.rndSync ? lfoDivisionInBeats (snap.rndDiv) * 60.0 / juce::jmax (20.0, tr.bpm)
+                                           : 1.0 / juce::jmax (0.01, (double) snap.rndRate);
+        rndPhase += seconds / period;
+        if (rndPhase >= 1.0) { rndPhase -= std::floor (rndPhase); rndPrevTarget = rndTarget; rndTarget = rndRng.bipolar(); }
+        const float glide = snap.rndSmooth;
+        // smooth = crossfade from the previous value over (smooth x period); 0 = hard steps
+        const float t = glide < 1.0e-3f ? 1.0f : (float) juce::jlimit (0.0, 1.0, rndPhase / glide);
+        const float shaped = t * t * (3.0f - 2.0f * t);
+        rndValue = rndPrevTarget + (rndTarget - rndPrevTarget) * shaped;
+        globalSrc[(size_t) ModSource::Random] = rndValue;
+        rndDisplay.store (rndValue);
+    }
+
+    // ---- STEP (modulate mode): current step level as a 0..1 source, host-synced ----
+    {
+        float target = 0.0f;
+        if (snap.stepOn)
+        {
+            const double stepBeats = stepRateBeats (snap.stepRate);
+            double beat;
+            if (tr.isPlaying && tr.hasPpq) beat = tr.ppqAtBlockStart + (double) sampleOffset / sampleRate * tr.bpm / 60.0;
+            else { stepFreeBeats += seconds * juce::jmax (20.0, tr.bpm) / 60.0; beat = stepFreeBeats; }
+            const double pair = 2.0 * stepBeats, inPair = beat - std::floor (beat / pair) * pair;
+            const double swingPoint = stepBeats * (1.0 + snap.stepSwing * 0.66);
+            long long k = (long long) std::floor (beat / pair) * 2 + (inPair >= swingPoint ? 1 : 0);
+            const int idx = (int) (((k % snap.stepLength) + snap.stepLength) % snap.stepLength);
+            target = snap.stepLvl[(size_t) idx];
+            stepIndexDisplay.store (idx);
+            const double stepSecs = stepBeats * 60.0 / juce::jmax (20.0, tr.bpm);
+            const double tc = juce::jmax (0.001, (double) snap.stepSmooth * stepSecs * 0.5);
+            stepValue += (float) (1.0 - std::exp (-seconds / tc)) * (target - stepValue);
+        }
+        else { stepValue = 0.0f; stepIndexDisplay.store (-1); }
+        globalSrc[(size_t) ModSource::Step] = stepValue;
+        stepDisplay.store (stepValue);
+    }
 
     // ---- global (post-voice) destinations follow the newest sounding voice ----
     const Voice* newest = nullptr;
@@ -511,12 +580,13 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
     auto D = [&dest] (ModDest d) { return dest[(size_t) d]; };
 
     const float tone = snap.macro[0], texture = snap.macro[2], space = snap.macro[3];
+    const float character = snap.macro[4], widthMacro = snap.macro[5], punch = snap.macro[6];
 
     // envelope edits apply to held notes immediately (sustain level, release time...)
     for (int e = 0; e < kNumEnvs; ++e)
     {
         const auto& ep = snap.env[(size_t) e];
-        const float am = e == 0 ? std::pow (2.0f, juce::jlimit (-6.0f, 6.0f, perf.attackLog2)) : 1.0f;
+        const float am = e == 0 ? std::pow (2.0f, juce::jlimit (-6.0f, 6.0f, perf.attackLog2) - punch * 4.0f) : 1.0f;   // PUNCH: snappier attack
         const float rm = e == 0 ? std::pow (2.0f, juce::jlimit (-6.0f, 6.0f, perf.releaseLog2)) : 1.0f;
         v.env[(size_t) e].setParameters (juce::jlimit (0.0005f, 30.0f, ep.a * am), ep.d, ep.s, juce::jlimit (0.001f, 40.0f, ep.r * rm), ep.curve);
     }
@@ -564,14 +634,14 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
         const auto& op = snap.osc[(size_t) o];
         if (! op.on) { v.lastLevel[(size_t) o] = 0.0f; continue; }
 
-        const float levelT  = juce::jlimit (0.0f, 1.0f, op.level + dest[(size_t) ModDest::OscALevel + (size_t) o]);
-        const float posT    = juce::jlimit (0.0f, 1.0f, op.pos + dest[(size_t) ModDest::OscAPos + (size_t) o]);
-        const float foldT   = juce::jlimit (0.0f, 1.0f, op.fold + dest[(size_t) ModDest::OscAFold + (size_t) o] + texture * 0.4f + perf.fold);
-        const float pw      = juce::jlimit (0.03f, 0.97f, op.pw + dest[(size_t) ModDest::OscAPwm + (size_t) o] * 0.45f);
-        const float detune  = juce::jlimit (0.0f, 1.0f, op.detune + dest[(size_t) ModDest::OscADetune + (size_t) o] + perf.detune);
-        const float width   = juce::jlimit (0.0f, 1.0f, op.width + space * 0.3f + perf.width);
+        const float levelT  = juce::jlimit (0.0f, 1.0f, op.level + dest[(size_t) oscModDest (2, o)]);
+        const float posT    = juce::jlimit (0.0f, 1.0f, op.pos + dest[(size_t) oscModDest (1, o)]);
+        const float foldT   = juce::jlimit (0.0f, 1.0f, op.fold + dest[(size_t) oscModDest (3, o)] + texture * 0.4f + character * 0.15f + perf.fold);
+        const float pw      = juce::jlimit (0.03f, 0.97f, op.pw + dest[(size_t) oscModDest (4, o)] * 0.45f);
+        const float detune  = juce::jlimit (0.0f, 1.0f, op.detune + dest[(size_t) oscModDest (5, o)] + perf.detune);
+        const float width   = juce::jlimit (0.0f, 1.0f, op.width + space * 0.3f + widthMacro * 0.5f + perf.width);
         const double oscPitch = basePitch + op.oct * 12 + op.semi + op.fine / 100.0
-                              + dest[(size_t) ModDest::OscAPitch + (size_t) o] * 12.0;
+                              + dest[(size_t) oscModDest (0, o)] * 12.0;
 
         const float level0 = v.rampsValid ? v.lastLevel[(size_t) o] : levelT;
         const float pos0   = v.rampsValid ? v.lastPos[(size_t) o]   : posT;
@@ -580,7 +650,16 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
         if (level0 < 1.0e-5f && levelT < 1.0e-5f) continue;
 
         const int nU = op.unison;
-        const float uniGain = 1.0f / std::sqrt ((float) nU);
+        // Unison blend: outer voices at `blend` against the centre, loudness-normalised (blend 1 = v0.6 exactly)
+        const float blend = juce::jlimit (0.0f, 1.0f, op.blend);
+        float uniPow = 0.0f;
+        for (int u = 0; u < nU; ++u)
+        {
+            const float sp = nU > 1 ? std::abs (((float) u / (float) (nU - 1)) * 2.0f - 1.0f) : 0.0f;
+            const float w = 1.0f - (1.0f - blend) * sp;
+            uniPow += w * w;
+        }
+        const float uniGain = blend >= 1.0f ? 1.0f / std::sqrt ((float) nU) : 1.0f / std::sqrt (juce::jmax (1.0e-6f, uniPow));
         const bool wt = op.engine == (int) OscEngine::Wavetable;
         const int table = juce::jlimit (0, bank.getNumTables() - 1, op.table);
 
@@ -597,6 +676,7 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
             // alternate sides so neighbouring detune values don't stack on one side
             const float pan = (u % 2 == 0 ? 1.0f : -1.0f) * std::abs (spreadPos) * width;
             float gL, gR; panGains (pan, gL, gR);
+            if (blend < 1.0f) { const float w = 1.0f - (1.0f - blend) * std::abs (spreadPos); gL *= w; gR *= w; }
             gL *= uniGain; gR *= uniGain;
 
             const double inc = juce::jmin (0.49, (double) noteToHz (oscPitch + cents / 100.0) / sampleRate);
@@ -604,22 +684,35 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
 
             if (wt)
             {
-                const int lvl = WavetableBank::levelForIncrement (inc, v2 ? 0.6 : 0.45, v2 ? 1 : 2);
                 float& fprev = v.foldPrev[(size_t) o][(size_t) u];
+                // Classic 1.0 reads the original float tables exactly as v0.5 did; Divine 2.0 (and any
+                // library table, which Classic never had) reads the compact half-octave bank.
+                const bool classicTables = ! v2 && table < WavetableBank::kNumOriginalTables;
+                const int lvl = classicTables ? WavetableBank::classicLevelForIncrement (inc) : WavetableBank::levelForIncrement (inc, 0.6);
+                const int nf = classicTables ? WavetableBank::kFrames : bank.framesFor (table);
                 for (int s = 0; s < n; ++s)
                 {
                     const float t = (float) s * invN;
-                    const float fpos = juce::jlimit (0.0f, (float) (WavetableBank::kFrames - 1), (pos0 + (posT - pos0) * t) * (WavetableBank::kFrames - 1));
-                    const int f0 = juce::jlimit (0, WavetableBank::kFrames - 1, (int) fpos);
-                    const int f1 = juce::jmin (f0 + 1, WavetableBank::kFrames - 1);
+                    const float fpos = juce::jlimit (0.0f, (float) (nf - 1), (pos0 + (posT - pos0) * t) * (float) (nf - 1));
+                    const int f0 = juce::jlimit (0, nf - 1, (int) fpos);
+                    const int f1 = juce::jmin (f0 + 1, nf - 1);
                     const float fr = fpos - (float) f0;
-                    const float* A = bank.getFrame (table, f0, lvl);
-                    const float* B = bank.getFrame (table, f1, lvl);
-                    const double idx = ph * WavetableBank::kSize;
-                    const int i0 = juce::jlimit (0, WavetableBank::kSize - 1, (int) idx);
-                    const float frac = (float) (idx - i0);
-                    const float a = A[i0] + frac * (A[i0 + 1] - A[i0]);
-                    const float b = B[i0] + frac * (B[i0 + 1] - B[i0]);
+                    float a, b;
+                    if (classicTables)
+                    {
+                        const float* A = bank.getClassicFrame (table, f0, lvl);
+                        const float* B = bank.getClassicFrame (table, f1, lvl);
+                        const double idx = ph * WavetableBank::kSize;
+                        const int i0 = juce::jlimit (0, WavetableBank::kSize - 1, (int) idx);
+                        const float frac = (float) (idx - i0);
+                        a = A[i0] + frac * (A[i0 + 1] - A[i0]);
+                        b = B[i0] + frac * (B[i0 + 1] - B[i0]);
+                    }
+                    else
+                    {
+                        a = bank.getStoredFrame (table, f0, lvl).at (ph);
+                        b = bank.getStoredFrame (table, f1, lvl).at (ph);
+                    }
                     const float fAmt = fold0 + (foldT - fold0) * t;
                     float x = v2 ? dsp::FoldAdaa::process (a + fr * (b - a), fprev, fAmt) : fold (a + fr * (b - a), fAmt);
                     x *= level0 + (levelT - level0) * t;
@@ -635,20 +728,14 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
                     // Divine 2.0: read the exact Fourier-series waveform from the band-limited analog
                     // table (half-octave mips). Pulse = difference of two band-limited saws, so PWM
                     // is alias-free too. Same phase, polarity and level as the PolyBLEP originals.
-                    const int lvl = WavetableBank::levelForIncrement (inc, 0.6, 1);
+                    const int lvl = WavetableBank::levelForIncrement (inc, 0.6);
                     const int at = bank.getAnalogTable();
                     const bool pulse = op.wave == (int) AnalogWave::Pulse;
                     const int frame = op.wave == (int) AnalogWave::Triangle ? WavetableBank::kAnalogTriangle
                                     : op.wave == (int) AnalogWave::Square   ? WavetableBank::kAnalogSquare
                                                                              : WavetableBank::kAnalogSaw;
-                    const float* T = bank.getFrame (at, frame, lvl);
-                    auto look = [T] (double phase) noexcept
-                    {
-                        const double idx = phase * WavetableBank::kSize;
-                        const int i0 = juce::jlimit (0, WavetableBank::kSize - 1, (int) idx);
-                        const float fr = (float) (idx - i0);
-                        return T[i0] + fr * (T[i0 + 1] - T[i0]);
-                    };
+                    const auto T = bank.getStoredFrame (at, frame, lvl);
+                    auto look = [&T] (double phase) noexcept { return T.at (phase); };
                     for (int s = 0; s < n; ++s)
                     {
                         const float t = (float) s * invN;
@@ -724,8 +811,54 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
             }
     }
 
+    // ---- sampler ----
+    {
+        const float smT = snap.smpOn ? juce::jlimit (0.0f, 1.0f, snap.smpLevel + D (ModDest::SamplerLevel)) : 0.0f;
+        const float sm0 = v.rampsValid ? v.lastSmp : smT;
+        v.lastSmp = smT;
+        const SampleData* sd = snap.smpSample >= factorySamples.size() ? userSample.get() : factorySamples.get (snap.smpSample);
+        if ((sm0 > 1.0e-5f || smT > 1.0e-5f) && sd != nullptr && sd->length() > 4 && ! v.smpDone)
+        {
+            const int len = sd->length();
+            const bool rev = snap.smpReverse;
+            const double startFrac = juce::jlimit (0.0, 0.95, (double) snap.smpStart + D (ModDest::SamplerStart));
+            if (v.smpPos < 0.0) v.smpPos = rev ? (len - 1) * (1.0 - startFrac) : (len - 1) * startFrac;
+            const double semis = (snap.smpKeytrack ? (basePitch - sd->rootNote) : (basePitch - v.note) /* bend/glide/drift only */)
+                               + snap.smpTune + snap.smpFine / 100.0 + D (ModDest::SamplerPitch) * 24.0;
+            const double inc = std::pow (2.0, semis / 12.0) * sd->sampleRate / sampleRate * (rev ? -1.0 : 1.0);
+            const double loopA = (len - 1) * juce::jlimit (0.0, 0.95, (double) snap.smpLoopStart);
+            const double loopB = (len - 1) * juce::jlimit (loopA / (len - 1) + 0.01, 1.0, (double) snap.smpLoopEnd);
+            const float* L = sd->left.data();
+            const float* R = sd->right.empty() ? L : sd->right.data();
+            auto read = [len] (const float* d, double pos)
+            {
+                const int i1 = (int) pos;
+                const float f = (float) (pos - i1);
+                auto at = [d, len] (int i) { return d[juce::jlimit (0, len - 1, i)]; };
+                const float xm1 = at (i1 - 1), x0 = at (i1), x1 = at (i1 + 1), x2 = at (i1 + 2);
+                const float c1 = 0.5f * (x1 - xm1), c2 = xm1 - 2.5f * x0 + 2.0f * x1 - 0.5f * x2, c3 = 0.5f * (x2 - xm1) + 1.5f * (x0 - x1);
+                return ((c3 * f + c2) * f + c1) * f + x0;
+            };
+            for (int s = 0; s < n; ++s)
+            {
+                double& pos = v.smpPos;
+                if (snap.smpLoop && v.keyDown)
+                {
+                    if (! rev && pos >= loopB) pos = loopA + std::fmod (pos - loopB, juce::jmax (1.0, loopB - loopA));
+                    if (rev && pos <= loopA)   pos = loopB - std::fmod (loopA - pos, juce::jmax (1.0, loopB - loopA));
+                }
+                if (pos < 0.0 || pos >= len - 1) { v.smpDone = true; break; }
+                const float g = (sm0 + (smT - sm0) * (float) s * invN) * 0.9f;
+                mixL[s] += read (L, pos) * g;
+                mixR[s] += read (R, pos) * g;
+                pos += inc;
+            }
+        }
+    }
+
     // ---- filters ----
     FilterCoeffs cEnd[2], cStart[2];
+    FilterCoeffs formantC[2][3]; float formantGain[2][3] {};
     float drives[2], mixes[2], combDelay[2], combFb[2], svfSat[2];
     for (int f = 0; f < 2; ++f)
     {
@@ -737,7 +870,7 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
         if (v2) octaves += cutDriftOct + (v.velocity - 0.8f) * 0.6f;   // organic wander + velocity brightness
         const float cutoff = juce::jlimit (16.0f, (float) (sampleRate * 0.45), (float) (fp.cutoff * std::pow (2.0, octaves)));
         const float res = juce::jlimit (0.0f, 1.0f, fp.res + D (resDest));
-        drives[f] = juce::jlimit (0.0f, 1.0f, fp.drive + D (drvDest) + juce::jmax (0.0f, perf.drive) * 0.4f);
+        drives[f] = juce::jlimit (0.0f, 1.0f, fp.drive + D (drvDest) + juce::jmax (0.0f, perf.drive) * 0.4f + character * 0.5f);
         mixes[f]  = juce::jlimit (0.0f, 1.0f, fp.mix);
         svfSat[f] = 0.3f + drives[f] * 1.2f;   // v2 in-loop saturation: more drive = less headroom = more growl
         cEnd[f]   = makeCoeffs (cutoff, res, sampleRate);
@@ -745,6 +878,20 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
         v.lastCoeffs[(size_t) f] = cEnd[f];
         combDelay[f] = (float) (sampleRate / cutoff);
         combFb[f] = res * 0.97f;
+        if (fp.type == (int) FilterType::Formant)
+        {
+            // cutoff sweeps the vowel A-E-I-O-U (200 Hz .. 5 kHz), resonance narrows the formants
+            static const float vowels[5][3] = { { 800, 1150, 2900 }, { 400, 1600, 2700 }, { 300, 2300, 3000 }, { 450, 800, 2830 }, { 325, 700, 2530 } };
+            static const float gains[3] = { 1.0f, 0.6f, 0.35f };
+            const float x = juce::jlimit (0.0f, 1.0f, std::log2 (cutoff / 200.0f) / std::log2 (25.0f)) * 4.0f;
+            const int a = juce::jmin (3, (int) x); const float fr = x - (float) a;
+            for (int k = 0; k < 3; ++k)
+            {
+                const float hz = vowels[a][k] + (vowels[a + 1][k] - vowels[a][k]) * fr;
+                formantC[f][k] = makeCoeffs (hz, 0.55f + 0.42f * res, sampleRate);
+                formantGain[f][k] = gains[k] * formantC[f][k].k * 1.6f;
+            }
+        }
     }
 
     auto runFilter = [&] (int f, int ch, float x, const FilterCoeffs& c) -> float
@@ -757,6 +904,19 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
             y = ladderTick (v.ladder[(size_t) f][(size_t) ch], c, in, v2 ? 0.55f : 0.3f);
         else if (type == (int) FilterType::Comb)
             y = v.comb[(size_t) f][(size_t) ch].tick (in, combDelay[f], combFb[f]);
+        else if (type == (int) FilterType::CombNeg)
+            y = v.comb[(size_t) f][(size_t) ch].tick (in, combDelay[f], -combFb[f]);
+        else if (type == (int) FilterType::Formant)
+        {
+            float sum = 0.0f;
+            for (int k = 0; k < 3; ++k)
+            {
+                float lp, bp, hp;
+                svfTick (v.formant[(size_t) f][(size_t) ch][(size_t) k], formantC[f][k], in, lp, bp, hp);
+                sum += bp * formantGain[f][k];
+            }
+            y = sum;
+        }
         else
         {
             float lp, bp, hp;
@@ -769,6 +929,18 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
                 case (int) FilterType::BandPass:   y = bp * c.k; break;
                 case (int) FilterType::Notch:      y = in - c.k * bp; break;
                 case (int) FilterType::Peak:       y = lp - hp; break;
+                case (int) FilterType::LowPass24:
+                case (int) FilterType::HighPass24:
+                {
+                    // second, Butterworth-damped stage: 24 dB/oct with a single resonant peak
+                    FilterCoeffs c2 = c; c2.k = 1.414f;
+                    c2.a1 = 1.0f / (1.0f + c2.g * (c2.g + c2.k)); c2.a2 = c2.g * c2.a1; c2.a3 = c2.g * c2.a2;
+                    float lp2, bp2, hp2;
+                    const float stage1 = type == (int) FilterType::LowPass24 ? lp : hp;
+                    svfTick (v.svf2[(size_t) f][(size_t) ch], c2, stage1, lp2, bp2, hp2);
+                    y = type == (int) FilterType::LowPass24 ? lp2 : hp2;
+                    break;
+                }
                 default: break;
             }
         }
@@ -781,7 +953,10 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
     const float panR0 = v.rampsValid ? v.lastPanR : panR;
     v.lastPanL = panL; v.lastPanR = panR;
     const float ampMod = juce::jlimit (0.0f, 2.0f, 1.0f + D (ModDest::Amp));
-    const float velGain = v2 ? 0.22f + 0.78f * std::pow (v.velocity, 1.25f) : 0.3f + 0.7f * v.velocity;
+    float velGain = v2 ? 0.22f + 0.78f * std::pow (v.velocity, 1.25f) : 0.3f + 0.7f * v.velocity;
+    velGain = 1.0f - juce::jlimit (0.0f, 1.0f, snap.velSens) * (1.0f - velGain);   // VEL sensitivity (100% = as before)
+    const float punchAmt = punch * 1.4f, punchDecay = (float) std::exp (-1.0 / (0.022 * sampleRate));
+    float punchEnv = punchAmt > 0.0f ? std::pow (punchDecay, (float) v.ageSamples) : 0.0f;
     const bool f1On = snap.filt[0].type != 0, f2On = snap.filt[1].type != 0;
     const bool parallel = snap.routing == (int) FilterRouting::Parallel && f1On && f2On;
 
@@ -791,7 +966,8 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
         FilterCoeffs c[2];
         for (int f = 0; f < 2; ++f)
         {
-            if (snap.filt[(size_t) f].type == 0 || snap.filt[(size_t) f].type == (int) FilterType::Comb) continue;
+            const int ft = snap.filt[(size_t) f].type;
+            if (ft == 0 || ft == (int) FilterType::Comb || ft == (int) FilterType::CombNeg || ft == (int) FilterType::Formant) continue;
             auto& cc = c[f];
             cc.g = cStart[f].g + (cEnd[f].g - cStart[f].g) * t;
             cc.k = cStart[f].k + (cEnd[f].k - cStart[f].k) * t;
@@ -804,7 +980,9 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
 
         const float env2 = v.env[1].next(); juce::ignoreUnused (env2);
         const float env3 = v.env[2].next(); juce::ignoreUnused (env3);
-        const float amp = v.env[0].next() * velGain * ampMod * 0.5f;
+        float amp = v.env[0].next() * velGain * ampMod * 0.5f;
+        if (punchAmt > 0.0f) { amp *= 1.0f + punchAmt * punchEnv; punchEnv *= punchDecay; }   // PUNCH transient
+        const float env4 = v.env[3].next(); juce::ignoreUnused (env4);
 
         float l = mixL[s], r = mixR[s];
         if (parallel)
@@ -825,6 +1003,7 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
     }
 
     v.rampsValid = true;
+    v.ageSamples = juce::jmin (v.ageSamples + n, 1 << 30);
     if (! v.env[0].isActive())
         v.active = false;
 }

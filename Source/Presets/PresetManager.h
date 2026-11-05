@@ -25,8 +25,6 @@ struct FactoryPreset
 };
 
 std::vector<FactoryPreset> createFactoryPresets();
-/** The 200-preset wave / neogrime library (FactoryPresetsWave.cpp). */
-void addWaveAndGrimePresets (std::vector<FactoryPreset>& list);
 
 //==============================================================================
 /**

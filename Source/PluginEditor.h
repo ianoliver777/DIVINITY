@@ -7,14 +7,31 @@
 namespace divinity
 {
 //==============================================================================
+/** Bottom bar on every tab: wheels, bend range, keyboard, PORTA / VEL / KEYTRK / PAN / VOL, scope. */
+class KeyboardStrip : public juce::Component
+{
+public:
+    explicit KeyboardStrip (DivinityProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+private:
+    DivinityProcessor& proc;
+    juce::MidiKeyboardComponent keyboard;
+    juce::Slider pitch, mod;
+    ui::NumberBox bend;
+    juce::OwnedArray<ui::Knob> knobs;
+    ui::ScopeDisplay scope;
+};
+
+//==============================================================================
 class DivinityEditor : public juce::AudioProcessorEditor,
                        private juce::Timer,
                        private juce::ChangeListener
 {
 public:
-    static constexpr int kBaseWidth = 1536, kCompactWidth = 1276, kBaseHeight = 934;
-    /** Width of the unscaled layout: full with Guardian Angel open, compact with it collapsed. */
-    int getBaseWidth() const noexcept { return proc.uiAngelOpen ? kBaseWidth : kCompactWidth; }
+    static constexpr int kBaseWidth = 1448, kAngelWidth = 262, kBaseHeight = 1000;
+    /** Width of the unscaled layout: wider while Guardian Angel is shown. */
+    int getBaseWidth() const noexcept { return proc.uiAngelOpen ? kBaseWidth + kAngelWidth : kBaseWidth; }
     void setAngelOpen (bool open);
 
     explicit DivinityEditor (DivinityProcessor&);
@@ -32,6 +49,7 @@ private:
     public:
         explicit Content (DivinityEditor& e);
         void paint (juce::Graphics&) override;
+        void paintOverChildren (juce::Graphics&) override;
         DivinityEditor& owner;
         ui::CrispImage logo;
     };
@@ -52,14 +70,14 @@ private:
     void updatePresetDisplay();
     void stepPreset (int delta);
     void showPresetMenu (juce::Component& target);
-    void showCategoryMenu();
+    void showCategoryMenu (juce::Component& target);
     void showMainMenu();
-    void savePresetDialog();
+    void savePresetDialog (bool asCopy = false);
     void importPreset();
+    void startExplain();
     void setUiScale (float s);
     void applySizeLimits();
     void updateAngelToggleText();
-    juce::Rectangle<int> presetBox;
     juce::Array<int> presetsInCategory() const;
 
     DivinityProcessor& proc;
@@ -68,31 +86,37 @@ private:
     juce::TooltipWindow tooltips { &content, 600 };
 
     // header
-    ui::IconButton menu, prevPreset, nextPreset, savePlus;
-    juce::TextButton presetName;
+    ui::IconButton settings, help, menu;
     juce::OwnedArray<juce::TextButton> tabs;
     juce::TextButton angelToggle { "ANGEL" };
 
-    // pages + angel
+    // preset strip
+    ui::IconButton folder, save, undo, redo, copy, favs, prevPreset, nextPreset, star, savePlus;
+    juce::TextButton presetName;
+    juce::TextButton arpButton { "ARP" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> arpAttach;
+    ui::SegmentedChoice voiceMode;
+    ui::NumberBox voices, glideBox;
+    ui::FineSlider glideKnob;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> glideAttach;
+
+    // pages + angel + keyboard
     ui::CreatePage createPage;
     ui::EffectsPage effectsPage;
     ui::PlayPage playPage;
     ui::SoulView soulPage;
     ui::LabPage labPage;
+    ui::BrowserPage browserPage;
+    ui::LegacyPageHost effectsHost { effectsPage }, playHost { playPage }, soulHost { soulPage }, labHost { labPage };
     ui::GuardianPanel angel;
+    KeyboardStrip keys;
     ExplainOverlay explainOverlay { *this };
 
-    // control strip (under the title)
-    ui::IconButton settings, folder, save, undo, redo;
-    juce::TextButton presetCount, category;
-    ui::NumberBox voices, glide;
-    ui::SegmentedChoice voiceMode;
-    juce::TextButton arpButton { "ARP" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> arpAttach;
-
+    juce::Rectangle<int> presetField;
     std::unique_ptr<juce::FileChooser> chooser;
     juce::String categoryFilter { "ALL" };
-    juce::String statusText;
+    juce::String cpuText, ramText, voicesText;
+    float voiceFill = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DivinityEditor)
 };
