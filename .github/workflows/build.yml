@@ -98,3 +98,42 @@ jobs:
         with:
           name: test-output-Windows
           path: test-output
+
+  release:
+    name: "Bundle mac + windows into one zip and publish a GitHub release"
+    needs: [macos, windows]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: DIVINITY-macOS-Universal
+      - uses: actions/download-artifact@v4
+        with:
+          name: DIVINITY-Windows-x64
+      - name: Bundle zip
+        id: bundle
+        run: |
+          VER=$(grep -oP 'project\(DIVINITY VERSION \K[0-9.]+' CMakeLists.txt)
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          mkdir -p pkg/mac pkg/windows
+          (cd pkg/mac && unzip -q ../../DIVINITY-macOS-Universal.zip)
+          (cd pkg/windows && { unzip -q ../../DIVINITY-Windows-x64.zip || [ $? -eq 1 ]; })   # exit 1 = warnings (backslash paths from Compress-Archive)
+          cp docs/INSTALL.txt pkg/INSTALL.txt
+          (cd pkg && zip -qry "../DIVINITY-v$VER.zip" .)
+          ls -la "DIVINITY-v$VER.zip"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=${{ steps.bundle.outputs.ver }}
+          TAG="v$VER"
+          NOTES="DIVINITY $TAG by TRIPLE SEVEN AUDIO. mac/ (VST3 + AU + app, Apple Silicon + Intel) and windows/ (VST3 + exe). Install steps are in INSTALL.txt inside the zip. Details: docs/SOUND_ENGINE_2.md"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "DIVINITY-v$VER.zip" --clobber
+          else
+            gh release create "$TAG" "DIVINITY-v$VER.zip" --title "DIVINITY $TAG" --notes "$NOTES" --target "$GITHUB_SHA"
+          fi
