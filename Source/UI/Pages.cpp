@@ -10,30 +10,54 @@ using namespace colours;
 //==============================================================================
 SpectrumAnalyzer::SpectrumAnalyzer (DivinityProcessor& p) : proc (p)
 {
-    ring.assign ((size_t) kSize, 0.0f);
+    for (auto* c : { &post, &pre }) { c->ring.assign ((size_t) kSize, 0.0f); c->smooth.assign ((size_t) kSize / 2, -120.0f); }
     pull.assign ((size_t) ScopeFifo::kSize, 0.0f);
     fftData.assign ((size_t) kSize * 2, 0.0f);
-    smooth.assign ((size_t) kSize / 2, -120.0f);
     setInterceptsMouseClicks (false, false);
     startTimerHz (30);
 }
 
-void SpectrumAnalyzer::timerCallback()
+void SpectrumAnalyzer::analyse (Chan& c, ScopeFifo& fifo)
 {
-    if (! visibleInTree (*this)) return;
-    const int n = proc.scope.pull (pull.data(), (int) pull.size());
-    for (int i = 0; i < n; ++i) { ring[(size_t) writePos] = pull[(size_t) i]; writePos = (writePos + 1) % kSize; }
-    for (int i = 0; i < kSize; ++i) fftData[(size_t) i] = ring[(size_t) ((writePos + i) % kSize)];
+    const int n = fifo.pull (pull.data(), (int) pull.size());
+    for (int i = 0; i < n; ++i) { c.ring[(size_t) c.writePos] = pull[(size_t) i]; c.writePos = (c.writePos + 1) % kSize; }
+    for (int i = 0; i < kSize; ++i) fftData[(size_t) i] = c.ring[(size_t) ((c.writePos + i) % kSize)];
     std::fill (fftData.begin() + kSize, fftData.end(), 0.0f);
     window.multiplyWithWindowingTable (fftData.data(), (size_t) kSize);
     fft.performFrequencyOnlyForwardTransform (fftData.data());
     for (int b = 0; b < kSize / 2; ++b)
     {
         const float db = juce::Decibels::gainToDecibels (fftData[(size_t) b] * 4.0f / kSize, -120.0f);
-        auto& s = smooth[(size_t) b];
+        auto& s = c.smooth[(size_t) b];
         s = db > s ? s + 0.6f * (db - s) : s + 0.15f * (db - s);
     }
+}
+
+void SpectrumAnalyzer::timerCallback()
+{
+    if (! visibleInTree (*this)) { proc.scope.pull (pull.data(), (int) pull.size()); proc.scopePre.pull (pull.data(), (int) pull.size()); return; }
+    analyse (post, proc.scope);
+    analyse (pre, proc.scopePre);
     repaint();
+}
+
+juce::Path SpectrumAnalyzer::curveFor (const Chan& c, juce::Rectangle<float> r, double sr) const
+{
+    juce::Path curve;
+    const int points = juce::jmax (64, (int) r.getWidth() / 2);
+    const float bottom = r.getBottom() - 16.0f, top = r.getY() + 6.0f;
+    for (int i = 0; i <= points; ++i)
+    {
+        const double f = 20.0 * std::pow (1000.0, (double) i / points);
+        const double bin = f / sr * kSize;
+        const int b0 = juce::jlimit (1, kSize / 2 - 2, (int) bin);
+        const float frac = (float) juce::jlimit (0.0, 1.0, bin - b0);
+        const float db = c.smooth[(size_t) b0] + frac * (c.smooth[(size_t) b0 + 1] - c.smooth[(size_t) b0]) + 4.5f * (float) std::log2 (f / 1000.0);  // +4.5 dB/oct tilt
+        const float y = juce::jmap (juce::jlimit (-84.0f, 0.0f, db), -84.0f, 0.0f, bottom, top);
+        const float x = r.getX() + r.getWidth() * (float) i / points;
+        if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
+    }
+    return curve;
 }
 
 void SpectrumAnalyzer::paint (juce::Graphics& g)
@@ -43,14 +67,13 @@ void SpectrumAnalyzer::paint (juce::Graphics& g)
     g.fillRoundedRectangle (r, 5.0f);
     const double sr = juce::jmax (8000.0, proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000.0);
 
-    // grid + labels
     g.setFont (font (10.5f));
-    const double freqs[] = { 50, 100, 200, 500, 1000, 2000, 5000, 10000 };
-    const char* labels[] = { "50", "100", "200", "500", "1k", "2k", "5k", "10k" };
+    const double freqs[] = { 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000 };
+    const char* labels[] = { "20", "50", "100", "200", "500", "1k", "2k", "5k", "10k", "20k" };
     auto xFor = [&] (double f) { return r.getX() + (float) (std::log (f / 20.0) / std::log (1000.0)) * r.getWidth(); };
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 10; ++i)
     {
-        const float x = xFor (freqs[i]);
+        const float x = juce::jlimit (r.getX() + 10.0f, r.getRight() - 12.0f, xFor (freqs[i]));
         g.setColour (juce::Colours::white.withAlpha (0.05f));
         g.drawVerticalLine ((int) x, r.getY(), r.getBottom() - 14.0f);
         g.setColour (textFaint);
@@ -61,29 +84,25 @@ void SpectrumAnalyzer::paint (juce::Graphics& g)
         g.setColour (juce::Colours::white.withAlpha (0.04f));
         g.drawHorizontalLine ((int) (r.getY() + (r.getHeight() - 14.0f) * i / 4.0f), r.getX(), r.getRight());
     }
-
-    juce::Path curve;
-    const int points = juce::jmax (64, (int) r.getWidth() / 2);
     const float bottom = r.getBottom() - 16.0f, top = r.getY() + 6.0f;
-    for (int i = 0; i <= points; ++i)
+    auto drawCurve = [&] (const Chan& c, juce::Colour col, bool filled)
     {
-        const double f = 20.0 * std::pow (1000.0, (double) i / points);
-        const double bin = f / sr * kSize;
-        const int b0 = juce::jlimit (1, kSize / 2 - 2, (int) bin);
-        const float frac = (float) juce::jlimit (0.0, 1.0, bin - b0);
-        const float db = smooth[(size_t) b0] + frac * (smooth[(size_t) b0 + 1] - smooth[(size_t) b0]) + 4.5f * (float) std::log2 (f / 1000.0);  // +4.5 dB/oct tilt
-        const float y = juce::jmap (juce::jlimit (-84.0f, 0.0f, db), -84.0f, 0.0f, bottom, top);
-        const float x = r.getX() + r.getWidth() * (float) i / points;
-        if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
-    }
-    juce::Path fill (curve);
-    fill.lineTo (r.getRight(), bottom); fill.lineTo (r.getX(), bottom); fill.closeSubPath();
-    g.setGradientFill (juce::ColourGradient (accentStrong.withAlpha (0.45f), 0, top, accentDeep.withAlpha (0.05f), 0, bottom, false));
-    g.fillPath (fill);
-    g.setColour (accent.withAlpha (0.25f));
-    g.strokePath (curve, juce::PathStrokeType (5.0f));
-    g.setColour (accent);
-    g.strokePath (curve, juce::PathStrokeType (1.5f));
+        auto curve = curveFor (c, r, sr);
+        if (filled)
+        {
+            juce::Path fill (curve);
+            fill.lineTo (r.getRight(), bottom); fill.lineTo (r.getX(), bottom); fill.closeSubPath();
+            g.setGradientFill (juce::ColourGradient (col.withAlpha (0.45f), 0, top, accentDeep.withAlpha (0.05f), 0, bottom, false));
+            g.fillPath (fill);
+            g.setColour (col.withAlpha (0.25f));
+            g.strokePath (curve, juce::PathStrokeType (5.0f));
+        }
+        g.setColour (col);
+        g.strokePath (curve, juce::PathStrokeType (1.5f));
+    };
+    if (mode == 1) drawCurve (pre, accentStrong, true);
+    else if (mode == 2) { drawCurve (post, accentStrong, true); drawCurve (pre, juce::Colour (0xffb58cff), false); }
+    else drawCurve (post, accentStrong, true);
 }
 
 //==============================================================================
@@ -413,7 +432,7 @@ namespace
     public:
         explicit MacroColumn (DivinityProcessor& p) : Panel ("MACROS")
         {
-            const char* names[] = { "Tone", "Movement", "Texture", "Space" };
+            const char* names[] = { "Tone", "Movement", "Texture", "Space", "Character", "Width", "Punch", "Air" };
             for (int i = 0; i < kNumMacros; ++i)
             {
                 knobs.add (new Knob (p.apvts, ids::macro (i), names[i]));
@@ -426,12 +445,12 @@ namespace
             Panel::paint (g);
             g.setColour (text);
             g.setFont (font (16.0f, Weight::Medium));
-            for (int i = 0; i < 4; ++i) g.drawText (juce::String (i + 1), 16, knobs[i]->getY() + 20, 20, 24, juce::Justification::centredLeft);
+            for (int i = 0; i < kNumMacros; ++i) g.drawText (juce::String (i + 1), 16, knobs[i]->getY() + 20, 20, 24, juce::Justification::centredLeft);
         }
         void resized() override
         {
-            const int h = (getHeight() - 52) / 4;
-            for (int i = 0; i < 4; ++i) knobs[i]->setBounds (34, 46 + i * h, getWidth() - 44, h - 4);
+            const int h = (getHeight() - 52) / kNumMacros;
+            for (int i = 0; i < kNumMacros; ++i) knobs[i]->setBounds (34, 46 + i * h, getWidth() - 44, h - 4);
         }
     private:
         juce::OwnedArray<Knob> knobs;
@@ -677,50 +696,7 @@ namespace
     };
 }
 
-//==============================================================================
-// CreatePage
-//==============================================================================
-struct CreatePage::Impl
-{
-    Impl (DivinityProcessor& p, juce::Component& owner)
-        : engines (p.apvts), filter (p), amp (p), lfo (p), macros (p), mods (p), fx (p)
-    {
-        for (int i = 0; i < kNumOscs; ++i) sources.add (new OscEditor (p, i));
-        sources.add (new LayerEditor (p, false));
-        sources.add (new LayerEditor (p, true));
-        for (auto* c : sources) owner.addChildComponent (c);
-        for (auto* c : std::initializer_list<juce::Component*> { &engines, &filter, &amp, &lfo, &macros, &mods, &fx })
-            owner.addAndMakeVisible (c);
-        engines.onSelect = [this] (int i) { show (i); };
-        show (0);
-    }
-    void show (int i) { for (int k = 0; k < sources.size(); ++k) sources[k]->setVisible (k == i); }
-
-    EngineList engines;
-    juce::OwnedArray<juce::Component> sources;
-    FilterQuick filter;
-    AmpQuick amp;
-    LfoQuick lfo;
-    MacroColumn macros;
-    ModStrip mods;
-    FxQuick fx;
-};
-
-CreatePage::CreatePage (DivinityProcessor& p) : impl (std::make_unique<Impl> (p, *this)) {}
-CreatePage::~CreatePage() = default;
-void CreatePage::paint (juce::Graphics&) {}
-void CreatePage::resized()
-{
-    auto& m = *impl;
-    m.engines.setBounds (0, 0, 157, 285);
-    for (auto* s : m.sources) s->setBounds (169, 0, 352, 285);
-    m.filter.setBounds (533, 0, 252, 285);
-    m.amp.setBounds (797, 0, 240, 285);
-    m.lfo.setBounds (1049, 0, 199, 285);
-    m.macros.setBounds (0, 297, 157, 385);
-    m.mods.setBounds (169, 297, 1079, 178);
-    m.fx.setBounds (169, 487, 1079, 195);
-}
+// CreatePage: see CreatePageV7.cpp
 
 //==============================================================================
 // EffectsPage

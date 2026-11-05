@@ -133,11 +133,33 @@ static void testFactoryPresets (DivinityProcessor& p)
             }
         }
     CHECK (bad == 0, "every factory preset references valid parameters and choices");
-    juce::StringArray names; int dupes = 0, wave = 0, grime = 0;
+    juce::StringArray names; int dupes = 0, empty = 0;
+    std::map<juce::String, int> perCat;
     for (auto& fp : list) { if (names.contains (fp.name)) { ++dupes; std::cout << "  duplicate " << fp.name << "\n"; } names.add (fp.name);
-                            wave += fp.category.startsWith ("Wave "); grime += fp.category.startsWith ("Grime "); }
-    CHECK (dupes == 0, "factory preset names are unique");
-    CHECK (list.size() == 220 && wave == 110 && grime == 90, "220 factory presets: 110 wave + 90 neogrime (" << (int) list.size() << ", " << wave << ", " << grime << ")");
+                            empty += fp.name.trim().isEmpty(); perCat[fp.category]++; }
+    CHECK (dupes == 0 && empty == 0, "factory preset names are unique and non-empty");
+    const std::pair<const char*, int> want[] = { { "BASS", 110 }, { "808", 90 }, { "SUB", 50 }, { "LEAD", 100 }, { "SYNTH", 90 },
+                                                 { "PLUCK", 80 }, { "PAD", 100 }, { "PERCUSSION", 77 }, { "FX", 80 } };
+    bool counts = perCat.size() == 9;
+    for (auto& [c, n] : want) { counts &= perCat[c] == n; std::cout << "  " << c << " " << perCat[c] << "\n"; }
+    CHECK (list.size() == 777 && counts, "777 factory presets in the nine categories (" << (int) list.size() << ")");
+
+    // LFOs are off unless the sound routes them; percussion loops run the step sequencer in TRIGGER mode
+    int lfoWrong = 0, percWrong = 0;
+    for (auto& fp : list)
+    {
+        std::map<juce::String, juce::var> v; for (auto& [id, x] : fp.values) v[id] = x;
+        for (int l = 0; l < kNumLfos; ++l)
+        {
+            bool routed = false;
+            for (int m = 0; m < kNumModSlots; ++m) routed |= v[ids::mod (m, "src")].toString() == "LFO " + juce::String (l + 1);
+            const bool on = (double) v[ids::lfo (l, "on")] > 0.5;
+            if (on != routed) { ++lfoWrong; std::cout << "  LFO power mismatch " << fp.name << " LFO " << (l + 1) << "\n"; }
+        }
+        if (fp.category == "PERCUSSION" && ! ((double) v[ids::stepOn] > 0.5 && v[ids::stepMode].toString() == "Trigger")) ++percWrong;
+    }
+    CHECK (lfoWrong == 0, "LFOs are only switched on in presets that route them");
+    CHECK (percWrong == 0, "every PERCUSSION preset is a tempo-synced step-sequencer loop");
     INFO (list.size() << " factory presets");
 }
 
@@ -219,6 +241,7 @@ static void testModRouting (DivinityProcessor& p)
     setChoice (p, ids::mod (0, "dst"), "Filter 1 Cutoff");
     setP (p, ids::mod (0, "amt"), 0.5f);
     setP (p, ids::lfo (0, "rate"), 2.0f);
+    setP (p, ids::lfo (0, "on"), 1.0f);
     b = render (p, 48000, 512, 1.0, { { 0.0, 2.0, 45, 1.0f } });
     float lo = 1e9f, hi = -1e9f;
     for (int w = 0; w < 20; ++w) { const float r = rmsDb (b, 4800 + w * 2000, 1200); lo = std::min (lo, r); hi = std::max (hi, r); }
@@ -303,7 +326,9 @@ static void testStateRoundTrip (DivinityProcessor& p)
         bool present = false;
         for (auto* e : params->getChildIterator()) if (e->getStringAttribute ("id") == rp->getParameterID()) present = true;
         // engine_mode is the one deliberate exception: a session without it predates 2.0 and loads as Classic
-        if (! present && rp->getParameterID() != ids::engineMode && std::abs (rp->getValue() - rp->getDefaultValue()) > 1.0e-6f) ++wrong;
+                bool legacyRule = rp->getParameterID() == ids::engineMode;   // pre-2.0 sessions load as Classic
+        for (int l = 0; l < kNumLfos; ++l) legacyRule |= rp->getParameterID() == ids::lfo (l, "on");   // pre-0.7: LFOs were always running
+        if (! present && ! legacyRule && std::abs (rp->getValue() - rp->getDefaultValue()) > 1.0e-6f) ++wrong;
     }
     CHECK (wrong == 0, "parameters missing from an older session fall back to defaults");
 
@@ -882,7 +907,7 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
     juce::WavAudioFormat wav;
     const auto& list = p.presets.getPresets();
     int hot = 0, quiet = 0;
-    juce::StringArray demoCats;
+    std::map<juce::String, int> demoCats;
     std::vector<float> rmsAll;
     for (int i = 0; i < list.size(); ++i)
     {
@@ -891,15 +916,17 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
         const auto cat = list[i].category;
         const bool arpPatch = p.apvts.getRawParameterValue (arpids::on)->load() > 0.5f;
         std::vector<Note> phrase;
-        if (cat.contains ("Bass") || cat.contains ("808") || cat.contains ("Sub"))
+        if (cat == "BASS" || cat == "808" || cat == "SUB")
             phrase = { { 0.0, 0.45, 36, 1.0f }, { 0.5, 0.45, 36, 0.9f }, { 1.0, 0.7, 39, 1.0f }, { 1.75, 0.6, 34, 1.0f } };
-        else if (cat == "Percussion")
-            phrase = { { 0.0, 0.2, 36, 1.0f }, { 0.5, 0.2, 36, 1.0f }, { 1.0, 0.2, 36, 1.0f }, { 1.5, 0.2, 36, 1.0f } };
+        else if (cat == "PERCUSSION")
+            phrase = { { 0.0, 4.0, 60, 1.0f } };   // hold one key: the loop plays itself
+        else if (cat == "FX")
+            phrase = { { 0.0, 3.0, 60, 1.0f } };
         else if (arpPatch)
             phrase = { { 0.0, 2.4, 60, 0.9f }, { 0.0, 2.4, 63, 0.9f }, { 0.0, 2.4, 67, 0.9f } };
-        else if (cat.contains ("Lead") || cat.contains ("Vox"))
+        else if (cat == "LEAD")
             phrase = { { 0.0, 0.45, 72, 0.9f }, { 0.5, 0.45, 75, 0.9f }, { 1.0, 0.45, 79, 0.9f }, { 1.5, 0.9, 77, 0.9f } };
-        else if (cat.contains ("Pluck") || cat.contains ("Bell") || cat == "Keys" || cat.contains ("Stab"))
+        else if (cat == "PLUCK")
             phrase = { { 0.0, 0.3, 60, 0.9f }, { 0.25, 0.3, 64, 0.8f }, { 0.5, 0.3, 67, 0.9f }, { 0.75, 0.3, 71, 0.8f }, { 1.0, 0.3, 72, 0.9f }, { 1.25, 0.3, 67, 0.8f }, { 1.5, 0.6, 64, 0.9f } };
         else
             phrase = { { 0.0, 2.5, 48, 0.8f }, { 0.0, 2.5, 55, 0.8f }, { 0.0, 2.5, 60, 0.8f }, { 0.0, 2.5, 63, 0.8f } };
@@ -912,8 +939,8 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
         if (rms < -42.0f || ! allFinite (b)) { ++quiet; std::cout << "    ^ too quiet or not finite\n"; }
         rmsAll.push_back (rms);
         // WAV demos: the classic set + the first preset of every category (keeps CI artefacts small)
-        if (i >= 20 && demoCats.contains (cat)) continue;
-        demoCats.add (cat);
+        if (demoCats[cat] >= 3) continue;   // three demos per category
+        ++demoCats[cat];
         auto f = dir.getChildFile (juce::String (i + 1).paddedLeft ('0', 2) + " " + list[i].name + ".wav");
         f.deleteFile();
         if (auto os = std::unique_ptr<juce::OutputStream> (f.createOutputStream()))
@@ -936,10 +963,10 @@ static void snapshotEditor (DivinityProcessor& p, const juce::File& dir)
     p.presets.loadPreset (0);
     p.keyboardState.reset();
     render (p, 48000, 512, 0.6, { { 0.0, 1.0, 60, 0.8f }, { 0.0, 1.0, 64, 0.8f }, { 0.0, 1.0, 67, 0.8f } });
-    for (auto tab : { "CREATE", "EFFECTS", "PLAY", "SOUL", "LAB" })
+    for (auto tab : { "CREATE", "EFFECTS", "PLAY", "SOUL", "LAB", "BROWSER" })
     {
         p.uiWorkspace = tab;
-        p.uiAngelOpen = true;
+        p.uiAngelOpen = false;
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         ed->setSize (DivinityEditor::kBaseWidth, DivinityEditor::kBaseHeight);
         ed->setVisible (true);   // hosts make the editor visible; visualisers only run when visible
@@ -968,20 +995,20 @@ static void snapshotEditor (DivinityProcessor& p, const juce::File& dir)
     }
     {
         // Guardian Angel collapsed: the window narrows, everything else stays put
-        p.uiWorkspace = "PLAY";
+        p.uiWorkspace = "CREATE";
         std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
         auto* de = dynamic_cast<DivinityEditor*> (ed.get());
         ed->setSize (DivinityEditor::kBaseWidth, DivinityEditor::kBaseHeight);
         ed->setVisible (true);
-        de->setAngelOpen (false);
-        CHECK (ed->getWidth() == DivinityEditor::kCompactWidth && ed->getHeight() == DivinityEditor::kBaseHeight, "collapsing Guardian Angel narrows the window (" << ed->getWidth() << "x" << ed->getHeight() << ")");
+        de->setAngelOpen (true);
+        CHECK (ed->getWidth() == DivinityEditor::kBaseWidth + DivinityEditor::kAngelWidth && ed->getHeight() == DivinityEditor::kBaseHeight, "showing Guardian Angel widens the window (" << ed->getWidth() << "x" << ed->getHeight() << ")");
         for (int i = 0; i < 3; ++i) { render (p, 48000, 512, 0.15, { { 0.0, 1.0, 60, 0.8f }, { 0.0, 1.0, 67, 0.8f } }); juce::MessageManager::getInstance()->runDispatchLoopUntil (50); }
         auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
-        auto f = dir.getChildFile ("ui_play_angel_collapsed.png"); f.deleteFile();
+        auto f = dir.getChildFile ("ui_create_angel_open.png"); f.deleteFile();
         juce::FileOutputStream os (f); juce::PNGImageFormat().writeImageToStream (img, os);
-        de->setAngelOpen (true);
-        CHECK (ed->getWidth() == DivinityEditor::kBaseWidth, "reopening Guardian Angel restores the width");
-        CHECK (p.uiAngelOpen, "angel state is remembered");
+        de->setAngelOpen (false);
+        CHECK (ed->getWidth() == DivinityEditor::kBaseWidth, "hiding Guardian Angel restores the width");
+        CHECK (! p.uiAngelOpen, "angel state is remembered");
     }
     std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
     ed->setSize ((int) (DivinityEditor::kBaseWidth * 0.6f), (int) (DivinityEditor::kBaseHeight * 0.6f));
@@ -1005,19 +1032,21 @@ static void testGuardianAngel (DivinityProcessor& p)
     CHECK (r.text.contains ("Ctrl+Z"), "answers how-to questions");
 
     r = brain.ask ("make me a dark aggressive bass");
-    CHECK (p.presets.getCurrentName() == "Reese Bass" && p.apvts.getRawParameterValue (ids::soulX)->load() > 0.6f
-           && p.apvts.getRawParameterValue (ids::soulY)->load() < 0.4f, "\"dark aggressive bass\" builds from Reese Bass, pushed aggressive + dark");
+    CHECK (p.presets.getCurrentName() == "Abyss Reese" && p.apvts.getRawParameterValue (ids::soulX)->load() > 0.6f
+           && p.apvts.getRawParameterValue (ids::soulY)->load() < 0.4f, "\"dark aggressive bass\" builds from Abyss Reese, pushed aggressive + dark");
     r = brain.createSound ("dreamy evolving wide pad");
     CHECK (p.presets.getCurrentName() == "Celestial Pad" && p.apvts.getRawParameterValue (ids::macro (1))->load() > 0.3f
            && p.apvts.getRawParameterValue (ids::divineAmount)->load() > 0.2f, "\"dreamy evolving wide pad\" adds movement + Divine");
     {
-        // the wave / neogrime library is reachable by asking
+        // the 0.7 library is reachable by asking
         const std::pair<const char*, const char*> asks[] = { { "make me a grime 808", "Grime 808" }, { "give me an icy eski bell", "Ice Bell" },
                                                              { "dark wave pad please", "Seraph Bloom" }, { "make a wave reese", "Wave Reese" },
-                                                             { "8-bit lead", "8-Bit Ghost" } };
+                                                             { "8-bit lead", "8-Bit Ghost" }, { "a distorted 808 that slaps", "Viral 808" },
+                                                             { "trap hat loop", "Trap Hats" }, { "give me a riser", "Noise Riser" },
+                                                             { "make something that sounds like a grime lead", "Eskimo Ice" } };
         int hits = 0;
-        for (auto& [q, want] : asks) { brain.createSound (q); hits += p.presets.getCurrentName() == want; }
-        CHECK (hits == 5, "Guardian Angel builds from the wave / neogrime library (" << hits << "/5)");
+        for (auto& [q, want] : asks) { brain.createSound (q); const bool ok = p.presets.getCurrentName() == want; hits += ok; if (! ok) std::cout << "    \"" << q << "\" -> " << p.presets.getCurrentName() << "\n"; }
+        CHECK (hits == 9, "Guardian Angel builds from the 0.7 library (" << hits << "/9)");
         r = brain.ask ("how do i use the arp");
         CHECK (r.text.contains ("ARP") && r.text.contains ("LATCH"), "Guardian Angel explains the arpeggiator");
     }
@@ -1192,7 +1221,7 @@ static void testSoundEngine2 (DivinityProcessor& p)
         int missing = 0;
         for (auto& fp : createFactoryPresets())
         {
-            if (fp.name == "Init" || fp.category.contains ("Sub") || fp.category.contains ("808") || fp.category == "Percussion") continue;
+            if (fp.category == "SUB" || fp.category == "808" || fp.category == "PERCUSSION") continue;
             bool wheel = false, touch = false;
             for (auto& [id, v] : fp.values) { wheel |= v.toString() == "Mod Wheel"; touch |= v.toString() == "Aftertouch"; }
             if (! (wheel && touch)) { ++missing; std::cout << "    no wheel/aftertouch: " << fp.name << "\n"; }

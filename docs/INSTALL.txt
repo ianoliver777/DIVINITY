@@ -40,6 +40,20 @@ Bitwig        Settings > Locations > Rescan
 Studio One    Options > Locations > VST Plug-ins > Reset Blocklist, then restart
 
 
+NEW IN 0.7.0
+------------
+- Brand-new interface (CREATE / EFFECTS / PLAY / SOUL / LAB / BROWSER)
+- OSC D and a SAMPLER (built-in sounds, or drag in your own WAV)
+- 8 macros: TONE MOVEMENT TEXTURE SPACE CHARACTER WIDTH PUNCH AIR
+- 16-step sequencer (TRIGGER loops or MODULATE), RANDOM source, ENV 4
+- 82 new wavetables (88 total), new filters: LP24, HP24, COMB -, FORMANT
+- 777 new presets: BASS, 808, SUB, LEAD, SYNTH, PLUCK, PAD, PERCUSSION, FX
+  PERCUSSION loops follow your DAW tempo - just hold a key.
+- LFOs are OFF on the init patch and on presets that don't use them
+- Guardian Angel works the same (SHOW ANGEL, top right)
+- Your old presets and projects still load. Old patches keep their LFOs on.
+
+
 NEW IN 0.6.0 - SOUND ENGINE 2.0
 -------------------------------
 - Alias-free analog oscillators, brighter wavetables across the keyboard
@@ -54,9 +68,10 @@ NEW IN 0.6.0 - SOUND ENGINE 2.0
 
 QUICK START
 -----------
-CREATE   oscillators, filters, envelopes, LFOs, macros
+CREATE   oscillators A-D, sub, noise, sampler, filters, envelopes, LFOs, 8 macros
 EFFECTS  16-effect rack - drag to reorder, click a dot to switch on
-PLAY     preset browser, arpeggiator, macros, keyboard
+PLAY     arpeggiator, macros, keyboard
+BROWSER  777 presets by category, search, favourites
 SOUL     drag the emotion pad; hit DIVINE INTERVENTION
 LAB      modulation matrix, deep settings, GLOBAL (voices, drift, engine)
 Guardian Angel (right side): ask questions or describe a sound to build.

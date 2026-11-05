@@ -6,7 +6,7 @@ namespace divinity
 {
 namespace
 {
-    using Spectrum = std::vector<std::complex<double>>;   // bins 0 .. kSize/2
+    using Spectrum = WaveSpectrum;   // bins 0 .. kSize/2
     constexpr int N    = WavetableBank::kSize;
     constexpr int Half = N / 2;
     constexpr double kPi = juce::MathConstants<double>::pi;
@@ -185,7 +185,8 @@ namespace
             case 2:  return makeFormantVox (t);
             case 3:  return makePulseGrit (t);
             case 4:  return makeGlassHalo (t);
-            default: return makeHollowOrgan (t);
+            case 5:  return makeHollowOrgan (t);
+            default: return makeLibrarySpectrum (table - WavetableBank::kNumOriginalTables, t);
         }
     }
 }
@@ -193,29 +194,46 @@ namespace
 //==============================================================================
 WavetableBank::WavetableBank()
 {
-    numTables = wavetableNames().size();
-    data.assign ((size_t) (numTables + 1) * kFrames * kLevels * kStride, 0.0f);
+    numTables = kNumOriginalTables + libraryTableCount();
+    jassert (numTables == wavetableNames().size());
 
-    for (int t = 0; t <= numTables; ++t)   // + the internal analog table
-        buildTable (t, numTables);
+    // compact layout: per level, the smallest power of two >= 4x its harmonic count (64 .. 2048) + 1 guard
+    size_t off = 0;
+    for (int L = 0; L < kLevels; ++L)
+    {
+        int size = 64;
+        while (size < 16 * harmonicsForLevel (L) && size < kSize) size <<= 1;
+        levelSize[(size_t) L] = size;
+        levelOffset[(size_t) L] = (int) off;
+        off += (size_t) size + 1;
+    }
+    frameStride = off;
+
+    classic.assign ((size_t) kNumOriginalTables * kFrames * kClassicLevels * kClassicStride, 0.0f);
+    size_t frames = 0;
+    for (int t = 0; t <= numTables; ++t) { tableOffset.push_back (frames); frames += (size_t) framesFor (t); }
+    compact.assign (frames * frameStride, 0);
+
+    for (int t = 0; t < kNumOriginalTables; ++t) buildClassic (t);
+    for (int t = 0; t < numTables; ++t) buildCompact (t, false);
+    buildCompact (numTables, true);
 }
 
-void WavetableBank::buildTable (int tableIndex, int numPublicTables)
+/** Exactly the v0.5 build (octave levels, 2048 samples, peak-normalised to 0.9). */
+void WavetableBank::buildClassic (int tableIndex)
 {
     juce::dsp::FFT fft (kSizeOrder);
     std::vector<juce::dsp::Complex<float>> in ((size_t) N), out ((size_t) N);
-    const bool analogTable = tableIndex == numPublicTables;
-    float analogScale = 1.0f;   // inverse-FFT scale: makes a unit sine partial peak at exactly 1
 
     for (int frame = 0; frame < kFrames; ++frame)
     {
         const double t = (double) frame / (kFrames - 1);
-        const auto spec = analogTable ? makeAnalogSpectrum (frame) : makeSpectrum (tableIndex, t);
+        const auto spec = makeSpectrum (tableIndex, t);
         float normalise = 1.0f;
 
-        for (int level = 0; level < kLevels; ++level)
+        for (int level = 0; level < kClassicLevels; ++level)
         {
-            const int maxHarm = harmonicsForLevel (level);
+            const int maxHarm = Half >> level;
             std::fill (in.begin(), in.end(), juce::dsp::Complex<float> {});
             for (int k = 1; k <= juce::jmin (maxHarm, Half - 1); ++k)
             {
@@ -225,24 +243,75 @@ void WavetableBank::buildTable (int tableIndex, int numPublicTables)
             }
             fft.perform (in.data(), out.data(), true);
 
-            float* dest = data.data() + ((size_t) ((tableIndex * kFrames + frame) * kLevels + level)) * kStride;
+            float* dest = classic.data() + ((size_t) ((tableIndex * kFrames + frame) * kClassicLevels + level)) * kClassicStride;
             for (int i = 0; i < N; ++i) dest[i] = out[(size_t) i].real();
 
             if (level == 0)
             {
                 float peak = 0.0f;
                 for (int i = 0; i < N; ++i) peak = juce::jmax (peak, std::abs (dest[i]));
-                if (analogTable)
-                {
-                    // frame 0 is a unit sine: its peak is the FFT scale for the whole table
-                    if (frame == 0) analogScale = peak > 1.0e-9f ? 1.0f / peak : 1.0f;
-                    normalise = analogScale;
-                }
-                else
-                    normalise = peak > 1.0e-9f ? 0.9f / peak : 0.0f;
+                normalise = peak > 1.0e-9f ? 0.9f / peak : 0.0f;
             }
             for (int i = 0; i < N; ++i) dest[i] *= normalise;
             dest[N] = dest[0];
+        }
+    }
+}
+
+void WavetableBank::buildCompact (int tableIndex, bool analog)
+{
+    // one FFT per size; each inverse is rescaled so a unit sine partial peaks at exactly 1.0
+    std::array<std::unique_ptr<juce::dsp::FFT>, kSizeOrder + 1> ffts;
+    std::array<float, kSizeOrder + 1> unit {};
+    for (int order = 6; order <= kSizeOrder; ++order)
+    {
+        ffts[(size_t) order] = std::make_unique<juce::dsp::FFT> (order);
+        const int n = 1 << order;
+        std::vector<juce::dsp::Complex<float>> in ((size_t) n), out ((size_t) n);
+        in[1] = { 0.0f, -1.0f }; in[(size_t) (n - 1)] = { 0.0f, 1.0f };
+        ffts[(size_t) order]->perform (in.data(), out.data(), true);
+        float peak = 0.0f;
+        for (auto& c : out) peak = juce::jmax (peak, std::abs (c.real()));
+        unit[(size_t) order] = peak > 0.0f ? 1.0f / peak : 1.0f;
+    }
+
+    std::vector<juce::dsp::Complex<float>> in ((size_t) N), out ((size_t) N);
+    std::vector<float> level0 ((size_t) N);
+    constexpr float toInt = 32767.0f / kStoreScale;
+
+    const int stored = framesFor (tableIndex);
+    for (int frame = 0; frame < stored; ++frame)
+    {
+        const double t = (double) frame / (stored - 1);
+        const auto spec = analog ? makeAnalogSpectrum (frame) : makeSpectrum (tableIndex, t);
+        float normalise = 1.0f;
+
+        for (int L = 0; L < kLevels; ++L)
+        {
+            const int n = levelSize[(size_t) L];
+            int order = 0; while ((1 << order) < n) ++order;
+            const int maxHarm = juce::jmin (harmonicsForLevel (L), n / 2 - 1);
+            std::fill (in.begin(), in.begin() + n, juce::dsp::Complex<float> {});
+            for (int k = 1; k <= maxHarm; ++k)
+            {
+                const auto c = spec[(size_t) k];
+                in[(size_t) k]       = { (float) c.real(),  (float) c.imag() };
+                in[(size_t) (n - k)] = { (float) c.real(), -(float) c.imag() };
+            }
+            ffts[(size_t) order]->perform (in.data(), out.data(), true);
+            const float u = unit[(size_t) order];
+
+            if (L == 0)
+            {
+                float peak = 0.0f;
+                for (int i = 0; i < n; ++i) peak = juce::jmax (peak, std::abs (out[(size_t) i].real() * u));
+                // analog table stays unnormalised (exact Fourier series, saw = 2p-1); everything else peaks at 0.9
+                normalise = analog ? 1.0f : (peak > 1.0e-9f ? 0.9f / peak : 0.0f);
+            }
+            int16_t* dest = compact.data() + (tableOffset[(size_t) tableIndex] + (size_t) frame) * frameStride + (size_t) levelOffset[(size_t) L];
+            for (int i = 0; i < n; ++i)
+                dest[i] = (int16_t) juce::jlimit (-32767, 32767, (int) std::lround (out[(size_t) i].real() * u * normalise * toInt));
+            dest[n] = dest[0];
         }
     }
 }

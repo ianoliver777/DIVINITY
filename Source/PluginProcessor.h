@@ -6,6 +6,8 @@
 #include "DSP/SynthEngine.h"
 #include "DSP/FXChain.h"
 #include "DSP/Arpeggiator.h"
+#include "DSP/StepSequencer.h"
+#include "DSP/Sampler.h"
 #include "Presets/PresetManager.h"
 
 namespace divinity
@@ -40,7 +42,8 @@ private:
 
 //==============================================================================
 class DivinityProcessor : public juce::AudioProcessor,
-                          private juce::ValueTree::Listener
+                          private juce::ValueTree::Listener,
+                          private juce::Timer
 {
 public:
     DivinityProcessor();
@@ -76,7 +79,8 @@ public:
     juce::MidiKeyboardState keyboardState;   // on-screen keyboard feeds MIDI in here
     juce::MidiMessageCollector uiMidi;       // pitch/mod wheels from the UI
     PresetManager presets;
-    ScopeFifo scope;
+    ScopeFifo scope;      // post-FX (what you hear)
+    ScopeFifo scopePre;   // pre-FX (the raw voices) for the spectrum's PRE view
 
     std::atomic<float> meterL { 0 }, meterR { 0 };
     std::atomic<float> cpuLoad { 0 };
@@ -89,6 +93,18 @@ public:
     float getSoulY() const noexcept { return engine.getSoul().getEffectiveY(); }
     float getDivineAmount() const noexcept { return engine.getSoul().getEffectiveDivine(); }
     const FXChain::Display& getFxDisplay() const noexcept { return fx.display; }
+    float getRandomValue() const noexcept { return engine.getRandomValue(); }
+    float getStepValue() const noexcept { return engine.getStepValue(); }
+    int getStepIndex() const noexcept { return stepSeq.isTriggering() ? stepSeq.displayStep.load() : engine.getStepIndex(); }
+    int getMaxVoices() const noexcept { return engine.getSnapshot().maxVoices; }
+
+    //--------------------------------------------------------------------------
+    // Sampler: factory content + the user's own sample (path saved with the session / preset)
+    const FactorySamples& getFactorySamples() const noexcept { return *factorySamples; }
+    UserSampleSlot& getUserSample() noexcept { return userSample; }
+    /** Message thread: loads a WAV/AIFF/FLAC/OGG as the user sample and selects it. Returns an error or empty. */
+    juce::String loadUserSample (const juce::File& file, bool selectIt = true);
+    static inline const juce::Identifier userSampleProperty { "userSample" };
 
     /** FX rack order (module keys). Setting it is undoable and saved with sessions and presets. */
     juce::StringArray getFxOrder() const;
@@ -97,16 +113,23 @@ public:
     // UI preference (not part of the sound): workspace & scale are stored with the session.
     juce::String uiWorkspace { "CREATE" };   // CREATE / EFFECTS / PLAY / SOUL / LAB
     float uiScale = 1.0f;
-    bool uiAngelOpen = true;
+    bool uiAngelOpen = false;   // 0.7: Guardian Angel starts tucked away (SHOW ANGEL)
     bool uiAngelTips = true;
 
 private:
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
+    void timerCallback() override { userSample.collectGarbage(); }
     juce::SharedResourcePointer<WavetableBank> bank;
+    juce::SharedResourcePointer<FactorySamples> factorySamples;
+    UserSampleSlot userSample;
     SynthEngine engine;
     FXChain fx;
 public:
     Arpeggiator arp;   // public: the UI reads its display atomics
+    StepSequencer stepSeq;
+private:
+    bool wasStepTriggering = false;
+public:
 private:
     juce::AudioProcessLoadMeasurer loadMeasurer;
     juce::MidiBuffer uiMidiBuffer;

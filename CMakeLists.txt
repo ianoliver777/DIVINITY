@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(DIVINITY VERSION 0.6.0 LANGUAGES C CXX)
+project(DIVINITY VERSION 0.7.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -62,19 +62,24 @@ set(DIVINITY_CORE_SOURCES
     Source/Parameters.cpp
     Source/PluginProcessor.cpp
     Source/DSP/Wavetables.cpp
+    Source/DSP/WavetableLibrary.cpp
     Source/DSP/SynthEngine.cpp
     Source/DSP/FXChain.cpp
     Source/DSP/SoulEngine.cpp
     Source/DSP/FxCatalog.cpp
     Source/DSP/Arpeggiator.cpp
+    Source/DSP/StepSequencer.cpp
+    Source/DSP/Sampler.cpp
     Source/Presets/PresetManager.cpp
     Source/Presets/FactoryPresets.cpp
-    Source/Presets/FactoryPresetsWave.cpp
+    Source/Presets/FactoryPresetsV7.cpp
     Source/PluginEditor.cpp
     Source/UI/DivinityLookAndFeel.cpp
     Source/UI/Components.cpp
     Source/UI/Panels.cpp
     Source/UI/CreateView.cpp
+    Source/UI/CreatePageV7.cpp
+    Source/UI/BrowserPage.cpp
     Source/UI/SoulView.cpp
     Source/UI/Pages.cpp
     Source/UI/GuardianPanel.cpp
@@ -87,7 +92,8 @@ set(DIVINITY_COMMON_DEFS
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
-    JUCE_DISPLAY_SPLASH_SCREEN=0)
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+    DIVINITY_VERSION_STRING="${PROJECT_VERSION}")
 
 target_compile_definitions(DIVINITY PUBLIC ${DIVINITY_COMMON_DEFS})
 

@@ -50,7 +50,7 @@ namespace
             { { "hide", "collapse", "go away", "smaller window", "minimi" },
               "Hit HIDE ANGEL next to the tabs and I'll tuck myself away; the window gets narrower. SHOW ANGEL brings me back whenever you need me." },
             { { "wave music", "neogrime", "grime", "eski", "barnacle" },
-              "DIVINITY ships with 110 wave presets (pads, supersaw leads, reese, 808s, vocal chops, plucks, bells, atmospheres, gated and pumping chords, arps) and 90 neogrime presets (eski square leads, subs, growls, ice bells, stabs, metal plucks, 8-bit leads, 808s, pads, arps, sirens). Pick WAVE or NEOGRIME in the category menu, or ask me for something like \"wave 808\" or \"grime bell\"." },
+              "DIVINITY ships with 777 factory presets in nine categories: BASS (reeses of every kind + wave bass), 808 (distorted, viral, gliding), SUB, LEAD, SYNTH (stabs, keys, gated and pumping chords, arps), PLUCK, PAD, PERCUSSION (hat and perc loops that lock to your tempo - just hold a key) and FX (risers, downlifters, impacts, noise patterns, sweeps). Open the BROWSER tab, or ask me for something like \"distorted 808\" or \"trap hat loop\"." },
             { { "glide", "portamento", "legato", "slide" },
               "Set VOICES mode to LEGATO in LAB and raise GLIDE in the bottom bar: overlapping notes will slide instead of retriggering. 40-80 ms feels great on 808s and leads." },
             { { "cpu", "lag", "performance", "crackle" },
@@ -70,7 +70,7 @@ namespace
             { { "shortcut", "fine", "double", "right-click", "right click", "type a value" },
               "Shift-drag any knob for fine control, double-click to reset it and right-click to type an exact value. The computer keyboard plays notes when the keyboard on PLAY has focus." },
             { { "808", "bass", "sub" },
-              "For heavy low end: a sine or the Deep Sub / 808 Boom presets, random phase OFF for consistent punch, a little saturation for audibility on small speakers, LEGATO with 40-60 ms glide for slides. Push SOUL toward AGGRESSIVE with the Bass Pressure mapping for grit." },
+              "For heavy low end: a sine or the Pure Sub / Void 808 / Viral 808 presets, random phase OFF for consistent punch, a little saturation for audibility on small speakers, LEGATO with 40-60 ms glide for slides. Push SOUL toward AGGRESSIVE with the Bass Pressure mapping for grit." },
         };
         return k;
     }
@@ -177,7 +177,7 @@ GuardianBrain::Reply GuardianBrain::randomize()
     auto pick = [this] (std::initializer_list<const char*> l) { return juce::String (*(l.begin() + rng.nextInt ((int) l.size()))); };
     const auto tables = wavetableNames();
 
-    // start from a clean, safe base: everything back to default except master level and voice count
+    // start from a clean, safe base: everything back to default except the voice count
     for (auto* prm : proc.getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (prm))
             if (rp->getParameterID() != ids::master && rp->getParameterID() != ids::voices)
@@ -185,6 +185,7 @@ GuardianBrain::Reply GuardianBrain::randomize()
                 rp->beginChangeGesture(); rp->setValueNotifyingHost (rp->getDefaultValue()); rp->endChangeGesture();
             }
 
+    set (ids::master, -10.0f);   // presets carry loudness trims; a fresh patch starts from a safe level
     juce::StringArray parts;
     for (int o = 0; o < kNumOscs; ++o)
     {
@@ -225,12 +226,12 @@ GuardianBrain::Reply GuardianBrain::randomize()
     if (rng.nextFloat() < 0.35f) { set (ids::subOn, 1); set (ids::subLevel, r (0.3f, 0.55f)); parts.add ("sub"); }
     if (rng.nextFloat() < 0.25f) { set (ids::noiseOn, 1); set (ids::noiseLevel, r (0.04f, 0.18f)); setChoice (ids::noiseType, pick ({ "White", "Pink", "Dark", "Bright" })); }
 
-    const auto ftype = pick ({ "MG Low 24", "MG Low 24", "Low Pass 12", "Band Pass", "Low Pass 12", "Comb" });
+    const auto ftype = pick ({ "MG Low 24", "MG Low 24", "Low Pass 12", "Band Pass", "Low Pass 12", "Comb +" });
     setChoice (ids::filt (0, "type"), ftype);
     set (ids::filt (0, "cutoff"), 300.0f * std::pow (30.0f, rng.nextFloat()));
-    set (ids::filt (0, "res"), r (0.0f, ftype == "Comb" ? 0.5f : 0.55f));
+    set (ids::filt (0, "res"), r (0.0f, ftype == "Comb +" ? 0.5f : 0.55f));
     set (ids::filt (0, "drive"), r (0.0f, 0.35f));
-    if (ftype == "Comb") { set (ids::filt (0, "keytrack"), 1.0f); set (ids::filt (0, "cutoff"), 261.6f); set (ids::filt (0, "mix"), 0.5f); }
+    if (ftype == "Comb +") { set (ids::filt (0, "keytrack"), 1.0f); set (ids::filt (0, "cutoff"), 261.6f); set (ids::filt (0, "mix"), 0.5f); }
 
     juce::String shape;
     switch (rng.nextInt (3))
@@ -275,51 +276,60 @@ GuardianBrain::Reply GuardianBrain::createSound (const juce::String& raw)
     const auto q = raw.toLowerCase();
     struct Base { std::vector<const char*> words; const char* preset; const char* noun; };
     static const std::vector<Base> bases {
-        // wave + neogrime library first ("a+b" = both words must appear)
-        { { "grime+808", "eski+808" }, "Grime 808", "neogrime 808" },
-        { { "grime+sub", "eski+sub" }, "Pure Sub", "grime sub" },
-        { { "grime+bass", "eski+bass" }, "Concrete Growl", "grime bass" },
-        { { "grime+bell", "eski+bell", "ice bell" }, "Ice Bell", "ice bell" },
-        { { "grime+arp", "eski+arp" }, "Tick Tock", "grime arp" },
-        { { "grime+pad", "grime+atmos" }, "Grey Skies", "neogrime pad" },
+        // most specific first ("a+b" = both words must appear)
+        { { "grime+808", "eski+808" }, "Grime 808", "grime 808" },
+        { { "viral+808", "distorted+808", "distortion+808", "clipped+808", "hard+808", "dirty+808" }, "Viral 808", "distorted 808" },
+        { { "glide+808", "slide+808" }, "Glide 808", "gliding 808" },
+        { { "grime+bell", "eski+bell", "ice bell", "icy+bell" }, "Ice Bell", "ice bell" },
         { { "grime+pluck", "metal+pluck" }, "Clang Pluck", "metal pluck" },
-        { { "stab" }, "Cold Stab", "cold stab" },
         { { "8-bit", "8 bit", "chiptune", "chip" }, "8-Bit Ghost", "8-bit lead" },
         { { "siren" }, "Pirate Siren", "siren" },
-        { { "eski", "grime", "square lead" }, "Eskimo Ice", "eski lead" },
+        { { " hat", "hats", "hi-hat", "hihat", "perc loop", "drum loop", "trap loop" }, "Trap Hats", "hat loop" },
+        { { "shaker" }, "Loose Shaker", "shaker loop" },
+        { { "clap", "snap" }, "Clap Rolls", "clap loop" },
+        { { " rim", "rims", "perc" }, "Rim Groove", "perc loop" },
+        { { "downlifter", "down lifter", "fall" }, "Downlifter", "downlifter" },
+        { { "white noise", "noise pattern", "noise burst" }, "Noise Pattern", "white noise pattern" },
+        { { "transition", "sweep" }, "Transition Sweep", "transition sweep" },
+        { { "riser", "build", "uplifter" }, "Noise Riser", "riser" },
+        { { "impact", "hit", "cinematic", "boom" }, "Cinematic Impact", "impact" },
+        { { "zap", "laser" }, "Laser Zap", "laser zap" },
+        { { "reverse", "swell" }, "Reverse Swell", "reverse swell" },
+        { { "glitch", "stutter" }, "Glitch Machine", "glitch" },
+        { { "rain", "wind", "vinyl", "foley" }, "Rain Atmos", "atmosphere" },
         { { "wave+808" }, "Void 808", "wave 808" },
         { { "wave+reese", "wave+bass" }, "Wave Reese", "wave reese" },
+        { { "talking", "yoi", "vowel bass" }, "Talking Reese", "talking reese" },
         { { "wave+pluck" }, "Crystal Rain", "wave pluck" },
-        { { "wave+bell" }, "Mourning Bell", "wave bell" },
-        { { "wave+arp" }, "Falling Stars", "wave arp" },
-        { { "wave+vox", "wave+vocal", "wave+choir", "vocal chop", "vox chop" }, "Angel Chop", "vocal chop lead" },
+        { { "wave+arp", "arp" , "sequence" }, "Falling Stars", "arp" },
+        { { "wave+vox", "wave+vocal", "vocal chop", "vox chop" }, "Angel Chop", "vocal chop lead" },
         { { "wave+lead", "wave+supersaw" }, "Into The Void", "wave lead" },
         { { "wave+pad", "ethereal" }, "Seraph Bloom", "wave pad" },
-        { { "wave+atmos", "wave+ambient" }, "Northern Lights", "wave atmosphere" },
-        { { "gated", "trance gate" }, "Strobe Heaven", "gated pad" },
+        { { "wave+atmos", "wave+ambient", "northern" }, "Northern Lights", "wave atmosphere" },
+        { { "grime+pad", "grey" }, "Grey Skies", "dark pad" },
+        { { "stab" }, "Cold Stab", "cold stab" },
+        { { "eski", "grime", "square lead" }, "Eskimo Ice", "eski lead" },
+        { { "gated", "trance gate" }, "Strobe Heaven", "gated chords" },
         { { "pump", "sidechain" }, "Pulse Of Heaven", "pumping chords" },
         { { "screech", "scream" }, "Banshee", "screech lead" },
         { { "wave music", "wavey" }, "Seraph Bloom", "wave pad" },
-        { { "808" }, "808 Boom", "808" },
-        { { "kick", "drum" }, "Punch Kick", "kick" },
+        { { "808" }, "Void 808", "808" },
         { { "wobble", "dubstep", "riddim" }, "Wobble Machine", "wobble bass" },
-        { { "reese", "dnb", "neuro" }, "Reese Bass", "reese bass" },
-        { { "sub", "deep bass" }, "Deep Sub", "sub bass" },
-        { { "bass" }, "Reese Bass", "bass" },
-        { { "choir", "vocal", "voice", "vox", "angel" }, "Vox Choir", "vocal texture" },
+        { { "neuro" }, "Neuro Reese", "neuro reese" },
+        { { "reese", "dnb" }, "Abyss Reese", "reese bass" },
+        { { "sub", "deep bass" }, "Pure Sub", "sub bass" },
+        { { "bass" }, "Abyss Reese", "bass" },
+        { { "choir", "vocal", "voice", "vox", "angel" }, "Angel Choir", "choir" },
         { { "drone", "dark ambient" }, "Dark Drone", "drone" },
         { { "ambient", "atmosphere", "wash", "texture" }, "Ambient Wash", "atmosphere" },
         { { "pad" }, "Celestial Pad", "pad" },
-        { { "hyper", "hyperpop" }, "Hyper Lead", "hyper lead" },
-        { { "brass" }, "Analog Brass", "brass lead" },
-        { { "lead", "supersaw", "trance" }, "Supersaw Lead", "lead" },
+        { { "brass" }, "Analog Brass", "brass" },
+        { { "lead", "supersaw", "trance" }, "Into The Void", "lead" },
         { { "pluck" }, "Glass Pluck", "pluck" },
         { { "bell", "chime" }, "Halo Bells", "bell" },
-        { { "keys", "piano", "organ", "rhodes" }, "Soft Keys", "keys" },
-        { { "arp", "sequence" }, "Arp Machine", "arp" },
-        { { "riser", "sweep", "build" }, "Noise Riser", "riser" },
-        { { "impact", "hit", "cinematic", "boom" }, "Cinematic Impact", "impact" },
-        { { "metal", "comb", "experimental", "weird", "glitch" }, "Grit Comb", "experimental sound" },
+        { { "organ" }, "Gospel Organ", "organ" },
+        { { "keys", "piano", "rhodes" }, "Soft Keys", "keys" },
+        { { "metal", "comb", "experimental", "weird" }, "Clang Pluck", "metallic sound" },
     };
 
     const Base* base = nullptr;

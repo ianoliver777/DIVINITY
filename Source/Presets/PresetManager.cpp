@@ -166,6 +166,8 @@ std::unique_ptr<juce::XmlElement> PresetManager::createPresetXml (const PresetIn
     xml->setAttribute ("category", info.category);
     xml->setAttribute ("tags", info.tags);
     xml->setAttribute ("description", info.description);
+    if (apvts.state.getProperty ("userSample").toString().isNotEmpty())
+        xml->setAttribute ("userSample", apvts.state.getProperty ("userSample").toString());
     xml->setAttribute ("fxOrder", sanitiseFxOrder (juce::StringArray::fromTokens (apvts.state.getProperty (fxOrderProperty).toString(), ",", "")).joinIntoString (","));
     auto* params = xml->createNewChildElement ("Params");
     for (auto* p : apvts.processor.getParameters())
@@ -200,6 +202,9 @@ bool PresetManager::applyPresetXml (const juce::XmlElement& xml)
     if (! hasEngineMode)
         if (auto* em = apvts.getParameter (ids::engineMode))
             em->setValueNotifyingHost (em->convertTo0to1 ((float) EngineMode::Classic));
+    applyPre07Defaults (*params, "P", "id", apvts);
+    if (xml.hasAttribute ("userSample"))
+        apvts.state.setProperty ("userSample", xml.getStringAttribute ("userSample"), nullptr);
     loading = wasLoading;
     return true;
 }
