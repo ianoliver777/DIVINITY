@@ -106,4 +106,4 @@ Factory library (220 presets): presets with negative L/R correlation (phasey, mo
 - **Preset count:** the library has 220 presets, not 210. The redesign here is a library-wide finishing pass + re-levelling, not 220 hand-rebuilt patches.
 - **New oscillator features from the spec:** hard sync, FM/PM between oscillators, phase distortion, spectral warp, configurable free-running phase. They need new per-oscillator parameters and UI and were deliberately left until the core sound was fixed ("prioritise audible quality over features").
 - **Filters:** no new models (comb/ladder/SVF set unchanged), no per-oscillator routing.
-- **Builds:** built and tested on Linux only in this session. macOS (VST3/AU, universal) and Windows (VST3) come from the existing GitHub Actions workflow and have not been verified yet; no signing/notarisation.
+- **Builds:** Linux VST3 + Standalone built locally; GitHub Actions built and tested macOS universal (VST3 / AU / Standalone: test suite, auval, pluginval) and Windows x64 (VST3 / Standalone: test suite, pluginval) green. Not yet run inside a real DAW session, and still unsigned / not notarised.
