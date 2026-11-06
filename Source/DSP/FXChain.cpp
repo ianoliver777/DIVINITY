@@ -478,8 +478,10 @@ namespace
     public:
         explicit PhaserModule (juce::AudioProcessorValueTreeState& s)
             : FxModule (s, phaseOn), rate (p (phaseRate)), depth (p (phaseDepth)), fb (p (phaseFb)), centre (p (phaseCentre)), mix (p (phaseMix)) {}
-        void prepare (double sr, int maxBlock) override { fs = sr; phaser.prepare ({ sr, (juce::uint32) maxBlock, 2 }); reset(); }
-        void reset() override { phaser.reset(); }
+        void prepare (double sr, int maxBlock) override { fs = sr; spec = { sr, (juce::uint32) maxBlock, 2 }; phaser.prepare (spec); reset(); }
+        // juce::dsp::Phaser::reset() keeps its smoothed LFO depth / filter state: re-preparing with the same spec
+        // (no reallocation at the same size) makes a restarted phaser sound the same every time
+        void reset() override { phaser.prepare (spec); phaser.reset(); }
         void process (float* L, float* R, int n, const FxContext&) noexcept override
         {
             phaser.setRate (rate->load()); phaser.setDepth (depth->load());
@@ -493,6 +495,7 @@ namespace
     private:
         std::atomic<float> *rate, *depth, *fb, *centre, *mix;
         juce::dsp::Phaser<float> phaser;
+        juce::dsp::ProcessSpec spec { 44100.0, 512, 2 };
         double fs = 44100.0;
     };
 

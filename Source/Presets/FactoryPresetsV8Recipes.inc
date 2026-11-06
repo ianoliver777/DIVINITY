@@ -676,6 +676,35 @@ CategoryRecipe fxRecipe()
               .env (1, 1.2, 1.5, 0.0, 0.5).mod ("ENV 2", "Filter 1 Cutoff", 0.75)),
         ING ("Rain Atmosphere", "a rain atmosphere with a slow choir behind", "Atmosphere", p.smp ("Rain", 0.6, false).smpLoop (0.05, 0.95).noise ("Dark", 0.2)),
         ING ("Wind Atmosphere", "a wind atmosphere", "Atmosphere", p.smp ("Wind", 0.7, false).smpLoop (0.05, 0.95)),
+        ING ("Short Riser", "a quick noise riser: a high-pass sweeping up over about a second", "Riser",
+             p.noise ("White", 0.7).filt (0, "High Pass 12", 200, 0.3, 0.0, 0.0).env (1, 1.2, 0.1, 1.0, 0.3).mod ("ENV 2", "Filter 1 Cutoff", 0.8)),
+        ING ("Pitch Riser", "a supersaw climbing two octaves", "Riser",
+             p.an (0, "Saw", 0.55).uni (0, 5, 0.25, 0.9).env (1, 3.0, 0.1, 1.0, 0.5).mod ("ENV 2", "Osc A Pitch", 1.0).mod ("ENV 2", "Osc A Pitch", 1.0)),
+        ING ("Choir Riser", "a choir that rises in pitch and opens up", "Riser",
+             p.smp ("Choir Ahh", 0.7, true).filt (0, "Low Pass 24", 400, 0.2, 0.0, 0.0).env (1, 3.0, 0.1, 1.0, 0.5)
+              .mod ("ENV 2", "Sampler Pitch", 0.5).mod ("ENV 2", "Filter 1 Cutoff", 0.8)),
+        ING ("Wind Riser", "wind gusting up through an opening filter", "Riser",
+             p.smp ("Wind", 0.8, false).smpLoop (0.05, 0.95).filt (0, "Band Pass", 250, 0.4, 0.0, 0.0).env (1, 3.0, 0.1, 1.0, 0.5).mod ("ENV 2", "Filter 1 Cutoff", 0.85)),
+        ING ("Tape Stop", "a held saw chord slowing to a halt like a tape stop", "Drop",
+             p.an (0, "Saw", 0.6).uni (0, 3, 0.15, 0.7).env (1, 0.9, 0.1, 1.0, 0.3).mod ("ENV 2", "Osc A Pitch", -1.0).mod ("ENV 2", "Osc A Pitch", -1.0).filt (0, "Low Pass 24", 3000, 0.1, 0.0, 0.0)),
+        ING ("Laser Zap", "a square zap diving three octaves in a blink", "Zap",
+             p.an (0, "Square", 0.6).env (1, 0.0, 0.18, 0.0, 0.1).mod ("ENV 2", "Osc A Pitch", 1.0).mod ("ENV 2", "Osc A Pitch", 1.0).mod ("ENV 2", "Osc A Pitch", 1.0).env (0, 0.001, 0.4, 0.0, 0.2)),
+        ING ("Noise Burst", "a short burst of white noise", "Burst", p.noise ("White", 0.8).env (0, 0.001, 0.35, 0.0, 0.3).filt (0, "Low Pass 12", 9000, 0.1, 0.0, 0.0)),
+        ING ("Noise Pattern", "white noise chopped into a sixteenth pattern (hold one key)", "Pattern",
+             p.noise ("White", 0.7).steps ("9070907790709999", "1111111211111234", "s", {}, "1/16", 16, 0.0, true).env (0, 0.001, 0.12, 0.0, 0.08)),
+        ING ("Up Sweep", "noise swept upward through a resonant band-pass", "Sweep",
+             p.noise ("Pink", 0.7).filt (0, "Band Pass", 200, 0.6, 0.0, 0.0).env (1, 2.8, 0.1, 1.0, 0.4).mod ("ENV 2", "Filter 1 Cutoff", 0.9)),
+        ING ("Down Sweep", "noise swept downward through a resonant band-pass", "Sweep",
+             p.noise ("Pink", 0.7).filt (0, "Band Pass", 200, 0.6, 0.0, 0.0).env (1, 0.0, 2.8, 0.0, 0.4).mod ("ENV 2", "Filter 1 Cutoff", 0.9)),
+        ING ("Reese Swell", "a reese that swells in from nothing, filter opening (reverse-style)", "Swell",
+             p.an (0, "Saw", 0.6).uni (0, 2, 0.16, 0.5).an (1, "Saw", 0.5).tune (1, 0, 0, 12).env (0, 2.5, 0.1, 1.0, 0.3)
+              .filt (0, "Low Pass 24", 300, 0.2, 0.0, 0.0).env (1, 2.5, 0.1, 1.0, 0.3).mod ("ENV 2", "Filter 1 Cutoff", 0.7)),
+        ING ("Glass Impact", "a glass hit over a sine boom that drops an octave", "Impact",
+             p.smp ("Glass Hit", 0.6, true).an (0, "Sine", 0.8).tune (0, -2).env (1, 0.0, 0.12, 0.0, 0.1).mod ("ENV 2", "Osc A Pitch", 1.0).env (0, 0.001, 1.2, 0.0, 0.8)),
+        ING ("Metal Impact", "a metal hit", "Impact", p.smp ("Metal Hit", 0.8, false)),
+        ING ("Breath Whoosh", "a breath loop swept up and back down", "Whoosh",
+             p.smp ("Air Breath", 0.8, false).smpLoop (0.1, 0.9).filt (0, "Band Pass", 300, 0.4, 0.0, 0.0).env (1, 1.0, 1.5, 0.0, 0.5).mod ("ENV 2", "Filter 1 Cutoff", 0.8)),
+        ING ("Vinyl Atmosphere", "vinyl crackle and a low dark hum", "Atmosphere", p.smp ("Vinyl Crackle", 0.7, false).smpLoop (0.05, 0.95).an (0, "Sine", 0.15).tune (0, -2)),
     };
     R.motions = {
         ING ("", "as designed", "", p.set (ids::analog, 0.2)),
@@ -690,8 +719,9 @@ CategoryRecipe fxRecipe()
     R.templates = { "M S", "P S", "P M S", "M P S" };
     R.allowed = [] (const juce::String& s, const juce::String& m)
     {
-        if (s == "Impact" || s == "Sub Drop" || s == "Reverse Swell") return m.isEmpty() || m == "Crushed";
-        if (s.contains ("Downlifter") || s.contains ("Riser")) return m != "Stuttering";
+        if (s.contains ("Impact") || s == "Sub Drop" || s == "Reverse Swell" || s == "Laser Zap" || s == "Noise Burst" || s == "Tape Stop" || s == "Noise Pattern")
+            return m.isEmpty() || m == "Crushed";
+        if (s.contains ("Downlifter") || s.contains ("Riser") || s.contains ("Sweep") || s.contains ("Swell")) return m != "Stuttering";
         if (s.contains ("Atmosphere")) return m != "Swirling";
         return true;
     };

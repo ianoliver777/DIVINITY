@@ -226,11 +226,17 @@ std::vector<FactoryPreset> createCandidatePresetsV7 (const juce::String& categor
     const auto R = recipeFor (category);
     if (heroesOut != nullptr) heroesOut->assign ((size_t) R.count, { -1, -1 });   // no hero slots: names follow the sound
     std::vector<FactoryPreset> v;
-    juce::StringArray none;
     for (int k = first; k < first + count; ++k)
     {
         auto s = makeCandidate (R, k);
-        s.name = nameFor (R, k, none);
+        // every word any name layout could use, so the picker verifies all of them (the bank may fall back
+        // to another layout when a name is already taken)
+        const auto c = drawChoice (R, k);
+        juce::StringArray w;
+        for (auto* x : { &R.motions[(size_t) c.mot].word, &R.filters[(size_t) c.fil].word, &R.spaces[(size_t) c.spa].word,
+                         &R.styles[(size_t) c.sty].word, &R.sources[(size_t) c.src].word })
+            if (x->isNotEmpty()) w.add (*x);
+        s.name = w.joinIntoString (" ");
         v.push_back (toFactoryPreset (s, 0.0));
     }
     return v;

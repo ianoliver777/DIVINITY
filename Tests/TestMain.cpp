@@ -1529,7 +1529,7 @@ static void testGuardianAngel (DivinityProcessor& p)
         // the 0.7 library is reachable by asking
         struct Ask { const char* q; const char* cat; const char* word; };
         const Ask asks[] = { { "make me a grime 808", "BASS", "808" }, { "give me an icy eski bell", "SYNTH", "Bell" },
-                             { "dark wave pad please", "PAD", "Pad" }, { "make a wave reese", "REESE", "Reese" },
+                             { "dark wave pad please", "PAD", "Dark" }, { "make a wave reese", "REESE", "Reese" },
                              { "8-bit lead", "LEAD", "Chip" }, { "a distorted 808 that slaps", "BASS", "Distorted" },
                              { "trap hat loop", "PERCUSSION", "Hats" }, { "give me a riser", "FX", "Riser" },
                              { "make something that sounds like a grime lead", "LEAD", "Square" } };
