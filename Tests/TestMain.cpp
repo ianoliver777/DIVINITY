@@ -1289,7 +1289,7 @@ static void testGuardianAngel (DivinityProcessor& p)
                                                              { "dark wave pad please", "HEAVEN" }, { "make a wave reese", "HOLLOW UNDERTOW" },
                                                              { "8-bit lead", "BURNING//TRUMPET" }, { "a distorted 808 that slaps", "DROWNED MIDNIGHT" },
                                                              { "trap hat loop", "CLOCKWORK" }, { "give me a riser", "ASCENSION" },
-                                                             { "make something that sounds like a grime lead", "Eskimo Ice" } };
+                                                             { "make something that sounds like a grime lead", "RISING WINGS" } };
         int hits = 0;
         for (auto& [q, want] : asks) { brain.createSound (q); const bool ok = p.presets.getCurrentName() == want; hits += ok; if (! ok) std::cout << "    \"" << q << "\" -> " << p.presets.getCurrentName() << "\n"; }
         CHECK (hits == 9, "Guardian Angel builds from the 0.7 library (" << hits << "/9)");
