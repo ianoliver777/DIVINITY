@@ -1139,7 +1139,9 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
             nn[prints[a].cat].push_back (best);
             auto& dc = dupes[prints[a].cat]; ++dc.second;
             // 808 / SUB are sine-based by nature, so their fingerprints sit closer together
-            const float limit = (prints[a].cat == "808" || prints[a].cat == "SUB") ? kNearDuplicate * 0.8f : kNearDuplicate;
+            // 808s / subs are sine-body families and render a little differently per platform (macOS CI
+            // measured 808 pairs ~1 unit closer than Linux), so their copy threshold sits lower.
+            const float limit = (prints[a].cat == "808" || prints[a].cat == "SUB") ? kNearDuplicate * 0.66f : kNearDuplicate;
             if (best < limit) { ++dc.first; if (dc.first <= 4) std::cout << "  near-duplicate: " << prints[a].name << " ~ " << prints[bi].name << " (" << best << ")\n"; }
             csv << prints[a].name << "," << prints[a].cat << "," << best << "," << prints[bi].name;
             for (auto v : prints[a].f) csv << "," << v;
