@@ -953,8 +953,8 @@ static std::vector<float> soundFingerprint (const juce::AudioBuffer<float>& b, d
     {
         std::vector<double> series;
         for (auto& fr : frames) { double m = 0; for (int k = g * 4; k < g * 4 + 4; ++k) m += fr[(size_t) k]; m /= 4; if (m > -70.0) series.push_back (m); }
-        double mu = 0, var = 0; for (auto v : series) mu += v; mu /= juce::jmax<size_t> (1, series.size());
-        for (auto v : series) var += (v - mu) * (v - mu); var /= juce::jmax<size_t> (1, series.size());
+        double mu = 0, var = 0; for (auto v : series) mu += v; mu /= std::max<size_t> (1, series.size());
+        for (auto v : series) var += (v - mu) * (v - mu); var /= std::max<size_t> (1, series.size());
         f.push_back ((float) std::sqrt (var) * 1.5f);
     }
     // 4) stereo width (side / mid, dB)
@@ -967,7 +967,7 @@ static std::vector<float> soundFingerprint (const juce::AudioBuffer<float>& b, d
 static float fingerprintDistance (const std::vector<float>& a, const std::vector<float>& b)
 {
     double d = 0; for (size_t i = 0; i < a.size() && i < b.size(); ++i) d += (a[i] - b[i]) * (a[i] - b[i]);
-    return (float) std::sqrt (d / (double) juce::jmax<size_t> (1, a.size()));
+    return (float) std::sqrt (d / (double) std::max<size_t> (1, a.size()));
 }
 
 static std::vector<Note> phraseFor (const juce::String& cat, bool arpPatch)
