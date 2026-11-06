@@ -288,7 +288,7 @@ static void testStateRoundTrip (DivinityProcessor& p)
     juce::MemoryBlock state;
     p.getStateInformation (state);
 
-    DivinityProcessor q;
+    auto qOwner = std::make_unique<DivinityProcessor>(); auto& q = *qOwner;
     q.setStateInformation (state.getData(), (int) state.getSize());
     int mismatches = 0;
     for (int i = 0; i < p.getParameters().size(); ++i)
@@ -320,7 +320,7 @@ static void testStateRoundTrip (DivinityProcessor& p)
     for (auto* e : toRemove) params->removeChildElement (e, true);
     juce::MemoryBlock older;
     juce::AudioProcessor::copyXmlToBinary (*xml, older);
-    DivinityProcessor r;
+    auto rOwner = std::make_unique<DivinityProcessor>(); auto& r = *rOwner;
     r.setStateInformation (older.getData(), (int) older.getSize());
     int wrong = 0;
     for (auto* prm : r.getParameters())
@@ -539,7 +539,7 @@ static void testSoul (DivinityProcessor& p)
     p.presets.loadPreset (0);
     setP (p, ids::soul (3, "y"), -0.83f);
     juce::MemoryBlock st; p.getStateInformation (st);
-    DivinityProcessor q; q.setStateInformation (st.getData(), (int) st.getSize());
+    auto qOwner = std::make_unique<DivinityProcessor>(); auto& q = *qOwner; q.setStateInformation (st.getData(), (int) st.getSize());
     CHECK (std::abs (q.apvts.getRawParameterValue (ids::soul (3, "y"))->load() + 0.83f) < 1.0e-3f, "custom emotion mapping recalls with the session");
 }
 
@@ -612,7 +612,7 @@ static void testFxRack (DivinityProcessor& p)
     // recall: host state
     p.setFxOrder (order, false);
     juce::MemoryBlock state; p.getStateInformation (state);
-    DivinityProcessor q;
+    auto qOwner = std::make_unique<DivinityProcessor>(); auto& q = *qOwner;
     q.setStateInformation (state.getData(), (int) state.getSize());
     CHECK (q.getFxOrder() == order, "chain order restored from host state");
 
@@ -1351,7 +1351,7 @@ static void testSoundEngine2 (DivinityProcessor& p)
     auto engineMode = [] (DivinityProcessor& q) { return (int) std::lround (q.apvts.getRawParameterValue (ids::engineMode)->load()); };
 
     {
-        DivinityProcessor fresh;
+        auto freshOwner = std::make_unique<DivinityProcessor>(); auto& fresh = *freshOwner;
         CHECK (engineMode (fresh) == (int) EngineMode::Divine2, "new instances start on the Divine 2.0 engine");
         fresh.presets.loadPreset (5);
         CHECK (engineMode (fresh) == (int) EngineMode::Divine2, "factory presets load on the Divine 2.0 engine");
@@ -1366,11 +1366,11 @@ static void testSoundEngine2 (DivinityProcessor& p)
         juce::XmlElement* em = nullptr;
         for (auto* e : params->getChildIterator()) if (e->getStringAttribute ("id") == ids::engineMode) em = e;
         CHECK (em != nullptr, "engine mode is saved with the session");
-        DivinityProcessor same; same.setStateInformation (state.getData(), (int) state.getSize());
+        auto sameOwner = std::make_unique<DivinityProcessor>(); auto& same = *sameOwner; same.setStateInformation (state.getData(), (int) state.getSize());
         CHECK (engineMode (same) == (int) EngineMode::Divine2, "a 2.0 session restores on the 2.0 engine");
         if (em != nullptr) params->removeChildElement (em, true);
         juce::MemoryBlock old; juce::AudioProcessor::copyXmlToBinary (*xml, old);
-        DivinityProcessor r; r.setStateInformation (old.getData(), (int) old.getSize());
+        auto rOwner = std::make_unique<DivinityProcessor>(); auto& r = *rOwner; r.setStateInformation (old.getData(), (int) old.getSize());
         CHECK (engineMode (r) == (int) EngineMode::Classic, "a pre-2.0 session restores on the Classic engine (sounds exactly as saved)");
     }
 
@@ -1692,7 +1692,7 @@ static void testVersion08 (DivinityProcessor& p)
         CHECK (audibleAliasDb (played, sr, 220.0, 2400) < -50.0, "imported table is band-limited");
 
         juce::MemoryBlock state; p.getStateInformation (state);
-        DivinityProcessor q; q.setStateInformation (state.getData(), (int) state.getSize());
+        auto qOwner = std::make_unique<DivinityProcessor>(); auto& q = *qOwner; q.setStateInformation (state.getData(), (int) state.getSize());
         CHECK (q.getUserWavetable (0).get() != nullptr, "imported table comes back with the session");
         auto again = render (q, sr, 256, 1.0, a3);
         CHECK (maxDiff (played, again) < 1.0e-5f, "restored session sounds the same");
@@ -1742,7 +1742,7 @@ static void testVersion08 (DivinityProcessor& p)
         renderMidi (p, sr, 256, 0.05, [] (juce::MidiBuffer& m, int pos, int) { if (pos == 0) m.addEvent (juce::MidiMessage::controllerEvent (1, 21, 0), 0); });
         CHECK (prm->getValue() < 0.01f, "CC 0 sets the knob to min");
         juce::MemoryBlock state; p.getStateInformation (state);
-        DivinityProcessor q; q.setStateInformation (state.getData(), (int) state.getSize());
+        auto qOwner = std::make_unique<DivinityProcessor>(); auto& q = *qOwner; q.setStateInformation (state.getData(), (int) state.getSize());
         CHECK (q.getMidiCcFor (id) == 21, "MIDI mappings are saved with the session");
         p.forgetMidiMapping (id);
         CHECK (p.getMidiCcFor (id) == -1, "forget removes the mapping");
@@ -1783,13 +1783,15 @@ int main (int argc, char** argv)
 
     if (argc > 3 && juce::String (argv[2]) == "--pick")
     {
-        DivinityProcessor p;
+        auto procOwner = std::make_unique<DivinityProcessor>();   // heap: the processor is ~350 KB (Windows stacks are 1 MB)
+        auto& p = *procOwner;
         pickVariedPresets (p, juce::File (juce::String (argv[3])), argc > 4 ? juce::StringArray::fromTokens (juce::String (argv[4]), ",", "") : juce::StringArray());
         return 0;
     }
     if (argc > 2 && juce::String (argv[2]) == "--v08")
     {
-        DivinityProcessor p;
+        auto procOwner = std::make_unique<DivinityProcessor>();   // heap: the processor is ~350 KB (Windows stacks are 1 MB)
+        auto& p = *procOwner;
         testVersion08 (p);
         snapshotWarpUi (p, outDir);
         std::cout << "\n" << (checks - failures) << " / " << checks << " checks passed\n";
@@ -1798,14 +1800,16 @@ int main (int argc, char** argv)
     if (argc > 2 && juce::String (argv[2]) == "--presets")
     {
         // quick loop for preset work: integrity + levels + variety only
-        DivinityProcessor p;
+        auto procOwner = std::make_unique<DivinityProcessor>();   // heap: the processor is ~350 KB (Windows stacks are 1 MB)
+        auto& p = *procOwner;
         testFactoryPresets (p);
         renderPresetDemos (p, outDir.getChildFile ("preset-demos"));
         std::cout << "\n" << (checks - failures) << " / " << checks << " checks passed\n";
         return failures == 0 ? 0 : 1;
     }
     {
-        DivinityProcessor p;
+        auto procOwner = std::make_unique<DivinityProcessor>();   // heap: the processor is ~350 KB (Windows stacks are 1 MB)
+        auto& p = *procOwner;
         testParameters (p);
         testFactoryPresets (p);
         testEnvelopeTiming();
