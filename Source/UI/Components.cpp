@@ -844,8 +844,8 @@ ScopeDisplay::ScopeDisplay (DivinityProcessor& p) : proc (p)
 
 void ScopeDisplay::timerCallback()
 {
-    if (! visibleInTree (*this)) return;   // the scope feed has one reader at a time
-    const int n = proc.scope.pull (pullBuf.data(), (int) pullBuf.size());
+    if (! visibleInTree (*this)) return;
+    const int n = proc.scope.pull (cursor, pullBuf.data(), (int) pullBuf.size());
     for (int i = 0; i < n; ++i)
     {
         history[(size_t) writePos] = pullBuf[(size_t) i];
@@ -871,17 +871,11 @@ void ScopeDisplay::paint (juce::Graphics& g)
     for (int i = 0; i < window; ++i) peak = juce::jmax (peak, std::abs (history[(size_t) ((start + i) % size)]));
     if (peak < 1.0e-4f)
     {
-        // idle: a single glowing pulse on the centre line
-        juce::Path beat;
-        const float mid = r.getCentreY(), cx = r.getCentreX(), u = r.getWidth() / 24.0f, hh = r.getHeight() * 0.36f;
-        const float xs[] = { -12, -3, -2, -1.2f, -0.5f, 0.2f, 0.9f, 1.6f, 2.4f, 3.2f, 12 };
-        const float ys[] = { 0, 0, -0.15f, 0.25f, -1.0f, 0.85f, -0.45f, 0.3f, -0.1f, 0, 0 };
-        for (int i = 0; i < 11; ++i)
-        {
-            const juce::Point<float> pt (cx + xs[i] * u, mid + ys[i] * hh);
-            if (i == 0) beat.startNewSubPath (pt); else beat.lineTo (pt);
-        }
-        strokeGlow (g, beat, 1.6f);
+        // silence: a flat line through zero
+        juce::Path flat;
+        flat.startNewSubPath (r.getX() + 4.0f, r.getCentreY());
+        flat.lineTo (r.getRight() - 4.0f, r.getCentreY());
+        strokeGlow (g, flat, 1.4f);
         return;
     }
     const float gain = 0.9f / juce::jmax (0.05f, peak);

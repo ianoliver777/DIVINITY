@@ -284,6 +284,7 @@ private:
     DivinityProcessor& proc;
     std::vector<float> history, pullBuf;
     int writePos = 0;
+    juce::int64 cursor = -1;
 };
 
 class LevelMeter : public juce::Component, public juce::SettableTooltipClient, private juce::Timer

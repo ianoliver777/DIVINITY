@@ -111,7 +111,7 @@ namespace
     {
     public:
         explicit V7Panel (juce::String t) : title (std::move (t)) {}
-        enum Glyph { NoGlyph, FilterGlyph, StarGlyph, GearGlyph, PowerOutline, PowerCyan, DiamondGlyph };
+        enum Glyph { NoGlyph, FilterGlyph, StarGlyph, GearGlyph, DiamondGlyph };
         void paint (juce::Graphics& g) override
         {
             drawPanelBackground (g, getLocalBounds().toFloat());
@@ -130,8 +130,6 @@ namespace
                     break;
                 }
                 case GearGlyph: { auto p = icons::gear(); p.applyTransform (p.getTransformToScaleToFit (ib.reduced (1.0f), true)); g.setColour (text); g.fillPath (p); break; }
-                case PowerOutline: g.setColour (text); g.strokePath (icons::power (ib), juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded)); break;
-                case PowerCyan: strokeGlow (g, icons::power (ib), 1.7f); break;
                 case DiamondGlyph:
                 {
                     juce::Path p; const auto c = ib.getCentre();
@@ -1529,8 +1527,7 @@ namespace
         explicit MatrixV7 (DivinityProcessor& p)
             : V7Panel ("MOD MATRIX"), proc (p), add ("Add a route (next empty slot)", plusPath()), more ("Open the full matrix", dots3(), true)
         {
-            titleX = 42;
-            glyph = PowerCyan;
+            titleX = 16;   // no power glyph: the matrix has no on/off
             add.boxed = true; more.boxed = true;
             inner.rows = &rows;
             for (int i = 0; i < kNumModSlots; ++i) { rows.add (new MatrixRow (p.apvts, i)); rows.getLast()->addTo (inner); }
@@ -1760,8 +1757,7 @@ namespace
     public:
         explicit SpectrumV7 (DivinityProcessor& p) : V7Panel ("OUTPUT SPECTRUM"), analyzer (p), meter (p, true)
         {
-            titleX = 42;
-            glyph = PowerOutline;
+            titleX = 16;   // no power glyph: the analyzer has no on/off
             const char* names[] = { "PRE", "POST", "MIX" };
             for (int i = 0; i < 3; ++i)
             {
@@ -1787,7 +1783,6 @@ namespace
         {
             V7Panel::paint (g);
             g.setColour (textFaint);
-            g.fillEllipse ((float) getWidth() - 21.0f, 18.0f, 5.0f, 5.0f);
         }
         void resized() override
         {

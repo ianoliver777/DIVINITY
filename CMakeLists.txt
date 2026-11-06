@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(DIVINITY VERSION 0.7.1 LANGUAGES C CXX)
+project(DIVINITY VERSION 0.7.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -81,6 +81,8 @@ set(DIVINITY_CORE_SOURCES
     Source/UI/CreateView.cpp
     Source/UI/CreatePageV7.cpp
     Source/UI/BrowserPage.cpp
+    Source/UI/MidiGenPanel.cpp
+    Source/Midi/MidiGenerator.cpp
     Source/UI/SoulView.cpp
     Source/UI/Pages.cpp
     Source/UI/GuardianPanel.cpp

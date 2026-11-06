@@ -113,9 +113,12 @@ void DivinityProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     if (trig != wasStepTriggering) { engine.allNotesOff (false); arp.reset(); wasStepTriggering = trig; }
     stepSeq.process (midi, n, transport);
     if (! trig) arp.process (midi, n, transport);
+    hostBpm.store (transport.bpm);
+    midiPreview.process (midi, n, getSampleRate(), transport.bpm, *factorySamples);   // MIDI generator audition
     engine.process (buffer, midi, transport);
     scopePre.push (buffer.getReadPointer (0), buffer.getReadPointer (buffer.getNumChannels() > 1 ? 1 : 0), n);
     fx.process (buffer, transport.bpm, engine.getGlobalMods(), engine.getSnapshot().macro);
+    midiPreview.renderDrums (buffer);
 
     // meters + scope
     const float* L = buffer.getReadPointer (0);

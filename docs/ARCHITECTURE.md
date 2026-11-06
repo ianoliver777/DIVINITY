@@ -117,6 +117,11 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 ### Guardian Angel (v0.3.0)
 - Fully offline. Answers questions from a knowledge base + every parameter's help text; builds sounds from plain-English descriptions (type + vibe words → factory base + SOUL/macro/mod adjustments); suggests one idea at a time with one-click DO IT; musically-safe randomiser (all outputs tested audible, finite and under the ceiling); explain mode (click any control); "make it brighter / wider / grittier..." tweaks. Every change is undoable.
 
+### v0.7.2
+- `ScopeFifo` is now a broadcast ring (one writer, any number of readers with their own cursors). Before, the scope, the CREATE spectrum and the EFFECTS analyzer shared a single-reader FIFO and whichever pulled first starved the others, which froze the EFFECTS graph.
+- EFFECTS output: `StereoImager`: per-FFT-bin pan (|R|²-|L|²)/(|R|²+|L|²) on x, log frequency on y, mid/side spread as a streak and colour (cyan to violet), fading trail; correlation + width readouts.
+- MIDI generator: `Midi/MidiGenerator` (seeded progressions per style, voice-led chords, chord-tone-on-strong-beat leads kept in scale, style bass patterns with approach notes, GM drum grooves with trap rolls / drill skips / swing) and `writeMidiFile` (type-1, 960 PPQ, tempo + name). `Midi/MidiPreview` auditions on the audio thread: melodic parts become MIDI into the synth, drums trigger the factory kit after the FX. UI: `UI/MidiGenPanel` (PLAY tab) with piano roll, playhead, SAVE .MID and a DRAG MIDI tile that writes a temp .mid and calls `performExternalDragDropOfFiles`.
+
 ### v0.7.1 (UI to reference)
 - Theme: black-glass palette sampled from the reference (`colours` in `DivinityLookAndFeel.h`), `drawPanelBackground` (lit top rim), `drawDisplayBackground`, `strokeGlow` (halo + hot core for every trace, arc and envelope), `drawGlassControl` (rows, dropdowns, tabs; selected = cyan glow). Applies to every page.
 - Header art (logo, wordmark, mountains) is `Resources/Images/header_band.png`, cut from the reference at 2x with the live areas (stats, icons, tabs) inpainted; stats, icons and tabs are drawn live on top. With Guardian Angel open the sky is mirrored to fill the extra width.
