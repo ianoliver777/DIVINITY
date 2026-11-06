@@ -1,3 +1,4 @@
+#include <set>
 // DIVINITY test runner: exercises the real processor, engine, presets and editor.
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_formats/juce_audio_formats.h>
@@ -121,6 +122,28 @@ static void testParameters (DivinityProcessor& p)
 
 static void testFactoryPresets (DivinityProcessor& p)
 {
+    {
+        // 0.8.1 naming rules: 777 unique names, 1-3 words, no word used twice, no waveform words
+        const auto list = createFactoryPresets();
+        std::set<juce::String> names, words;
+        bool wordsUnique = true, clean = true, shape = true;
+        for (auto& fp : list)
+        {
+            names.insert (fp.name);
+            const auto ws = juce::StringArray::fromTokens (fp.name.replace ("//", " "), " ", "");
+            if (ws.size() < 1 || ws.size() > 3) shape = false;
+            for (auto& w : ws)
+            {
+                if (! words.insert (w.toUpperCase()).second) { wordsUnique = false; INFO ("repeated word: " << w); }
+                for (auto* bad : { "SAW", "SINE", "SQUARE", "TRIANGLE", "PULSE" })
+                    if (w.toUpperCase().contains (bad)) { clean = false; INFO ("waveform word: " << fp.name); }
+            }
+        }
+        CHECK (list.size() == 777 && names.size() == 777, "777 factory presets with 777 unique names");
+        CHECK (wordsUnique, "no word appears in more than one preset name");
+        CHECK (clean, "no waveform names in preset names");
+        CHECK (shape, "preset names are 1-3 words");
+    }
     std::cout << "\n== Factory preset integrity\n";
     auto list = createFactoryPresets();
     int bad = 0;
@@ -1255,17 +1278,17 @@ static void testGuardianAngel (DivinityProcessor& p)
     CHECK (r.text.contains ("Ctrl+Z"), "answers how-to questions");
 
     r = brain.ask ("make me a dark aggressive bass");
-    CHECK (p.presets.getCurrentName() == "Abyss Reese" && p.apvts.getRawParameterValue (ids::soulX)->load() > 0.6f
+    CHECK (p.presets.getCurrentName() == "ROTTEN LEVIATHAN" && p.apvts.getRawParameterValue (ids::soulX)->load() > 0.6f
            && p.apvts.getRawParameterValue (ids::soulY)->load() < 0.4f, "\"dark aggressive bass\" builds from Abyss Reese, pushed aggressive + dark");
     r = brain.createSound ("dreamy evolving wide pad");
-    CHECK (p.presets.getCurrentName() == "Celestial Pad" && p.apvts.getRawParameterValue (ids::macro (1))->load() > 0.3f
+    CHECK (p.presets.getCurrentName() == "CELESTIAL NIRVANA" && p.apvts.getRawParameterValue (ids::macro (1))->load() > 0.3f
            && p.apvts.getRawParameterValue (ids::divineAmount)->load() > 0.2f, "\"dreamy evolving wide pad\" adds movement + Divine");
     {
         // the 0.7 library is reachable by asking
-        const std::pair<const char*, const char*> asks[] = { { "make me a grime 808", "Grime 808" }, { "give me an icy eski bell", "Ice Bell" },
-                                                             { "dark wave pad please", "Seraph Bloom" }, { "make a wave reese", "Wave Reese" },
-                                                             { "8-bit lead", "8-Bit Ghost" }, { "a distorted 808 that slaps", "Viral 808" },
-                                                             { "trap hat loop", "Trap Hats" }, { "give me a riser", "Noise Riser" },
+        const std::pair<const char*, const char*> asks[] = { { "make me a grime 808", "FADED ASPHALT" }, { "give me an icy eski bell", "CLEAN OPAL" },
+                                                             { "dark wave pad please", "HEAVEN" }, { "make a wave reese", "HOLLOW UNDERTOW" },
+                                                             { "8-bit lead", "BURNING//TRUMPET" }, { "a distorted 808 that slaps", "DROWNED MIDNIGHT" },
+                                                             { "trap hat loop", "CLOCKWORK" }, { "give me a riser", "ASCENSION" },
                                                              { "make something that sounds like a grime lead", "Eskimo Ice" } };
         int hits = 0;
         for (auto& [q, want] : asks) { brain.createSound (q); const bool ok = p.presets.getCurrentName() == want; hits += ok; if (! ok) std::cout << "    \"" << q << "\" -> " << p.presets.getCurrentName() << "\n"; }
