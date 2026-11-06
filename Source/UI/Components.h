@@ -9,6 +9,7 @@ namespace divinity
 {
 class DivinityProcessor;
 class WavetableBank;
+class UserWavetableSlot;
 }
 
 namespace divinity::ui
@@ -112,7 +113,7 @@ private:
     juce::String caption;
     ModDest dest;
     float modScale, captionSize = 10.5f;
-    bool showingValue = false;
+    bool showingValue = false, learning = false;
     int valueStyle = 0, maxKnob = 1000;
     juce::String lastValueText;
     juce::String valueText() const;
@@ -222,12 +223,22 @@ public:
     OscDisplay (APVTS& apvts, const WavetableBank& bank, int oscIndex);
     void paint (juce::Graphics&) override;
     void mouseUp (const juce::MouseEvent&) override;
+    /** 0.8.0: imported table for this oscillator (drawn when "User Wavetable" is selected). */
+    void setUserTable (const UserWavetableSlot* slot) { user = slot; }
+    std::function<void()> onImport, onClearUser;
+    void setDropHighlight (bool on) { dropHover = on; repaint(); }
+    void showMessage (const juce::String& m) { message = m; messageTicks = 120; repaint(); }
 private:
     void timerCallback() override;
     APVTS& apvts;
     const WavetableBank& bank;
     int osc;
     float lastHash = -1.0f;
+    const UserWavetableSlot* user = nullptr;
+    const void* lastUser = nullptr;
+    bool dropHover = false;
+    juce::String message;
+    int messageTicks = 0;
 };
 
 class FilterResponse : public juce::Component, private juce::Timer

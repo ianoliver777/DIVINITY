@@ -126,10 +126,27 @@ void showParameterMenu (juce::Component& owner, juce::RangedAudioParameter& para
     const auto help = helpTextFor (param.getParameterID());
     if (help.isNotEmpty()) m.addItem (3, "What does this do?");
 
+    // 0.8.0: MIDI learn (any knob / slider inside the editor)
+    DivinityProcessor* dp = nullptr;
+    if (auto* ed = owner.findParentComponentOfClass<juce::AudioProcessorEditor>())
+        dp = dynamic_cast<DivinityProcessor*> (ed->getAudioProcessor());
+    const auto pid = param.getParameterID();
+    if (dp != nullptr && ! isGlobalSetting (pid))
+    {
+        m.addSeparator();
+        const int cc = dp->getMidiCcFor (pid);
+        if (dp->isLearning (pid)) m.addItem (6, "Cancel MIDI learn");
+        else m.addItem (4, cc >= 0 ? "MIDI learn (now CC " + juce::String (cc) + ")..." : "MIDI learn...");
+        if (cc >= 0) m.addItem (5, "Forget MIDI CC " + juce::String (cc));
+    }
+
     juce::Component::SafePointer<juce::Component> safe (&owner);
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&owner), [safe, &param, help] (int r)
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&owner), [safe, &param, help, dp, pid] (int r)
     {
         if (safe == nullptr) return;
+        if (dp != nullptr && r == 4) { dp->startMidiLearn (pid); return; }
+        if (dp != nullptr && r == 5) { dp->forgetMidiMapping (pid); return; }
+        if (dp != nullptr && r == 6) { dp->cancelMidiLearn(); return; }
         if (r == 1)
         {
             auto* w = new juce::AlertWindow ("Enter value", param.getName (64), juce::MessageBoxIconType::NoIcon, safe.getComponent());
@@ -209,7 +226,13 @@ void Knob::paint (juce::Graphics& g)
     g.setFont (font (captionSize, Weight::Medium, 0.04f));
     const bool hoverValue = showingValue && valueStyle == 0;
     g.setColour (hoverValue ? accent : (isEnabled() ? text : textFaint));
-    g.drawText (hoverValue ? valueText() : caption, cap.expanded (8, 0), juce::Justification::centred, false);
+    if (learning)
+    {
+        g.setColour (glow);
+        g.drawText ("LEARN...", cap.expanded (8, 0), juce::Justification::centred, false);
+    }
+    else
+        g.drawText (hoverValue ? valueText() : caption, cap.expanded (8, 0), juce::Justification::centred, false);
 
     if (valueStyle == 1)
     {
@@ -250,6 +273,11 @@ void Knob::timerCallback()
         if (t != lastValueText) { lastValueText = t; repaint(); }
     }
     updateModulation();
+    if (auto* dp = dynamic_cast<DivinityProcessor*> (&apvts.processor))
+    {
+        const bool l = dp->isLearning (param.getParameterID());
+        if (l != learning) { learning = l; repaint(); }
+    }
 }
 
 //==============================================================================
@@ -465,9 +493,11 @@ OscDisplay::OscDisplay (APVTS& s, const WavetableBank& b, int o) : apvts (s), ba
 void OscDisplay::timerCallback()
 {
     float h = 0.0f;
-    for (auto* n : { "on", "engine", "table", "pos", "wave", "pw", "fold" })
+    for (auto* n : { "on", "engine", "table", "pos", "wave", "pw", "fold", "warp", "warp_amt", "warp_src" })
         h = h * 1.37f + apvts.getRawParameterValue (ids::osc (osc, n))->load();
-    if (h != lastHash) { lastHash = h; repaint(); }
+    const void* u = user != nullptr ? (const void*) user->get() : nullptr;
+    if (h != lastHash || u != lastUser) { lastHash = h; lastUser = u; repaint(); }
+    if (messageTicks > 0 && --messageTicks == 0) repaint();
 }
 
 void OscDisplay::paint (juce::Graphics& g)
@@ -482,6 +512,30 @@ void OscDisplay::paint (juce::Graphics& g)
     const float pos = get ("pos"), fold = get ("fold"), pw = get ("pw");
     const int wave = (int) std::lround (get ("wave"));
     const float alpha = on ? 1.0f : 0.35f;
+    const int warp = (int) std::lround (get ("warp"));
+    const float warpAmt = get ("warp_amt");
+    const bool userSel = wtMode && table >= bank.getNumTables();
+    const UserWavetable* ut = (userSel && user != nullptr) ? user->get() : nullptr;
+
+    // warp preview: what the mode does to one cycle (FM / sync assume the source at the same pitch)
+    auto warpRead = [warp, warpAmt] (double p, const std::function<float (double)>& rd) -> float
+    {
+        const float a = warpAmt;
+        constexpr double tp = juce::MathConstants<double>::twoPi;
+        auto w01 = [] (double x) { x -= std::floor (x); return x; };
+        switch (warp)
+        {
+            case (int) OscWarp::Sync:      return rd (w01 (p * std::exp2 (a * 4.0)));
+            case (int) OscWarp::FM:        return rd (w01 (p + a * a * 1.5 * std::sin (p * juce::MathConstants<double>::twoPi)));
+            case (int) OscWarp::AM:        return rd (p) * (1.0f - a + a * (float) std::sin (p * juce::MathConstants<double>::twoPi));
+            case (int) OscWarp::BendPlus:  return rd (p + 0.95 * a * (1.0 - std::cos (tp * p)) / tp);
+            case (int) OscWarp::BendMinus: return rd (p - 0.95 * a * (1.0 - std::cos (tp * p)) / tp);
+            case (int) OscWarp::Pwm:       { const double wv = 1.0 - 0.94 * a; return rd (p < wv ? 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * p / wv) : 0.0); }
+            case (int) OscWarp::PhaseDist: return rd (p - 0.95 * a * std::sin (tp * p) / tp);
+            case (int) OscWarp::Mirror:    { const float x0 = rd (p); return x0 + a * (rd (0.5 - 0.5 * std::cos (tp * p)) - x0); }
+            default: return rd (p);
+        }
+    };
 
     auto folded = [fold] (float x)
     {
@@ -491,7 +545,16 @@ void OscDisplay::paint (juce::Graphics& g)
     };
 
     auto area = r.reduced (10.0f, 12.0f);
-    if (wtMode)
+    if (userSel && ut == nullptr)
+    {
+        g.setColour (dropHover ? glow : text.withAlpha (0.85f));
+        g.setFont (font (13.0f, Weight::Medium, 0.08f));
+        g.drawText ("DROP A WAV HERE", r.withTrimmedBottom (r.getHeight() * 0.5f - 2.0f), juce::Justification::centredBottom);
+        g.setColour (textDim);
+        g.setFont (font (11.0f));
+        g.drawText ("or click to import a wavetable", r.withTrimmedTop (r.getHeight() * 0.5f + 4.0f), juce::Justification::centredTop);
+    }
+    else if (wtMode)
     {
         const int frames = 14, points = 90;
         const float dx = area.getWidth() * 0.018f, dy = area.getHeight() * 0.045f;
@@ -501,14 +564,15 @@ void OscDisplay::paint (juce::Graphics& g)
         for (int k = frames - 1; k >= 0; --k)
         {
             const int fi = juce::roundToInt ((float) k / (frames - 1) * (WavetableBank::kFrames - 1));
-            const auto frameView = bank.getFrame (table, fi, 6);   // 128 harmonics
+            const auto frameView = ut != nullptr ? ut->getStoredFrame (juce::roundToInt ((float) k / (frames - 1) * (float) (ut->frames - 1)), 6)
+                                                 : bank.getFrame (table, fi, 6);   // 128 harmonics
             const float ox = area.getX() + dx * (float) k;
             const float oy = area.getBottom() - amp - 4.0f - dy * (float) k;
             juce::Path p;
             for (int i = 0; i <= points; ++i)
             {
                 const float x = ox + w * (float) i / points;
-                const float y = oy - folded (frameView.at ((double) (i % points) / points)) * amp;
+                const float y = oy - folded (warpRead ((double) (i % points) / points, [&frameView] (double q) { return frameView.at (q); })) * amp;
                 if (i == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
             }
             const bool cur = (k == current);
@@ -529,7 +593,7 @@ void OscDisplay::paint (juce::Graphics& g)
         for (int i = 0; i <= points; ++i)
         {
             const double ph = std::fmod (2.0 * i / points, 1.0);
-            float v = dsp::analogSample (wave, ph, 1.0e-6, wave == 4 ? pw : 0.5);
+            float v = warpRead (ph, [wave, pw] (double q) { return dsp::analogSample (wave, q, 1.0e-6, wave == 4 ? pw : 0.5); });
             v = folded (v * 0.9f) / 0.9f;
             const float x = area.getX() + area.getWidth() * (float) i / points;
             if (i == 0) p.startNewSubPath (x, mid - v * amp); else p.lineTo (x, mid - v * amp);
@@ -540,6 +604,40 @@ void OscDisplay::paint (juce::Graphics& g)
         g.fillPath (fill);
         strokeGlow (g, p, 1.9f, accent.withMultipliedAlpha (alpha));
     }
+
+    // ---- 0.8.0 overlays: warp chip, imported table name, drop highlight, status message
+    g.setFont (font (10.0f, Weight::Medium, 0.06f));
+    if (warp != (int) OscWarp::Off)
+    {
+        static const char* names[] = { "", "SYNC", "FM", "AM", "BEND+", "BEND-", "PWM", "PD", "MIRROR" };
+        juce::String chipText = names[juce::jlimit (0, 8, warp)];
+        if (warp <= (int) OscWarp::AM)
+        {
+            const int src = (int) std::lround (get ("warp_src"));
+            chipText << " < " << juce::String::charToString ((juce::juce_wchar) ('A' + (src == osc ? (osc + 1) % 4 : src)));
+        }
+        chipText << "  " << juce::roundToInt (warpAmt * 100.0f) << "%";
+        const auto chipR = juce::Rectangle<float> (r.getX() + 6.0f, r.getY() + 6.0f, (float) chipText.length() * 6.4f + 14.0f, 16.0f);
+        g.setColour (glow.withAlpha (0.16f)); g.fillRoundedRectangle (chipR, 5.0f);
+        g.setColour (glow.withAlpha (0.8f)); g.drawRoundedRectangle (chipR, 5.0f, 0.8f);
+        g.setColour (text); g.drawText (chipText, chipR, juce::Justification::centred);
+    }
+    if (ut != nullptr)
+    {
+        g.setColour (textDim);
+        g.drawText (ut->name.toUpperCase() + "  " + juce::String (ut->frames) + "F", r.reduced (8.0f, 6.0f).removeFromTop (14.0f), juce::Justification::centredRight);
+    }
+    if (dropHover)
+    {
+        g.setColour (glow.withAlpha (0.10f)); g.fillRoundedRectangle (r.reduced (2.0f), 8.0f);
+        g.setColour (glow); g.drawRoundedRectangle (r.reduced (2.0f), 8.0f, 1.6f);
+    }
+    if (messageTicks > 0 && message.isNotEmpty())
+    {
+        auto mr = r.reduced (8.0f, 6.0f).removeFromBottom (16.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (mr, 5.0f);
+        g.setColour (text); g.drawText (message, mr, juce::Justification::centred);
+    }
 }
 
 void OscDisplay::mouseUp (const juce::MouseEvent&)
@@ -548,11 +646,22 @@ void OscDisplay::mouseUp (const juce::MouseEvent&)
     const auto id = ids::osc (osc, wtMode ? "table" : "wave");
     auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter (id));
     if (p == nullptr) return;
+    // "User Wavetable" with nothing loaded: a click goes straight to the import dialog
+    if (wtMode && p->getIndex() >= bank.getNumTables() && (user == nullptr || user->get() == nullptr) && onImport) { onImport(); return; }
     juce::PopupMenu m;
+    if (wtMode)
+    {
+        m.addItem (10000, "Import wavetable (WAV / AIFF / FLAC)...");
+        if (user != nullptr && user->get() != nullptr)
+            m.addItem (10001, "Clear imported table (" + user->get()->name + ")");
+        m.addSeparator();
+    }
     m.addSectionHeader (wtMode ? "Wavetable" : "Analog wave");
     for (int i = 0; i < p->choices.size(); ++i) m.addItem (i + 1, p->choices[i], true, i == p->getIndex());
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [p] (int r)
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [this, p] (int r)
     {
+        if (r == 10000) { if (onImport) onImport(); return; }
+        if (r == 10001) { if (onClearUser) onClearUser(); return; }
         if (r > 0) { p->beginChangeGesture(); *p = r - 1; p->endChangeGesture(); }
     });
 }

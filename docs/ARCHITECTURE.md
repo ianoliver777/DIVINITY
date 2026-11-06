@@ -117,6 +117,14 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 ### Guardian Angel (v0.3.0)
 - Fully offline. Answers questions from a knowledge base + every parameter's help text; builds sounds from plain-English descriptions (type + vibe words → factory base + SOUL/macro/mod adjustments); suggests one idea at a time with one-click DO IT; musically-safe randomiser (all outputs tested audible, finite and under the ceiling); explain mode (click any control); "make it brighter / wider / grittier..." tweaks. Every change is undoable.
 
+### v0.8.0 (warp, user tables, MPE, MIDI learn, quality)
+- WARP per oscillator (`osc*_warp`, `osc*_warp_amt`, `osc*_warp_src`; mod dests `OscAWarp..OscDWarp`). Off = the old render paths untouched (bit-identical). Any warp or an imported table goes through `SynthEngine::renderWarpedUnison`.
+- Sync / FM / AM sources are rendered once per voice per block by `renderModulator` (centre pitch, pre-level, so a switched-off oscillator can still modulate) together with the sample-accurate wrap positions. Sync: slave ratio 2^(4·amt), reset on the master's wrap with a 2-point polyBLEP on the jump plus a polyBLAMP on the slope change. FM is phase modulation (depth amt²·1.5 cycles); the mip level follows the effective increment (carrier + FM sidebands, or the warp's steepest phase speed).
+- Phase warps (Bend ±, Phase Dist, PWM, Mirror) use curves whose phase *speed* is continuous across the wrap — a kink on a saw edge aliases at ≈ −35 dB, the smooth curves measure ≈ −85 dB at 220 Hz. Warped oscillators run a 6 Hz DC tracker seeded with the cycle mean (no thump at note-on).
+- `UserWavetableSlot` (per oscillator): WAV split into 2048-sample frames (≤256), single cycles resampled, other lengths cut into 64 frames; built into the same compact half-octave mip layout as the factory bank (`WavetableBank::layout()` / `writeCompactFrame`); lock-free pointer swap + deferred delete. "User Wavetable" is appended to the table choices.
+- MPE lower zone (ch 2-16): per-channel bend / pressure / CC74 kept per channel so values sent before the note-on apply; new mod sources MPE Pressure / MPE Slide. MIDI learn: CC → parameter map applied on the audio thread, saved in the state tree (`midiMap`).
+- Quality: Eco caps unison at 4; HQ runs the whole voice engine at 2x through `juce::dsp::Oversampling` (polyphase IIR, latency reported); "HQ when rendering" uses `isNonRealtime()`. Quality / MPE are global settings (`isGlobalSetting`), never stored in presets. Measured (220 Hz analog saw, warp 60%): every mode < −38 dB inharmonic in Standard, < −47 dB in HQ; extreme sync (C6, slave ≈ 11 kHz) ≈ −36 dB.
+
 ### v0.7.3 (preset variety)
 - Problem: `FactoryPresetsV7` gave each category ~10 archetypes chosen by `i % 10`, so presets 1, 11, 21... were the same core patch with seeded jitter and a different FX flavour.
 - Now (`FactoryPresetsV7Recipes.inc`): each category recipe has independent decks of SOURCES, MOTIONS, FILTERS, envelope/play styles and FX; each candidate draws from every deck (shuffled decks of different lengths, no fixed period), and no two share source + motion + filter. Descriptions are assembled from the chosen ingredients.
@@ -168,9 +176,9 @@ Full write-up, audit and before/after measurements: [`docs/SOUND_ENGINE_2.md`](S
 ### Known limitations (honest list)
 - Wavefold uses first-order ADAA in 2.0 (not oversampled): extreme fold on top-octave notes still leaves some residue (≈ −55 dB at fold 0.9, note 100).
 - Classic 1.0 keeps the original Freeverb-style reverb and mono chorus on purpose (old sessions must not change).
-- Not in 2.0 yet: oscillator sync, FM / phase distortion, spectral warp, comb/formant filter models beyond the existing set, per-oscillator filter routing. See SOUND_ENGINE_2.md.
+- Not yet: spectral warp, comb/formant filter models beyond the existing set, per-oscillator filter routing. Hard sync pushed to the top octave (slave above ~10 kHz) still leaves some residue in Standard quality (≈ −36 dB); HQ helps.
 - Filter display draws the analog prototype response (very close, not bit-exact above ~10 kHz).
-- No MIDI learn or MPE yet. AU and Windows builds are produced by CI and haven't been run in a real DAW by us.
+- MPE is lower-zone only (no upper zone / MCM auto-config yet). AU and Windows builds are produced by CI and haven't been run in a real DAW by us.
 - Windows CI earlier reported pluginval "crashes": that was the CI script not waiting for pluginval.exe (a GUI-subsystem app), not the plugin. Fixed in v0.3.0 with Start-Process -Wait.
 
 ---

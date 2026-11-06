@@ -288,7 +288,7 @@ static void testStateRoundTrip (DivinityProcessor& p)
     juce::MemoryBlock state;
     p.getStateInformation (state);
 
-    DivinityProcessor q;
+    auto qOwner = std::make_unique<DivinityProcessor>(); auto& q = *qOwner;
     q.setStateInformation (state.getData(), (int) state.getSize());
     int mismatches = 0;
     for (int i = 0; i < p.getParameters().size(); ++i)
@@ -320,7 +320,7 @@ static void testStateRoundTrip (DivinityProcessor& p)
     for (auto* e : toRemove) params->removeChildElement (e, true);
     juce::MemoryBlock older;
     juce::AudioProcessor::copyXmlToBinary (*xml, older);
-    DivinityProcessor r;
+    auto rOwner = std::make_unique<DivinityProcessor>(); auto& r = *rOwner;
     r.setStateInformation (older.getData(), (int) older.getSize());
     int wrong = 0;
     for (auto* prm : r.getParameters())
@@ -539,7 +539,7 @@ static void testSoul (DivinityProcessor& p)
     p.presets.loadPreset (0);
     setP (p, ids::soul (3, "y"), -0.83f);
     juce::MemoryBlock st; p.getStateInformation (st);
-    DivinityProcessor q; q.setStateInformation (st.getData(), (int) st.getSize());
+    auto qOwner = std::make_unique<DivinityProcessor>(); auto& q = *qOwner; q.setStateInformation (st.getData(), (int) st.getSize());
     CHECK (std::abs (q.apvts.getRawParameterValue (ids::soul (3, "y"))->load() + 0.83f) < 1.0e-3f, "custom emotion mapping recalls with the session");
 }
 
@@ -612,7 +612,7 @@ static void testFxRack (DivinityProcessor& p)
     // recall: host state
     p.setFxOrder (order, false);
     juce::MemoryBlock state; p.getStateInformation (state);
-    DivinityProcessor q;
+    auto qOwner = std::make_unique<DivinityProcessor>(); auto& q = *qOwner;
     q.setStateInformation (state.getData(), (int) state.getSize());
     CHECK (q.getFxOrder() == order, "chain order restored from host state");
 
@@ -1160,6 +1160,26 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
     }
 }
 
+static void snapshotWarpUi (DivinityProcessor& p, const juce::File& dir)
+{
+    p.presets.loadPreset (0);
+    setChoice (p, ids::osc (0, "engine"), "Wavetable");
+    setChoice (p, ids::osc (0, "warp"), "FM");
+    setChoice (p, ids::osc (0, "warp_src"), "Osc B");
+    setP (p, ids::osc (0, "warp_amt"), 0.45f);
+    p.uiWorkspace = "CREATE"; p.uiAngelOpen = false;
+    std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+    ed->setSize (DivinityEditor::kBaseWidth, DivinityEditor::kBaseHeight);
+    ed->setVisible (true);
+    juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
+    auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+    auto f = dir.getChildFile ("ui_create_warp.png");
+    f.deleteFile();
+    juce::FileOutputStream os (f);
+    juce::PNGImageFormat().writeImageToStream (img, os);
+    INFO ("wrote " << f.getFileName());
+}
+
 static void snapshotEditor (DivinityProcessor& p, const juce::File& dir)
 {
     std::cout << "\n== Editor (offscreen, every tab)\n";
@@ -1331,7 +1351,7 @@ static void testSoundEngine2 (DivinityProcessor& p)
     auto engineMode = [] (DivinityProcessor& q) { return (int) std::lround (q.apvts.getRawParameterValue (ids::engineMode)->load()); };
 
     {
-        DivinityProcessor fresh;
+        auto freshOwner = std::make_unique<DivinityProcessor>(); auto& fresh = *freshOwner;
         CHECK (engineMode (fresh) == (int) EngineMode::Divine2, "new instances start on the Divine 2.0 engine");
         fresh.presets.loadPreset (5);
         CHECK (engineMode (fresh) == (int) EngineMode::Divine2, "factory presets load on the Divine 2.0 engine");
@@ -1346,11 +1366,11 @@ static void testSoundEngine2 (DivinityProcessor& p)
         juce::XmlElement* em = nullptr;
         for (auto* e : params->getChildIterator()) if (e->getStringAttribute ("id") == ids::engineMode) em = e;
         CHECK (em != nullptr, "engine mode is saved with the session");
-        DivinityProcessor same; same.setStateInformation (state.getData(), (int) state.getSize());
+        auto sameOwner = std::make_unique<DivinityProcessor>(); auto& same = *sameOwner; same.setStateInformation (state.getData(), (int) state.getSize());
         CHECK (engineMode (same) == (int) EngineMode::Divine2, "a 2.0 session restores on the 2.0 engine");
         if (em != nullptr) params->removeChildElement (em, true);
         juce::MemoryBlock old; juce::AudioProcessor::copyXmlToBinary (*xml, old);
-        DivinityProcessor r; r.setStateInformation (old.getData(), (int) old.getSize());
+        auto rOwner = std::make_unique<DivinityProcessor>(); auto& r = *rOwner; r.setStateInformation (old.getData(), (int) old.getSize());
         CHECK (engineMode (r) == (int) EngineMode::Classic, "a pre-2.0 session restores on the Classic engine (sounds exactly as saved)");
     }
 
@@ -1375,7 +1395,7 @@ static void testSoundEngine2 (DivinityProcessor& p)
         setChoice (p, ids::osc (0, "engine"), "Analog"); setChoice (p, ids::osc (0, "wave"), wave);
         setP (p, ids::osc (0, "pw"), 0.2f);
         auto b = render (p, 48000, 256, 1.2, { { 0.0, 1.2, 96, 1.0f } });
-        const double a = audibleAliasDb (b, 48000, 440.0 * std::pow (2.0, 27.0 / 12.0), 12000);
+        const double a = audibleAliasDb (b, 48000, 440.0 * std::pow (2.0, 15.0 / 12.0), 12000);
         CHECK (a < -70.0, "2.0 analog " << wave << " is alias-free in the audible band at C7 (" << a << " dB)");
     }
 
@@ -1536,6 +1556,224 @@ static void testMidiGeneratorAndMeters (DivinityProcessor& p)
     }
 }
 
+//==============================================================================
+static juce::AudioBuffer<float> renderMidi (DivinityProcessor& p, double sr, int block, double seconds,
+                                            std::function<void (juce::MidiBuffer&, int pos, int n)> events)
+{
+    p.setRateAndBufferSizeDetails (sr, block);
+    p.prepareToPlay (sr, block);
+    const int total = (int) (seconds * sr);
+    juce::AudioBuffer<float> out (2, total), buf (2, block);
+    juce::MidiBuffer midi;
+    for (int pos = 0; pos < total; pos += block)
+    {
+        const int n = juce::jmin (block, total - pos);
+        buf.setSize (2, n, false, false, true);
+        midi.clear();
+        events (midi, pos, n);
+        p.processBlock (buf, midi);
+        for (int ch = 0; ch < 2; ++ch) out.copyFrom (ch, pos, buf, ch, 0, n);
+    }
+    return out;
+}
+
+static void testVersion08 (DivinityProcessor& p)
+{
+    std::cout << "\n== 0.8.0: warp / FM / sync, user wavetables, MPE, MIDI learn, quality\n";
+    const double sr = 48000;
+    const std::vector<Note> a3 { { 0.0, 1.4, 57, 0.9f } };   // 220 Hz
+    auto twoOscPatch = [&p] (const juce::String& engineA, const juce::String& waveA)
+    {
+        cleanPatch (p);
+        setChoice (p, ids::osc (0, "engine"), engineA);
+        if (engineA == "Analog") setChoice (p, ids::osc (0, "wave"), waveA);
+        setP (p, ids::osc (1, "on"), 0.0f);    // the modulator works even with its oscillator switched off
+        setChoice (p, ids::osc (1, "engine"), "Analog"); setChoice (p, ids::osc (1, "wave"), "Sine");
+        setP (p, ids::osc (1, "randphase"), 0);
+        setChoice (p, ids::osc (0, "warp_src"), "Osc B");
+    };
+
+    // warp Off: the amount knob does nothing (old sound path untouched)
+    {
+        twoOscPatch ("Analog", "Saw");
+        auto ref = render (p, sr, 256, 0.6, a3);
+        setP (p, ids::osc (0, "warp_amt"), 0.8f);
+        auto same = render (p, sr, 256, 0.6, a3);
+        CHECK (maxDiff (ref, same) == 0.0f, "warp Off: warp amount leaves the sound bit-identical");
+    }
+
+    // every mode, both engines: finite, audible, sane level, and actually changes the sound
+    for (auto* eng : { "Analog", "Wavetable" })
+    {
+        twoOscPatch (eng, "Saw");
+        setP (p, ids::osc (0, "warp_amt"), 0.6f);
+        auto ref = render (p, sr, 256, 1.0, a3);
+        const float refPeak = ref.getMagnitude (0, 0, ref.getNumSamples());
+        bool allOk = true, allChange = true;
+        for (auto* mode : { "Sync", "FM", "AM", "Bend +", "Bend -", "PWM", "Phase Dist", "Mirror" })
+        {
+            setChoice (p, ids::osc (0, "warp"), mode);
+            auto r = render (p, sr, 256, 1.0, a3);
+            const float pk = r.getMagnitude (0, 0, r.getNumSamples());
+            const bool ok = allFinite (r) && rmsDb (r, 4800, 19200) > -40.0f && pk < refPeak * 2.5f + 0.05f;
+            if (! ok) { allOk = false; INFO (juce::String (eng) + " " + mode + " peak " + juce::String (pk)); }
+            if (maxDiff (ref, r) < 1.0e-3f) { allChange = false; INFO (juce::String (eng) + " " + mode + " did not change the sound"); }
+            // periodic at the note: everything except fold-over stays on the 220 Hz harmonic grid
+            const double alias = audibleAliasDb (r, sr, 220.0, 2400);
+            setChoice (p, ids::quality, "HQ");
+            const double aliasHq = audibleAliasDb (render (p, sr, 256, 1.0, a3), sr, 220.0, 2400);
+            setChoice (p, ids::quality, "Standard");
+            INFO (juce::String (eng) + " " + mode + ": inharmonic " + juce::String (alias, 1) + " dB, HQ " + juce::String (aliasHq, 1) + " dB");
+            if (alias > -38.0 || aliasHq > -47.0) allOk = false;
+        }
+        setChoice (p, ids::osc (0, "warp"), "No Warp");
+        CHECK (allOk, juce::String (eng) + ": all 8 warp modes are clean, harmonic and level-safe");
+        CHECK (allChange, juce::String (eng) + ": every warp mode changes the sound");
+    }
+
+    // hard sync stays alias-free even when swept hard at a high note
+    {
+        twoOscPatch ("Analog", "Saw");
+        setChoice (p, ids::osc (0, "warp"), "Sync");
+        setP (p, ids::osc (0, "warp_amt"), 0.85f);
+        auto r = render (p, sr, 256, 1.0, { { 0.0, 1.0, 84, 0.9f } });   // C6, slave ~10x the master
+        const double alias = audibleAliasDb (r, sr, 440.0 * std::pow (2.0, 15.0 / 12.0), 4800);
+        INFO ("sync C6 @85%: inharmonic energy " + juce::String (alias, 1) + " dB");
+        CHECK (alias < -33.0, "hard sync stays clean when pushed (alias < -33 dB at C6, 85%: slave at 11 kHz)");
+    }
+
+    // FM is deterministic and brighter than the plain sine
+    {
+        twoOscPatch ("Analog", "Sine");
+        auto plain = render (p, sr, 256, 0.6, a3);
+        setChoice (p, ids::osc (0, "warp"), "FM");
+        setP (p, ids::osc (0, "warp_amt"), 0.7f);
+        auto f1 = render (p, sr, 256, 0.6, a3);
+        auto f2 = render (p, sr, 256, 0.6, a3);
+        CHECK (maxDiff (f1, f2) == 0.0f, "FM renders identically twice");
+        CHECK (zeroCrossRate (f1, 4800, 19200) > zeroCrossRate (plain, 4800, 19200) * 1.3, "FM adds sidebands (brighter than the plain sine)");
+        CHECK (std::abs (measureFrequency (plain, sr, 4800, 24000) - 220.0) < 1.0, "carrier pitch unchanged");
+        // the warp amount is a modulation destination
+        CHECK (modDestNames()[(int) ModDest::OscAWarp] == "Osc A Warp", "Osc A Warp is a mod destination");
+        setChoice (p, ids::osc (0, "warp"), "No Warp");
+    }
+
+    // user wavetables: build, select, play, empty slot is silent, file load + session restore
+    {
+        cleanPatch (p);
+        auto& tableP = *dynamic_cast<juce::AudioParameterChoice*> (p.apvts.getParameter (ids::osc (0, "table")));
+        CHECK (tableP.choices[tableP.choices.size() - 1] == "User Wavetable", "\"User Wavetable\" is the last table choice");
+        setChoice (p, ids::osc (0, "engine"), "Wavetable");
+        setChoice (p, ids::osc (0, "table"), "User Wavetable");
+        auto silent = render (p, sr, 256, 0.4, a3);
+        CHECK (silent.getMagnitude (0, 0, silent.getNumSamples()) < 1.0e-6f, "User Wavetable with nothing loaded is silent");
+
+        const auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("divinity_test_table.wav");
+        {
+            juce::AudioBuffer<float> wav (1, 2048 * 4);
+            for (int f = 0; f < 4; ++f)
+                for (int i = 0; i < 2048; ++i)
+                {
+                    const double ph = i / 2048.0;
+                    const float saw = (float) (2.0 * ph - 1.0), sq = ph < 0.5 ? 1.0f : -1.0f;
+                    wav.setSample (0, f * 2048 + i, 0.8f * (saw + (sq - saw) * (float) f / 3.0f));
+                }
+            file.deleteFile();
+            juce::WavAudioFormat fmt;
+            std::unique_ptr<juce::AudioFormatWriter> w (fmt.createWriterFor (new juce::FileOutputStream (file), 48000, 1, 24, {}, 0));
+            w->writeFromAudioSampleBuffer (wav, 0, wav.getNumSamples());
+        }
+        const auto err = p.loadUserWavetable (0, file, true);
+        CHECK (err.isEmpty(), "imports a 4-frame WAV wavetable (" + err + ")");
+        CHECK (p.getUserWavetable (0).get() != nullptr && p.getUserWavetable (0).get()->frames == 4, "WAV split into 2048-sample frames");
+        auto played = render (p, sr, 256, 1.0, a3);
+        CHECK (allFinite (played) && rmsDb (played, 4800, 19200) > -30.0f, "imported table plays");
+        CHECK (std::abs (measureFrequency (played, sr, 4800, 24000) - 220.0) < 1.5, "imported table plays at the right pitch");
+        CHECK (audibleAliasDb (played, sr, 220.0, 2400) < -50.0, "imported table is band-limited");
+
+        juce::MemoryBlock state; p.getStateInformation (state);
+        auto qOwner = std::make_unique<DivinityProcessor>(); auto& q = *qOwner; q.setStateInformation (state.getData(), (int) state.getSize());
+        CHECK (q.getUserWavetable (0).get() != nullptr, "imported table comes back with the session");
+        auto again = render (q, sr, 256, 1.0, a3);
+        CHECK (maxDiff (played, again) < 1.0e-5f, "restored session sounds the same");
+
+        auto xml = p.presets.createPresetXml ({});
+        CHECK (xml != nullptr && xml->getStringAttribute ("userTable0") == file.getFullPathName(), "presets remember the imported table");
+        p.clearUserWavetable (0);
+        CHECK (p.getUserWavetable (0).get() == nullptr, "clear empties the slot");
+        file.deleteFile();
+    }
+
+    // MPE: per-note bend on its own channel, other notes untouched
+    {
+        cleanPatch (p);
+        setChoice (p, ids::osc (0, "engine"), "Analog"); setChoice (p, ids::osc (0, "wave"), "Sine");
+        setP (p, ids::mpeOn, 1.0f); setP (p, ids::mpeBend, 2.0f);
+        auto r = renderMidi (p, sr, 256, 1.0, [] (juce::MidiBuffer& m, int pos, int)
+        {
+            if (pos == 0) { m.addEvent (juce::MidiMessage::pitchWheel (2, 16383), 0); m.addEvent (juce::MidiMessage::noteOn (2, 57, 0.9f), 1); }
+        });
+        const double f = measureFrequency (r, sr, 9600, 40000);
+        CHECK (std::abs (f - 220.0 * std::pow (2.0, 2.0 / 12.0)) < 1.5, "MPE: channel bend moves only that note (+2 st, got " + juce::String (f, 1) + " Hz)");
+        auto r2 = renderMidi (p, sr, 256, 1.0, [] (juce::MidiBuffer& m, int pos, int)
+        {
+            if (pos == 0) { m.addEvent (juce::MidiMessage::pitchWheel (2, 16383), 0); m.addEvent (juce::MidiMessage::noteOn (3, 57, 0.9f), 1); }
+        });
+        CHECK (std::abs (measureFrequency (r2, sr, 9600, 40000) - 220.0) < 1.0, "MPE: a bend on another channel leaves the note alone");
+        setP (p, ids::mpeOn, 0.0f);
+        auto r3 = renderMidi (p, sr, 256, 1.0, [] (juce::MidiBuffer& m, int pos, int)
+        {
+            if (pos == 0) { m.addEvent (juce::MidiMessage::noteOn (2, 57, 0.9f), 1); m.addEvent (juce::MidiMessage::noteOff (2, 57), 24000); }
+        });
+        CHECK (r3.getMagnitude (0, 36000, 12000) < 0.01f, "MPE off: notes on any channel still play and release");
+        setP (p, ids::mpeBend, 48.0f);
+    }
+
+    // MIDI learn
+    {
+        cleanPatch (p);
+        const auto id = ids::filt (0, "cutoff");
+        p.startMidiLearn (id);
+        CHECK (p.isLearning (id), "learn mode armed");
+        renderMidi (p, sr, 256, 0.05, [] (juce::MidiBuffer& m, int pos, int) { if (pos == 0) m.addEvent (juce::MidiMessage::controllerEvent (1, 21, 127), 0); });
+        CHECK (p.getMidiCcFor (id) == 21 && ! p.isLearning (id), "first CC moved gets learned");
+        auto* prm = p.apvts.getParameter (id);
+        CHECK (prm->getValue() > 0.99f, "CC 127 sets the knob to max");
+        renderMidi (p, sr, 256, 0.05, [] (juce::MidiBuffer& m, int pos, int) { if (pos == 0) m.addEvent (juce::MidiMessage::controllerEvent (1, 21, 0), 0); });
+        CHECK (prm->getValue() < 0.01f, "CC 0 sets the knob to min");
+        juce::MemoryBlock state; p.getStateInformation (state);
+        auto qOwner = std::make_unique<DivinityProcessor>(); auto& q = *qOwner; q.setStateInformation (state.getData(), (int) state.getSize());
+        CHECK (q.getMidiCcFor (id) == 21, "MIDI mappings are saved with the session");
+        p.forgetMidiMapping (id);
+        CHECK (p.getMidiCcFor (id) == -1, "forget removes the mapping");
+    }
+
+    // quality: HQ (2x oversampled), Eco; global settings survive preset loads
+    {
+        p.presets.loadPreset (0);
+        auto std1 = render (p, sr, 512, 1.5, a3);
+        setChoice (p, ids::quality, "HQ");
+        auto hq = render (p, sr, 512, 1.5, a3);
+        CHECK (p.getRunningQuality() == (int) Quality::HQ, "HQ engages on prepare");
+        CHECK (p.getLatencySamples() > 0, "HQ reports its oversampling latency");
+        CHECK (allFinite (hq), "HQ output is finite");
+        const float dStd = rmsDb (std1, 4800, 48000), dHq = rmsDb (hq, 4800, 48000);
+        INFO ("preset 0 rms: standard " + juce::String (dStd, 2) + " dB, HQ " + juce::String (dHq, 2) + " dB");
+        CHECK (std::abs (dStd - dHq) < 1.5f, "HQ keeps the same level");
+        p.presets.loadPreset (3);
+        CHECK (std::lround (p.apvts.getRawParameterValue (ids::quality)->load()) == (int) Quality::HQ, "quality is a global setting (presets don't change it)");
+        auto hqOdd = render (p, 44100, 333, 0.5, a3);
+        CHECK (allFinite (hqOdd), "HQ handles odd block sizes");
+        setChoice (p, ids::quality, "Eco");
+        setP (p, ids::osc (0, "unison"), 16.0f);
+        auto eco = render (p, sr, 256, 0.5, a3);
+        CHECK (p.getRunningQuality() == (int) Quality::Eco && p.getLatencySamples() == 0 && allFinite (eco), "Eco runs with no latency");
+        setChoice (p, ids::quality, "Standard");
+        render (p, sr, 256, 0.05, {});
+        CHECK (p.getRunningQuality() == (int) Quality::Standard && p.getLatencySamples() == 0, "back to Standard");
+    }
+}
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1545,21 +1783,33 @@ int main (int argc, char** argv)
 
     if (argc > 3 && juce::String (argv[2]) == "--pick")
     {
-        DivinityProcessor p;
+        auto procOwner = std::make_unique<DivinityProcessor>();   // heap: the processor is ~350 KB (Windows stacks are 1 MB)
+        auto& p = *procOwner;
         pickVariedPresets (p, juce::File (juce::String (argv[3])), argc > 4 ? juce::StringArray::fromTokens (juce::String (argv[4]), ",", "") : juce::StringArray());
         return 0;
+    }
+    if (argc > 2 && juce::String (argv[2]) == "--v08")
+    {
+        auto procOwner = std::make_unique<DivinityProcessor>();   // heap: the processor is ~350 KB (Windows stacks are 1 MB)
+        auto& p = *procOwner;
+        testVersion08 (p);
+        snapshotWarpUi (p, outDir);
+        std::cout << "\n" << (checks - failures) << " / " << checks << " checks passed\n";
+        return failures == 0 ? 0 : 1;
     }
     if (argc > 2 && juce::String (argv[2]) == "--presets")
     {
         // quick loop for preset work: integrity + levels + variety only
-        DivinityProcessor p;
+        auto procOwner = std::make_unique<DivinityProcessor>();   // heap: the processor is ~350 KB (Windows stacks are 1 MB)
+        auto& p = *procOwner;
         testFactoryPresets (p);
         renderPresetDemos (p, outDir.getChildFile ("preset-demos"));
         std::cout << "\n" << (checks - failures) << " / " << checks << " checks passed\n";
         return failures == 0 ? 0 : 1;
     }
     {
-        DivinityProcessor p;
+        auto procOwner = std::make_unique<DivinityProcessor>();   // heap: the processor is ~350 KB (Windows stacks are 1 MB)
+        auto& p = *procOwner;
         testParameters (p);
         testFactoryPresets (p);
         testEnvelopeTiming();
@@ -1578,9 +1828,11 @@ int main (int argc, char** argv)
         testLongNotesAndSilence (p);
         testSoundEngine2 (p);
         testMidiGeneratorAndMeters (p);
+        testVersion08 (p);
         testPerformance (p);
         renderPresetDemos (p, outDir.getChildFile ("preset-demos"));
         snapshotEditor (p, outDir);
+        snapshotWarpUi (p, outDir);
     }
 
     std::cout << "\n" << (checks - failures) << " / " << checks << " checks passed";

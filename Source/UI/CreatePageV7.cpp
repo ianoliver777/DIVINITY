@@ -345,13 +345,14 @@ namespace
         std::vector<std::unique_ptr<APVTS::ButtonAttachment>> attach;
     };
 
-    class OscSourceV7 : public V7Panel, private juce::Timer
+    class OscSourceV7 : public V7Panel, public juce::FileDragAndDropTarget, private juce::Timer
     {
     public:
         OscSourceV7 (DivinityProcessor& p, int i)
-            : V7Panel ("OSCILLATOR " + juce::String::charToString ((juce::juce_wchar) ('A' + i))), apvts (p.apvts), index (i),
+            : V7Panel ("OSCILLATOR " + juce::String::charToString ((juce::juce_wchar) ('A' + i))), proc (p), apvts (p.apvts), index (i),
               power (p.apvts, ids::osc (i, "on")), engine (p.apvts, ids::osc (i, "engine")),
               table (p.apvts, ids::osc (i, "table")), wave (p.apvts, ids::osc (i, "wave")),
+              warpMode (p.apvts, ids::osc (i, "warp")), warpSrc (p.apvts, ids::osc (i, "warp_src")),
               display (p.apvts, p.getWavetables(), i), level (p.apvts, ids::osc (i, "level")),
               more ("More oscillator settings (level, fine, fold, width, pulse width, phase)", targetGlyph()),
               link ("Copy this oscillator's settings to another oscillator", juce::Path())
@@ -371,7 +372,7 @@ namespace
                 m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&link), [this] (int r)
                 {
                     if (r <= 0) return;
-                    for (auto* n : { "on", "engine", "table", "wave", "pos", "oct", "semi", "fine", "level", "unison", "detune", "width", "blend", "fold", "pw", "phase", "randphase" })
+                    for (auto* n : { "on", "engine", "table", "wave", "pos", "oct", "semi", "fine", "level", "unison", "detune", "width", "blend", "fold", "pw", "phase", "randphase", "warp", "warp_amt", "warp_src" })
                         if (auto* from = apvts.getParameter (ids::osc (index, n)))
                             if (auto* to = apvts.getParameter (ids::osc (r - 1, n)))
                                 { to->beginChangeGesture(); to->setValueNotifyingHost (from->getValue()); to->endChangeGesture(); }
@@ -386,7 +387,17 @@ namespace
             uni = makeKnob (s, ids::osc (i, "unison"), "Unison");
             det = makeKnob (s, ids::osc (i, "detune"), "Detune", (ModDest) oscModDest (5, i));
             blend = makeKnob (s, ids::osc (i, "blend"), "Blend");
-            for (auto* k : { oct, semi, fine, pw, pos, uni, det, blend }) { owned.add (k); addChildComponent (k); k->setValueStyle (1); }
+            warpAmt = makeKnob (s, ids::osc (i, "warp_amt"), "Warp", (ModDest) oscModDest (6, i));
+            for (auto* k : { oct, semi, fine, pw, pos, uni, det, blend, warpAmt }) { owned.add (k); addChildComponent (k); k->setValueStyle (1); }
+            warpAmt->formatValue = [] (float v) { return juce::String (juce::roundToInt (v * 100.0f)) + "%"; };
+            warpMode.centreText = true; warpSrc.centreText = true;
+            warpMode.setTooltip ("Warp mode: Sync / FM / AM use another oscillator as the source; Bend, PWM, Phase Dist and Mirror reshape this oscillator's own phase.");
+            warpSrc.setTooltip ("Warp source oscillator (Sync master / FM / AM modulator).");
+            warpMode.onChange = [this] { update(); };
+            addAndMakeVisible (warpMode); addChildComponent (warpSrc);
+            display.setUserTable (&p.getUserWavetable (i));
+            display.onImport = [this] { importTable(); };
+            display.onClearUser = [this] { proc.clearUserWavetable (index); };
             auto pct = [] (float v) { return juce::String (juce::roundToInt (v * 100.0f)) + "%"; };
             auto num = [] (float v) { return juce::String (juce::roundToInt (v)); };
             oct->formatValue = num; semi->formatValue = num; uni->formatValue = num;
@@ -408,6 +419,10 @@ namespace
         {
             const bool isWt = engine.getIndex() == 0;
             const bool isPulse = ! isWt && wave.getIndex() == (int) AnalogWave::Pulse;
+            const int wm = warpMode.getIndex();
+            warpSrc.setVisible (wm == (int) OscWarp::Sync || wm == (int) OscWarp::FM || wm == (int) OscWarp::AM);
+            warpAmt->setVisible (true);
+            warpAmt->setAlpha (wm == (int) OscWarp::Off ? 0.4f : 1.0f);
             table.setVisible (isWt); wave.setVisible (! isWt);
             pos->setVisible (isWt);
             fine->setVisible (! isWt && ! isPulse);
@@ -422,22 +437,61 @@ namespace
             more.setBounds (w - 36, 9, 26, 24);
             link.setBounds (w - 66, 9, 26, 24);
             engine.setBounds (12, 41, w - 24, 28);
-            table.setBounds (12, 74, w - 24, 28);
-            wave.setBounds (12, 74, w - 24, 28);
+            const int inner = w - 24;
+            const int warpW = warpSrc.isVisible() ? juce::roundToInt (inner * 0.58f) : juce::roundToInt (inner * 0.34f);
+            const int tw = inner - warpW - 6;
+            table.setBounds (12, 74, tw, 28);
+            wave.setBounds (12, 74, tw, 28);
+            if (warpSrc.isVisible())
+            {
+                const int mw = juce::roundToInt (warpW * 0.47f);
+                warpMode.setBounds (12 + tw + 6, 74, mw, 28);
+                warpSrc.setBounds (12 + tw + 6 + mw + 4, 74, warpW - mw - 4, 28);
+            }
+            else warpMode.setBounds (12 + tw + 6, 74, warpW, 28);
             display.setBounds (14, 106, w - 28, h - 200);
-            layoutRow ({ oct, semi, fine, pw, pos, uni, det, blend }, { 4, h - 90, w - 8, 86 });
+            layoutRow ({ oct, semi, fine, pw, pos, uni, det, blend, warpAmt }, { 4, h - 90, w - 8, 86 });
+        }
+
+        // ---- 0.8.0: drop a WAV onto the oscillator to use it as a wavetable
+        bool isInterestedInFileDrag (const juce::StringArray& files) override
+        {
+            for (auto& f : files) if (juce::File (f).hasFileExtension ("wav;aif;aiff;flac")) return true;
+            return false;
+        }
+        void fileDragEnter (const juce::StringArray&, int, int) override { display.setDropHighlight (true); }
+        void fileDragExit (const juce::StringArray&) override { display.setDropHighlight (false); }
+        void filesDropped (const juce::StringArray& files, int, int) override
+        {
+            display.setDropHighlight (false);
+            for (auto& f : files)
+                if (juce::File (f).hasFileExtension ("wav;aif;aiff;flac")) { loadFile (juce::File (f)); break; }
+        }
+        void importTable()
+        {
+            chooser = std::make_unique<juce::FileChooser> ("Import a wavetable for " + sourceName (index),
+                                                           proc.getUserWavetable (index).getFile(), "*.wav;*.aif;*.aiff;*.flac");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                  [this] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) loadFile (fc.getResult()); });
+        }
+        void loadFile (const juce::File& f)
+        {
+            const auto err = proc.loadUserWavetable (index, f, true);
+            display.showMessage (err.isEmpty() ? "LOADED " + f.getFileNameWithoutExtension().toUpperCase() : err);
         }
     private:
         void timerCallback() override { const bool on = power.getToggleState(); if (on != lastOn) { lastOn = on; display.setAlpha (on ? 1.0f : 0.45f); } }
+        DivinityProcessor& proc;
         APVTS& apvts;
         int index;
         PowerButton power;
-        Selector engine, table, wave;
+        Selector engine, table, wave, warpMode, warpSrc;
+        std::unique_ptr<juce::FileChooser> chooser;
         OscDisplay display;
         LevelFader level;
         IconButton more, link;
         juce::OwnedArray<Knob> owned;
-        Knob *oct, *semi, *fine, *pw, *pos, *uni, *det, *blend;
+        Knob *oct, *semi, *fine, *pw, *pos, *uni, *det, *blend, *warpAmt;
         bool lastOn = true;
     };
 

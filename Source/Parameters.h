@@ -35,6 +35,9 @@ namespace divinity
     enum class StepMode { Modulate = 0, Trigger };
     enum class VoiceMode { Poly = 0, Legato, Mono };
     enum class EngineMode { Classic = 0, Divine2 };
+    // 0.8.0
+    enum class OscWarp { Off = 0, Sync, FM, AM, BendPlus, BendMinus, Pwm, PhaseDist, Mirror };
+    enum class Quality { Eco = 0, Standard, HQ };
 
     enum class ModSource
     {
@@ -45,6 +48,7 @@ namespace divinity
         Macro1, Macro2, Macro3, Macro4,
         SoulX, SoulY,                    // appended in 0.2.0 (choice indices only ever grow)
         Env4, Macro5, Macro6, Macro7, Macro8, Random, Step,   // appended in 0.7.0
+        MpePressure, MpeSlide,                               // appended in 0.8.0
         NumSources
     };
 
@@ -66,12 +70,14 @@ namespace divinity
         SoulX, SoulY, DivineAmount,      // appended in 0.2.0
         OscDPitch, OscDPos, OscDLevel, OscDFold, OscDPwm, OscDDetune,   // appended in 0.7.0
         SamplerLevel, SamplerPitch, SamplerStart,
+        OscAWarp, OscBWarp, OscCWarp, OscDWarp,              // appended in 0.8.0
         NumDests
     };
 
-    /** Per-oscillator matrix destination (kind: 0 pitch, 1 WT pos, 2 level, 3 fold, 4 PWM, 5 detune). */
+    /** Per-oscillator matrix destination (kind: 0 pitch, 1 WT pos, 2 level, 3 fold, 4 PWM, 5 detune, 6 warp). */
     inline int oscModDest (int kind, int osc) noexcept
     {
+        if (kind == 6) return (int) ModDest::OscAWarp + osc;
         if (osc < 3) return (int) ModDest::OscAPitch + kind * 3 + osc;
         return (int) ModDest::OscDPitch + kind;
     }
@@ -82,6 +88,10 @@ namespace divinity
     juce::StringArray samplerSampleNames();   // factory samples + "User Sample"
     juce::StringArray modDestNames();
     juce::StringArray wavetableNames();
+    /** Choices of the oscillator table parameter: the factory tables + "User Wavetable" (0.8.0). */
+    juce::StringArray oscTableChoiceNames();
+    juce::StringArray warpModeNames();
+    juce::StringArray qualityNames();
     juce::StringArray filterTypeNames();
     juce::StringArray lfoDivisionNames();
     double lfoDivisionInBeats (int index);
@@ -138,9 +148,18 @@ namespace divinity
         inline const juce::String smpOn = "smp_on", smpSample = "smp_sample", smpLevel = "smp_level", smpTune = "smp_tune",
                                   smpFine = "smp_fine", smpStart = "smp_start", smpLoop = "smp_loop", smpLoopStart = "smp_loop_start",
                                   smpLoopEnd = "smp_loop_end", smpReverse = "smp_reverse", smpKeytrack = "smp_keytrack";
+        // appended in 0.8.0 (per osc: ids::osc (i, "warp"), "warp_amt", "warp_src")
+        inline const juce::String mpeOn = "mpe_on", mpeBend = "mpe_bend";
+        inline const juce::String quality = "quality", qualityRender = "quality_render";
     }
 
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    /** Studio settings rather than sound (quality, MPE): presets neither store nor reset them. */
+    inline bool isGlobalSetting (const juce::String& id)
+    {
+        return id == ids::quality || id == ids::qualityRender || id == ids::mpeOn || id == ids::mpeBend;
+    }
 
     /** Sessions / presets saved before 0.7 have no LFO power switches; their LFOs were always running,
         so switch them on to keep the sound. `tag`/`idAttr` describe the XML layout of the parameter list. */

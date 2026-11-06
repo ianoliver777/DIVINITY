@@ -1,4 +1,5 @@
 #include "Wavetables.h"
+#include <juce_audio_formats/juce_audio_formats.h>
 #include "../Parameters.h"
 #include <complex>
 
@@ -197,17 +198,10 @@ WavetableBank::WavetableBank()
     numTables = kNumOriginalTables + libraryTableCount();
     jassert (numTables == wavetableNames().size());
 
-    // compact layout: per level, the smallest power of two >= 4x its harmonic count (64 .. 2048) + 1 guard
-    size_t off = 0;
-    for (int L = 0; L < kLevels; ++L)
-    {
-        int size = 64;
-        while (size < 16 * harmonicsForLevel (L) && size < kSize) size <<= 1;
-        levelSize[(size_t) L] = size;
-        levelOffset[(size_t) L] = (int) off;
-        off += (size_t) size + 1;
-    }
-    frameStride = off;
+    // compact layout: per level, the smallest power of two >= 16x its harmonic count (64 .. 2048) + 1 guard
+    levelSize = layout().levelSize;
+    levelOffset = layout().levelOffset;
+    frameStride = layout().frameStride;
 
     classic.assign ((size_t) kNumOriginalTables * kFrames * kClassicLevels * kClassicStride, 0.0f);
     size_t frames = 0;
@@ -314,6 +308,163 @@ void WavetableBank::buildCompact (int tableIndex, bool analog)
             dest[n] = dest[0];
         }
     }
+}
+
+//==============================================================================
+const WavetableBank::Layout& WavetableBank::layout()
+{
+    static const Layout l = []
+    {
+        Layout x;
+        size_t off = 0;
+        for (int L = 0; L < kLevels; ++L)
+        {
+            int size = 64;
+            while (size < 16 * harmonicsForLevel (L) && size < kSize) size <<= 1;
+            x.levelSize[(size_t) L] = size;
+            x.levelOffset[(size_t) L] = (int) off;
+            off += (size_t) size + 1;
+        }
+        x.frameStride = off;
+        return x;
+    }();
+    return l;
+}
+
+void WavetableBank::writeCompactFrame (const WaveSpectrum& spec, int16_t* destFrame, bool normaliseFrame)
+{
+    struct Ffts
+    {
+        std::array<std::unique_ptr<juce::dsp::FFT>, kSizeOrder + 1> fft;
+        std::array<float, kSizeOrder + 1> unit {};
+        Ffts()
+        {
+            for (int order = 6; order <= kSizeOrder; ++order)
+            {
+                fft[(size_t) order] = std::make_unique<juce::dsp::FFT> (order);
+                const int n = 1 << order;
+                std::vector<juce::dsp::Complex<float>> in ((size_t) n), out ((size_t) n);
+                in[1] = { 0.0f, -1.0f }; in[(size_t) (n - 1)] = { 0.0f, 1.0f };
+                fft[(size_t) order]->perform (in.data(), out.data(), true);
+                float peak = 0.0f;
+                for (auto& c : out) peak = juce::jmax (peak, std::abs (c.real()));
+                unit[(size_t) order] = peak > 0.0f ? 1.0f / peak : 1.0f;
+            }
+        }
+    };
+    static const Ffts F;   // juce::dsp::FFT::perform is const + thread-safe for distinct buffers
+    const auto& Lay = layout();
+    std::vector<juce::dsp::Complex<float>> in ((size_t) N), out ((size_t) N);
+    constexpr float toInt = 32767.0f / kStoreScale;
+    float normalise = 1.0f;
+    for (int L = 0; L < kLevels; ++L)
+    {
+        const int n = Lay.levelSize[(size_t) L];
+        int order = 0; while ((1 << order) < n) ++order;
+        const int maxHarm = juce::jmin (harmonicsForLevel (L), n / 2 - 1);
+        std::fill (in.begin(), in.begin() + n, juce::dsp::Complex<float> {});
+        for (int k = 1; k <= maxHarm && k < (int) spec.size(); ++k)
+        {
+            const auto c = spec[(size_t) k];
+            in[(size_t) k]       = { (float) c.real(),  (float) c.imag() };
+            in[(size_t) (n - k)] = { (float) c.real(), -(float) c.imag() };
+        }
+        F.fft[(size_t) order]->perform (in.data(), out.data(), true);
+        const float u = F.unit[(size_t) order];
+        if (L == 0 && normaliseFrame)
+        {
+            float peak = 0.0f;
+            for (int i = 0; i < n; ++i) peak = juce::jmax (peak, std::abs (out[(size_t) i].real() * u));
+            normalise = peak > 1.0e-9f ? 0.9f / peak : 0.0f;
+        }
+        int16_t* dest = destFrame + Lay.levelOffset[(size_t) L];
+        for (int i = 0; i < n; ++i)
+            dest[i] = (int16_t) juce::jlimit (-32767, 32767, (int) std::lround (out[(size_t) i].real() * u * normalise * toInt));
+        dest[n] = dest[0];
+    }
+}
+
+//==============================================================================
+UserWavetableSlot::~UserWavetableSlot() { current.store (nullptr); }
+
+void UserWavetableSlot::setFrames (const std::vector<std::vector<float>>& frames, const juce::String& name)
+{
+    const auto& Lay = WavetableBank::layout();
+    auto t = std::make_unique<UserWavetable>();
+    t->name = name;
+    t->frames = juce::jlimit (1, kMaxFrames, (int) frames.size());
+    t->data.assign ((size_t) t->frames * Lay.frameStride, 0);
+    // one gain for the whole table (keeps the table's own frame-to-frame dynamics), peak 0.9
+    float peak = 0.0f;
+    for (int f = 0; f < t->frames; ++f) for (float x : frames[(size_t) f]) peak = juce::jmax (peak, std::abs (x));
+    const float gain = peak > 1.0e-6f ? 0.9f / peak : 0.0f;
+    for (int f = 0; f < t->frames; ++f)
+    {
+        std::vector<double> w ((size_t) N);
+        const auto& src = frames[(size_t) f];
+        for (int i = 0; i < N; ++i) w[(size_t) i] = (double) (i < (int) src.size() ? src[(size_t) i] : 0.0f) * gain;
+        auto spec = spectrumFromTimeDomain (w);
+        // spectrumFromTimeDomain returns unnormalised FFT bins; scale to sine amplitudes (2/N)
+        for (auto& c : spec) c *= 2.0 / N;
+        if (! spec.empty()) spec[0] = 0.0;   // no DC in imported frames
+        WavetableBank::writeCompactFrame (spec, t->data.data() + (size_t) f * Lay.frameStride, false);
+    }
+    current.exchange (t.get(), std::memory_order_acq_rel);
+    if (owned != nullptr) retired.emplace_back (std::move (owned), juce::Time::getMillisecondCounter());
+    owned = std::move (t);
+}
+
+juce::String UserWavetableSlot::load (const juce::File& f)
+{
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (f));
+    if (reader == nullptr) return "\"" + f.getFileName() + "\" isn't a WAV, AIFF or FLAC file DIVINITY can read.";
+    if (reader->lengthInSamples < 16) return "\"" + f.getFileName() + "\" is too short to be a wavetable.";
+    const int len = (int) juce::jmin (reader->lengthInSamples, (juce::int64) kFrameSize * kMaxFrames);
+    juce::AudioBuffer<float> buf ((int) juce::jmin (2u, reader->numChannels), len);
+    reader->read (&buf, 0, len, 0, true, buf.getNumChannels() > 1);
+    std::vector<float> mono ((size_t) len);
+    for (int i = 0; i < len; ++i)
+        mono[(size_t) i] = buf.getNumChannels() > 1 ? 0.5f * (buf.getSample (0, i) + buf.getSample (1, i)) : buf.getSample (0, i);
+
+    std::vector<std::vector<float>> frames;
+    auto resampleCycle = [] (const float* x, int n)
+    {
+        std::vector<float> out ((size_t) kFrameSize);
+        for (int i = 0; i < kFrameSize; ++i)
+        {
+            const double pos = (double) i * n / kFrameSize;
+            const int a = (int) pos; const float fr = (float) (pos - a);
+            out[(size_t) i] = x[a % n] + fr * (x[(a + 1) % n] - x[a % n]);
+        }
+        return out;
+    };
+    if (len % kFrameSize == 0)
+        for (int s = 0; s < len; s += kFrameSize) frames.emplace_back (mono.begin() + s, mono.begin() + s + kFrameSize);
+    else if (len <= 4096)
+        frames.push_back (resampleCycle (mono.data(), len));
+    else
+    {
+        const int nf = 64, seg = len / nf;
+        for (int k = 0; k < nf; ++k) frames.push_back (resampleCycle (mono.data() + (size_t) k * seg, seg));
+    }
+    setFrames (frames, f.getFileNameWithoutExtension());
+    file = f;
+    return {};
+}
+
+void UserWavetableSlot::clear()
+{
+    current.store (nullptr, std::memory_order_release);
+    if (owned != nullptr) retired.emplace_back (std::move (owned), juce::Time::getMillisecondCounter());
+    file = juce::File();
+}
+
+void UserWavetableSlot::collectGarbage()
+{
+    const auto now = juce::Time::getMillisecondCounter();
+    retired.erase (std::remove_if (retired.begin(), retired.end(), [now] (const auto& r) { return now - r.second > 2000; }), retired.end());
 }
 
 } // namespace divinity

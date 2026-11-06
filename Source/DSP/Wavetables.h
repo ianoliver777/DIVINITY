@@ -133,6 +133,13 @@ public:
 
     size_t getMemoryBytes() const noexcept { return compact.size() * sizeof (int16_t) + classic.size() * sizeof (float); }
 
+    /** Compact-storage layout (identical for every table, including imported ones). */
+    struct Layout { std::array<int, kLevels> levelSize {}, levelOffset {}; size_t frameStride = 0; };
+    static const Layout& layout();
+    /** Writes one frame (spectrum bins 0..1024) into compact storage at `dest` (frameStride samples).
+        normalise: peak-normalise the full-band frame to 0.9 (factory behaviour). */
+    static void writeCompactFrame (const WaveSpectrum& spec, int16_t* dest, bool normalise);
+
 private:
     int numTables = 0;
     std::vector<float> classic;
@@ -143,6 +150,51 @@ private:
 
     void buildClassic (int table);
     void buildCompact (int table, bool analog);
+};
+
+//==============================================================================
+/** A wavetable imported from an audio file (0.8.0). Same mip layout as the factory bank. */
+struct UserWavetable
+{
+    juce::String name;
+    int frames = 0;
+    std::vector<int16_t> data;
+    WavetableBank::FrameView getStoredFrame (int frame, int level) const noexcept
+    {
+        const auto& L = WavetableBank::layout();
+        WavetableBank::FrameView v;
+        v.size = L.levelSize[(size_t) level];
+        v.data = data.data() + (size_t) juce::jlimit (0, frames - 1, frame) * L.frameStride + (size_t) L.levelOffset[(size_t) level];
+        return v;
+    }
+    /** Single-cycle waveform preview (level 0) for the UI. */
+    float preview (int frame, double phase) const noexcept { return getStoredFrame (frame, 0).at (phase); }
+};
+
+/** One oscillator's imported table: loaded on the message thread, read lock-free by the audio thread. */
+class UserWavetableSlot
+{
+public:
+    static constexpr int kMaxFrames = 256, kFrameSize = 2048;
+    ~UserWavetableSlot();
+
+    /** Message thread. Reads a WAV / AIFF / FLAC: files that are a multiple of 2048 samples are split into
+        2048-sample frames (Serum / Vital layout); shorter files become one single-cycle frame; longer
+        non-multiples are cut into up to 64 equal frames. Returns an empty string on success. */
+    juce::String load (const juce::File& file);
+    /** Builds from raw frames (each kFrameSize samples). Used by load() and the tests. */
+    void setFrames (const std::vector<std::vector<float>>& frames, const juce::String& name);
+    void clear();
+    void collectGarbage();
+
+    const UserWavetable* get() const noexcept { return current.load (std::memory_order_acquire); }
+    juce::File getFile() const { return file; }
+
+private:
+    std::atomic<UserWavetable*> current { nullptr };
+    std::unique_ptr<UserWavetable> owned;
+    std::vector<std::pair<std::unique_ptr<UserWavetable>, juce::uint32>> retired;
+    juce::File file;
 };
 
 } // namespace divinity
