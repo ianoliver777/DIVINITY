@@ -9,6 +9,7 @@
 #include <chrono>
 #include <random>
 #include <map>
+#include <juce_dsp/juce_dsp.h>
 
 using namespace divinity;
 
@@ -43,6 +44,7 @@ static void cleanPatch (DivinityProcessor& p)
 }
 
 struct Note { double start, length; int note; float vel; };
+static constexpr float kNearDuplicate = 3.0f;   // fingerprint distance (≈ dB-scale) under which two presets count as copies
 
 static juce::AudioBuffer<float> render (DivinityProcessor& p, double sr, int block, double seconds,
                                         const std::vector<Note>& notes, std::function<void (int)> perBlock = {})
@@ -901,6 +903,180 @@ static void testPerformance (DivinityProcessor& p)
     CHECK (allFinite (b), "768-stream worst case finite");
 }
 
+/** Level-independent "what does it sound like" fingerprint of a render, for spotting near-duplicate presets:
+    average spectrum shape (28 log bands, dB, mean removed), loudness envelope over time, per-band movement
+    (wobble / filter motion) and stereo width. */
+static std::vector<float> soundFingerprint (const juce::AudioBuffer<float>& b, double sr)
+{
+    constexpr int order = 11, N = 1 << order, bandsN = 28, slots = 18;
+    juce::dsp::FFT fft (order);
+    juce::dsp::WindowingFunction<float> win ((size_t) N, juce::dsp::WindowingFunction<float>::hann);
+    std::vector<float> data ((size_t) N * 2);
+    std::vector<double> edges ((size_t) bandsN + 1);
+    for (int k = 0; k <= bandsN; ++k) edges[(size_t) k] = 30.0 * std::pow (16000.0 / 30.0, (double) k / bandsN);
+    std::vector<std::vector<float>> frames;
+    const int hop = N / 2, total = b.getNumSamples();
+    for (int pos = 0; pos + N <= total; pos += hop)
+    {
+        for (int i = 0; i < N; ++i) data[(size_t) i] = 0.5f * (b.getSample (0, pos + i) + b.getSample (1, pos + i));
+        std::fill (data.begin() + N, data.end(), 0.0f);
+        win.multiplyWithWindowingTable (data.data(), (size_t) N);
+        fft.performFrequencyOnlyForwardTransform (data.data());
+        std::vector<float> bands ((size_t) bandsN, 0.0f);
+        for (int k = 0; k < bandsN; ++k)
+        {
+            double e = 0;
+            const int b0 = juce::jmax (1, (int) (edges[(size_t) k] * N / sr)), b1 = juce::jmax (b0 + 1, (int) (edges[(size_t) k + 1] * N / sr));
+            for (int j = b0; j < b1 && j < N / 2; ++j) e += (double) data[(size_t) j] * data[(size_t) j];
+            bands[(size_t) k] = (float) (10.0 * std::log10 (e / (b1 - b0) + 1.0e-10));
+        }
+        frames.push_back (bands);
+    }
+    std::vector<float> f;
+    // 1) average spectrum shape (only frames with signal), mean removed
+    std::vector<double> avg ((size_t) bandsN, 0.0); int used = 0;
+    for (auto& fr : frames) { double m = 0; for (float v : fr) m = juce::jmax (m, (double) v); if (m < -40.0) continue; for (int k = 0; k < bandsN; ++k) avg[(size_t) k] += fr[(size_t) k]; ++used; }
+    double mean = 0; for (auto& v : avg) { v /= juce::jmax (1, used); mean += v; } mean /= bandsN;
+    for (auto v : avg) f.push_back ((float) juce::jlimit (-60.0, 60.0, v - mean));
+    // 2) loudness envelope (dB below the loudest slot)
+    std::vector<float> env ((size_t) slots, -80.0f);
+    for (int s = 0; s < slots; ++s)
+    {
+        const int a = total * s / slots, z = total * (s + 1) / slots;
+        double e = 0; for (int i = a; i < z; ++i) e += 0.5 * (b.getSample (0, i) * b.getSample (0, i) + b.getSample (1, i) * b.getSample (1, i));
+        env[(size_t) s] = (float) (10.0 * std::log10 (e / juce::jmax (1, z - a) + 1.0e-10));
+    }
+    const float mx = *std::max_element (env.begin(), env.end());
+    for (auto v : env) f.push_back (juce::jmax (-60.0f, v - mx) * 0.5f);
+    // 3) movement: std-dev over time of 7 band groups while sounding
+    for (int g = 0; g < 7; ++g)
+    {
+        std::vector<double> series;
+        for (auto& fr : frames) { double m = 0; for (int k = g * 4; k < g * 4 + 4; ++k) m += fr[(size_t) k]; m /= 4; if (m > -70.0) series.push_back (m); }
+        double mu = 0, var = 0; for (auto v : series) mu += v; mu /= std::max<size_t> (1, series.size());
+        for (auto v : series) var += (v - mu) * (v - mu); var /= std::max<size_t> (1, series.size());
+        f.push_back ((float) std::sqrt (var) * 1.5f);
+    }
+    // 4) stereo width (side / mid, dB)
+    double mid = 0, side = 0;
+    for (int i = 0; i < total; ++i) { const double l = b.getSample (0, i), r = b.getSample (1, i); mid += (l + r) * (l + r); side += (l - r) * (l - r); }
+    f.push_back ((float) juce::jlimit (-40.0, 10.0, 10.0 * std::log10 ((side + 1.0e-12) / (mid + 1.0e-12))) * 0.4f);
+    return f;
+}
+
+static float fingerprintDistance (const std::vector<float>& a, const std::vector<float>& b)
+{
+    double d = 0; for (size_t i = 0; i < a.size() && i < b.size(); ++i) d += (a[i] - b[i]) * (a[i] - b[i]);
+    return (float) std::sqrt (d / (double) std::max<size_t> (1, a.size()));
+}
+
+static std::vector<Note> phraseFor (const juce::String& cat, bool arpPatch)
+{
+    std::vector<Note> phrase;
+    if (cat == "BASS" || cat == "808" || cat == "SUB")
+        phrase = { { 0.0, 0.45, 36, 1.0f }, { 0.5, 0.45, 36, 0.9f }, { 1.0, 0.7, 39, 1.0f }, { 1.75, 0.6, 34, 1.0f } };
+    else if (cat == "PERCUSSION")
+        phrase = { { 0.0, 4.0, 60, 1.0f } };   // hold one key: the loop plays itself
+    else if (cat == "FX")
+        phrase = { { 0.0, 3.0, 60, 1.0f } };
+    else if (arpPatch)
+        phrase = { { 0.0, 2.4, 60, 0.9f }, { 0.0, 2.4, 63, 0.9f }, { 0.0, 2.4, 67, 0.9f } };
+    else if (cat == "LEAD")
+        phrase = { { 0.0, 0.45, 72, 0.9f }, { 0.5, 0.45, 75, 0.9f }, { 1.0, 0.45, 79, 0.9f }, { 1.5, 0.9, 77, 0.9f } };
+    else if (cat == "PLUCK")
+        phrase = { { 0.0, 0.3, 60, 0.9f }, { 0.25, 0.3, 64, 0.8f }, { 0.5, 0.3, 67, 0.9f }, { 0.75, 0.3, 71, 0.8f }, { 1.0, 0.3, 72, 0.9f }, { 1.25, 0.3, 67, 0.8f }, { 1.5, 0.6, 64, 0.9f } };
+    else
+        phrase = { { 0.0, 2.5, 48, 0.8f }, { 0.0, 2.5, 55, 0.8f }, { 0.0, 2.5, 60, 0.8f }, { 0.0, 2.5, 63, 0.8f } };
+    return phrase;
+}
+
+/** Offline: renders a large pool of candidate designs per category, fingerprints how each one actually
+    sounds, and keeps the set that is furthest apart (farthest-point sampling). Writes the picks file. */
+static void pickVariedPresets (DivinityProcessor& p, const juce::File& incFile, const juce::StringArray& only = {})
+{
+    std::cout << "\n== Picking the most varied candidates per category\n";
+    juce::String inc;
+    auto measure = [&p] (const FactoryPreset& fp, std::vector<float>& out) -> bool
+    {
+        p.presets.applyFactoryPreset (fp);
+        const bool arpPatch = p.apvts.getRawParameterValue (arpids::on)->load() > 0.5f;
+        auto b = render (p, 48000, 256, 4.5, phraseFor (fp.category, arpPatch));
+        const float rms = juce::Decibels::gainToDecibels (b.getRMSLevel (0, 0, (int) (2.5 * 48000)), -120.0f);
+        if (! allFinite (b) || rms < -50.0f) return false;   // too sparse / quiet to level-match: not a candidate
+        out = soundFingerprint (b, 48000.0);
+        return true;
+    };
+    juce::StringArray keep;
+    if (! only.isEmpty())
+        for (auto& line : juce::StringArray::fromLines (incFile.loadFileAsString()))
+            if (line.trim().isNotEmpty() && ! only.contains (line.fromFirstOccurrenceOf ("\"", false, false).upToFirstOccurrenceOf ("\"", false, false)))
+                keep.add (line);
+    for (auto& line : keep) inc << line << "\n";
+    for (auto& cat : factoryCategoriesV7())
+    {
+        if (! only.isEmpty() && ! only.contains (cat)) continue;
+        const int N = factoryCountV7 (cat), M = juce::jmax (N * (cat == "808" ? 9 : 4), 240);   // 808s are the most alike family: bigger pool
+        std::vector<std::pair<int, int>> heroes;
+        auto cands = createCandidatePresets (cat, 0, M, &heroes);
+        std::vector<std::vector<float>> fps ((size_t) M);
+        std::vector<bool> ok ((size_t) M, false);
+        for (int k = 0; k < M; ++k) ok[(size_t) k] = measure (cands[(size_t) k], fps[(size_t) k]);
+
+        std::vector<int> picks ((size_t) N, -1);
+        std::vector<std::vector<float>> chosen;
+        auto minDist = [&chosen] (const std::vector<float>& f)
+        {
+            float d = 1.0e9f; for (auto& c : chosen) d = std::min (d, fingerprintDistance (f, c)); return d;
+        };
+        // hero slots first: the best of 24 candidates that keep the hero's source / movement
+        for (int slot = 0; slot < N; ++slot)
+        {
+            const auto [fs, fm] = heroes[(size_t) slot];
+            if (fs < 0 && fm < 0) continue;
+            const int base = 100000 + slot * 100;
+            auto hc = createCandidatePresets (cat, base, 24, nullptr, fs, fm);
+            float best = -1.0f; int bestK = base; std::vector<float> bestF;
+            for (int h = 0; h < 24; ++h)
+            {
+                std::vector<float> f;
+                if (! measure (hc[(size_t) h], f)) continue;
+                const float d = chosen.empty() ? 1.0f : minDist (f);
+                if (d > best) { best = d; bestK = base + h; bestF = f; }
+            }
+            picks[(size_t) slot] = bestK;
+            if (! bestF.empty()) chosen.push_back (bestF);
+        }
+        // everything else: farthest-point sampling over the pool
+        std::vector<bool> taken ((size_t) M, false);
+        for (int slot = 0; slot < N; ++slot)
+        {
+            if (picks[(size_t) slot] >= 0) continue;
+            float best = -1.0f; int bk = -1;
+            for (int k = 0; k < M; ++k)
+            {
+                if (! ok[(size_t) k] || taken[(size_t) k]) continue;
+                const float d = chosen.empty() ? (float) (M - k) : minDist (fps[(size_t) k]);
+                if (d > best) { best = d; bk = k; }
+            }
+            if (bk < 0) { for (int k = 0; k < M; ++k) if (! taken[(size_t) k]) { bk = k; break; } }
+            taken[(size_t) bk] = true;
+            picks[(size_t) slot] = bk;
+            chosen.push_back (fps[(size_t) bk]);
+        }
+        // report the achieved spread
+        float worst = 1.0e9f;
+        for (size_t a = 0; a < chosen.size(); ++a)
+            for (size_t b = a + 1; b < chosen.size(); ++b) worst = std::min (worst, fingerprintDistance (chosen[a], chosen[b]));
+        int valid = 0; for (bool v : ok) valid += v;
+        std::cout << "  " << cat.paddedRight (' ', 12) << N << " of " << M << " candidates (" << valid << " valid)   closest pair " << worst << "\n";
+        inc << "{ \"" << cat << "\", { ";
+        for (int i = 0; i < N; ++i) inc << picks[(size_t) i] << (i + 1 < N ? ", " : "");
+        inc << " } },\n";
+    }
+    incFile.replaceWithText (inc);
+    std::cout << "  wrote " << incFile.getFullPathName() << "\n";
+}
+
 static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
 {
     std::cout << "\n== Factory preset levels (+ WAV demos)\n";
@@ -910,27 +1086,15 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
     int hot = 0, quiet = 0;
     std::map<juce::String, int> demoCats;
     std::vector<float> rmsAll;
+    struct Print { juce::String name, cat; std::vector<float> f; };
+    std::vector<Print> prints;
     for (int i = 0; i < list.size(); ++i)
     {
         if (! list[i].isFactory) continue;
         p.presets.loadPreset (i);
         const auto cat = list[i].category;
         const bool arpPatch = p.apvts.getRawParameterValue (arpids::on)->load() > 0.5f;
-        std::vector<Note> phrase;
-        if (cat == "BASS" || cat == "808" || cat == "SUB")
-            phrase = { { 0.0, 0.45, 36, 1.0f }, { 0.5, 0.45, 36, 0.9f }, { 1.0, 0.7, 39, 1.0f }, { 1.75, 0.6, 34, 1.0f } };
-        else if (cat == "PERCUSSION")
-            phrase = { { 0.0, 4.0, 60, 1.0f } };   // hold one key: the loop plays itself
-        else if (cat == "FX")
-            phrase = { { 0.0, 3.0, 60, 1.0f } };
-        else if (arpPatch)
-            phrase = { { 0.0, 2.4, 60, 0.9f }, { 0.0, 2.4, 63, 0.9f }, { 0.0, 2.4, 67, 0.9f } };
-        else if (cat == "LEAD")
-            phrase = { { 0.0, 0.45, 72, 0.9f }, { 0.5, 0.45, 75, 0.9f }, { 1.0, 0.45, 79, 0.9f }, { 1.5, 0.9, 77, 0.9f } };
-        else if (cat == "PLUCK")
-            phrase = { { 0.0, 0.3, 60, 0.9f }, { 0.25, 0.3, 64, 0.8f }, { 0.5, 0.3, 67, 0.9f }, { 0.75, 0.3, 71, 0.8f }, { 1.0, 0.3, 72, 0.9f }, { 1.25, 0.3, 67, 0.8f }, { 1.5, 0.6, 64, 0.9f } };
-        else
-            phrase = { { 0.0, 2.5, 48, 0.8f }, { 0.0, 2.5, 55, 0.8f }, { 0.0, 2.5, 60, 0.8f }, { 0.0, 2.5, 63, 0.8f } };
+        const auto phrase = phraseFor (cat, arpPatch);
         auto b = render (p, 48000, 256, 4.5, phrase);
         const float peak = juce::Decibels::gainToDecibels (b.getMagnitude (0, b.getNumSamples()), -120.0f);
         const float rms = juce::Decibels::gainToDecibels (b.getRMSLevel (0, 0, (int) (2.5 * 48000)), -120.0f);
@@ -939,6 +1103,7 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
         if (peak > -0.2f) ++hot;
         if (rms < -42.0f || ! allFinite (b)) { ++quiet; std::cout << "    ^ too quiet or not finite\n"; }
         rmsAll.push_back (rms);
+        prints.push_back ({ list[i].name, cat, soundFingerprint (b, 48000.0) });
         // WAV demos: the classic set + the first preset of every category (keeps CI artefacts small)
         if (demoCats[cat] >= 3) continue;   // three demos per category
         ++demoCats[cat];
@@ -956,6 +1121,43 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
     std::sort (rmsAll.begin(), rmsAll.end());
     const float spread = rmsAll.empty() ? 0.0f : rmsAll[rmsAll.size() * 9 / 10] - rmsAll[rmsAll.size() / 10];
     CHECK (spread < 16.0f, "factory presets are level-matched (10th-90th percentile spread " << spread << " dB)");
+
+    // variety: no preset may sound like a near-copy of another preset in its category
+    {
+        juce::String csv;
+        std::map<juce::String, std::pair<int, int>> dupes;   // category -> (near-duplicates, count)
+        std::map<juce::String, std::vector<float>> nn;
+        for (size_t a = 0; a < prints.size(); ++a)
+        {
+            float best = 1.0e9f; size_t bi = a;
+            for (size_t c = 0; c < prints.size(); ++c)
+                if (c != a && prints[c].cat == prints[a].cat)
+                {
+                    const float d = fingerprintDistance (prints[a].f, prints[c].f);
+                    if (d < best) { best = d; bi = c; }
+                }
+            nn[prints[a].cat].push_back (best);
+            auto& dc = dupes[prints[a].cat]; ++dc.second;
+            // 808 / SUB are sine-based by nature, so their fingerprints sit closer together
+            // 808s / subs are sine-body families and render a little differently per platform (macOS CI
+            // measured 808 pairs ~1 unit closer than Linux), so their copy threshold sits lower.
+            const float limit = (prints[a].cat == "808" || prints[a].cat == "SUB") ? kNearDuplicate * 0.66f : kNearDuplicate;
+            if (best < limit) { ++dc.first; if (dc.first <= 4) std::cout << "  near-duplicate: " << prints[a].name << " ~ " << prints[bi].name << " (" << best << ")\n"; }
+            csv << prints[a].name << "," << prints[a].cat << "," << best << "," << prints[bi].name;
+            for (auto v : prints[a].f) csv << "," << v;
+            csv << "\n";
+        }
+        dir.getParentDirectory().getChildFile ("preset_fingerprints.csv").replaceWithText (csv);
+        int totalDupes = 0;
+        for (auto& [cat, dc] : dupes)
+        {
+            auto v = nn[cat]; std::sort (v.begin(), v.end());
+            std::cout << "  " << cat.paddedRight (' ', 12) << dc.first << " near-duplicates of " << dc.second
+                      << "   nearest-neighbour distance: min " << v.front() << "  median " << v[v.size() / 2] << "\n";
+            totalDupes += dc.first;
+        }
+        CHECK (totalDupes == 0, "every factory preset sounds distinct from the rest of its category (" << totalDupes << " near-duplicates)");
+    }
 }
 
 static void snapshotEditor (DivinityProcessor& p, const juce::File& dir)
@@ -1341,6 +1543,21 @@ int main (int argc, char** argv)
     outDir.createDirectory();
     std::cout << "DIVINITY test runner\n";
 
+    if (argc > 3 && juce::String (argv[2]) == "--pick")
+    {
+        DivinityProcessor p;
+        pickVariedPresets (p, juce::File (juce::String (argv[3])), argc > 4 ? juce::StringArray::fromTokens (juce::String (argv[4]), ",", "") : juce::StringArray());
+        return 0;
+    }
+    if (argc > 2 && juce::String (argv[2]) == "--presets")
+    {
+        // quick loop for preset work: integrity + levels + variety only
+        DivinityProcessor p;
+        testFactoryPresets (p);
+        renderPresetDemos (p, outDir.getChildFile ("preset-demos"));
+        std::cout << "\n" << (checks - failures) << " / " << checks << " checks passed\n";
+        return failures == 0 ? 0 : 1;
+    }
     {
         DivinityProcessor p;
         testParameters (p);

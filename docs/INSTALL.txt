@@ -40,6 +40,19 @@ Bitwig        Settings > Locations > Rescan
 Studio One    Options > Locations > VST Plug-ins > Reset Blocklist, then restart
 
 
+NEW IN 0.7.3
+------------
+- Preset bank redesigned for variety. The 777 presets used to cycle
+  through ~10 core sounds per category (so every ~10th bass was the same
+  bass with different FX). Now every preset picks its own source,
+  movement, filter, envelope and effects, and the bank was chosen from a
+  much larger pool by measuring the audio: no two presets in a category
+  sound like copies of each other.
+- Same names for the headline presets (Abyss Reese, Viral 808, ...),
+  same categories, same counts, still loudness-matched.
+- The limiter now has a hard ceiling (it could overshoot by a hair).
+
+
 NEW IN 0.7.2
 ------------
 - MIDI GENERATOR (PLAY tab): chords, lead, bass or drums in Trap, Wave,
