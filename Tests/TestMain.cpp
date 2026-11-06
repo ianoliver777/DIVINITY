@@ -391,11 +391,11 @@ static void testFactoryPresets (DivinityProcessor& p)
     for (auto& fp : list) { if (names.contains (fp.name)) { ++dupes; std::cout << "  duplicate " << fp.name << "\n"; } names.add (fp.name);
                             empty += fp.name.trim().isEmpty(); perCat[fp.category]++; }
     CHECK (dupes == 0 && empty == 0, "factory preset names are unique and non-empty");
-    const std::pair<const char*, int> want[] = { { "REESE", 120 }, { "BASS", 80 }, { "LEAD", 90 }, { "SYNTH", 90 }, { "PAD", 95 },
-                                                 { "TEXTURE", 70 }, { "SEQUENCE", 90 }, { "PERCUSSION", 62 }, { "FX", 80 } };
+    const std::pair<const char*, int> want[] = { { "REESE", 40 }, { "BASS", 30 }, { "LEAD", 35 }, { "SYNTH", 35 }, { "PAD", 35 },
+                                                 { "TEXTURE", 25 }, { "SEQUENCE", 30 }, { "PERCUSSION", 16 }, { "FX", 25 } };
     bool counts = perCat.size() == 9;
     for (auto& [c, n] : want) { counts &= perCat[c] == n; std::cout << "  " << c << " " << perCat[c] << "\n"; }
-    CHECK (list.size() == 777 && counts, "777 factory presets in the nine categories (" << (int) list.size() << ")");
+    CHECK (list.size() == 271 && counts, "271 factory presets in the nine categories (" << (int) list.size() << ")");
 
     // LFOs are off unless the sound routes them; percussion loops run the step sequencer in TRIGGER mode
     int lfoWrong = 0, percWrong = 0;
@@ -1275,6 +1275,9 @@ static void pickVariedPresets (DivinityProcessor& p, const juce::File& incFile, 
         std::vector<std::vector<float>> fps ((size_t) M);
         std::vector<bool> ok ((size_t) M, false);
         int rejected = 0;
+        auto srcOf = [&cands] (int k) { return cands[(size_t) k].tags.fromLastOccurrenceOf ("src:", false, false).getIntValue(); };
+        std::map<int, int> srcUsed;
+        const int srcCap = cat == "PERCUSSION" ? 2 : 1;
         for (int k = 0; k < M; ++k)
         {
             ok[(size_t) k] = measure (cands[(size_t) k], fps[(size_t) k]);
@@ -1316,12 +1319,13 @@ static void pickVariedPresets (DivinityProcessor& p, const juce::File& incFile, 
             float best = -1.0f; int bk = -1;
             for (int k = 0; k < M; ++k)
             {
-                if (! ok[(size_t) k] || taken[(size_t) k]) continue;
+                if (! ok[(size_t) k] || taken[(size_t) k] || srcUsed[srcOf (k)] >= srcCap) continue;
                 const float d = chosen.empty() ? (float) (M - k) : minDist (fps[(size_t) k]);
                 if (d > best) { best = d; bk = k; }
             }
             if (bk < 0) break;
             taken[(size_t) bk] = true;
+            ++srcUsed[srcOf (bk)];
             picks[(size_t) slot] = bk;
             chosen.push_back (fps[(size_t) bk]);
         }

@@ -1,8 +1,12 @@
 // Included inside FactoryPresetsV7.cpp's anonymous namespace (after Patch, applyFlavour, Pattern, Spec).
 //
-// DIVINITY 0.9.0 factory bank: 777 presets for wave music and Reese bass.
+// DIVINITY 0.9.1 factory bank: 271 presets for wave music and Reese bass, every one built on its own core sound.
 //
-//   REESE 120 . BASS 80 . LEAD 90 . SYNTH 90 . PAD 95 . TEXTURE 70 . SEQUENCE 90 . PERCUSSION 62 . FX 80
+//   REESE 40 . BASS 30 . LEAD 35 . SYNTH 35 . PAD 35 . TEXTURE 25 . SEQUENCE 30 . PERCUSSION 16 . FX 25
+//
+// 0.9.0 had 777 presets from ~14-18 core sounds per category: the same core came back every 8-10 presets
+// with a different reverb or LFO. Now a core sound (SOURCE) is used once per category (twice for a
+// percussion sample, with two different patterns).
 //
 // Every preset is built from ingredients: a SOURCE (what makes the sound), a MOVEMENT (what moves,
 // how fast), a FILTER / TONE, a PLAY style, a SPACE (reverb + delay design; nothing in this bank is dry)
@@ -175,6 +179,25 @@ std::vector<Ing> drumSpaces()
 }
 
 //==============================================================================
+// Core-sound helpers (0.9.1: every core sound is used at most once per category)
+//==============================================================================
+/** A reese built around a character table: detuned analog saw pair + the table, itself detuned. */
+Patch& reeseWith (Patch& p, const char* table, double pos)
+{
+    return p.an (0, "Saw", 0.65).uni (0, 2, p.j (0.16, 0.3), 0.4).wt (1, table, p.j (pos, 0.3), 0.6).uni (1, 2, p.j (0.14, 0.3), 0.5).tune (1, 0, 0, 7);
+}
+/** One wavetable as the core, with a little unison. */
+Patch& core (Patch& p, const char* table, int uni = 2, double det = 0.08)
+{
+    return p.wt (0, table, p.j (0.45, 0.4), 0.8).uni (0, uni, det, 0.6);
+}
+/** A bass core: the table an octave up over a sine sub. */
+Patch& bassCore (Patch& p, const char* table)
+{
+    return p.wt (0, table, p.j (0.45, 0.4), 0.8).sub ("Sine -1", p.j (0.45, 0.2));
+}
+
+//==============================================================================
 // REESE (120): every source is two or more detuned saw-family voices, so every preset beats.
 //==============================================================================
 std::vector<Ing> reeseSources()
@@ -215,6 +238,31 @@ std::vector<Ing> reeseSources()
              p.wt (0, "Saw To Square", p.j (0.4, 0.5), 0.85).uni (0, 3, p.j (0.2, 0.3), 0.5)),
         ING ("Weighted Reese", "detuned saws over a sine sub an octave down", "Reese",
              p.an (0, "Saw", 0.7).uni (0, 2, 0.16, 0.4).an (1, "Saw", 0.55).tune (1, 0, 0, -12).sub ("Sine -1", 0.55)),
+        ING ("Yoi Reese", "detuned saws under the Yoi formant table: it talks", "Reese", reeseWith (p, "Yoi", 0.4)),
+        ING ("Robot Reese", "detuned saws with a robot-voice table", "Reese", reeseWith (p, "Robot Voice", 0.5)),
+        ING ("Talk Box Reese", "detuned saws through a talk-box table", "Reese", reeseWith (p, "Talk Box", 0.4)),
+        ING ("Comb Reese", "detuned saws with a comb-swept table: phasey, metallic", "Reese", reeseWith (p, "Comb Sweep", 0.4)),
+        ING ("Grit Reese", "detuned saws with a bit-crushed digital-grit layer", "Reese", reeseWith (p, "Digital Grit", 0.5)),
+        ING ("Chaos Reese", "detuned saws with a chaotic table on top", "Reese", reeseWith (p, "Chaos II", 0.5)),
+        ING ("Wobble Talk Reese", "detuned saws with the Wobble Talk table", "Reese", reeseWith (p, "Wobble Talk", 0.4)),
+        ING ("Diode Reese", "detuned saws with a diode-clipped layer: fuzzy", "Reese", reeseWith (p, "Diode Clip", 0.5)),
+        ING ("Bias Reese", "detuned saws with an asymmetric bias-fold layer", "Reese", reeseWith (p, "Bias Fold", 0.4)),
+        ING ("Metal Reese", "detuned saws with metallic FM", "Reese", reeseWith (p, "Metal FM", 0.45)),
+        ING ("Feedback Reese", "detuned saws with a feedback-FM snarl", "Reese", reeseWith (p, "Feedback FM", 0.5)),
+        ING ("Seven Voice Reese", "one saw, seven unison voices spread wide: the biggest beating stack", "Reese", p.an (0, "Saw", 0.7).uni (0, 7, p.j (0.22, 0.2), 0.8)),
+        ING ("Sub Octave Reese", "a detuned saw pair with a second pair an octave below", "Reese",
+             p.an (0, "Saw", 0.6).uni (0, 2, 0.15, 0.4).an (1, "Saw", 0.55).uni (1, 2, 0.18, 0.4).tune (1, -1, 0, 5)),
+        ING ("Pulse Reese", "two narrow analog pulses detuned against each other", "Reese",
+             p.an (0, "Pulse", 0.7).pw (0, 0.3).uni (0, 2, 0.16, 0.4).an (1, "Pulse", 0.6).pw (1, 0.22).tune (1, 0, 0, -12)),
+        ING ("Sync Square Reese", "detuned saws with a hard-synced square table", "Reese", reeseWith (p, "Sync Square", 0.4)),
+        ING ("Peak Reese", "detuned saws with twin resonant peaks", "Reese", reeseWith (p, "Twin Peaks", 0.4)),
+        ING ("Odd Reese", "detuned saws with an odd-harmonics (hollow) layer", "Reese", reeseWith (p, "Odd Harmonics", 0.5)),
+        ING ("Throat Reese", "detuned saws with a throat-singer table: a deep vocal drone inside", "Reese", reeseWith (p, "Throat Singer", 0.4)),
+        ING ("Laser Reese", "detuned saws with a laser-sync layer", "Reese", reeseWith (p, "Laser Sync", 0.35)),
+        ING ("Crushed Reese", "detuned saws with a lo-fi sample-and-hold layer", "Reese", reeseWith (p, "Lo-Fi Hold", 0.5)),
+        ING ("Shine Reese", "detuned saws with a Chebyshev shine layer", "Reese", reeseWith (p, "Cheby Shine", 0.45)),
+        ING ("Wide Reese", "a four-voice saw stack spread wide over a mono saw core", "Reese",
+             p.an (0, "Saw", 0.55).uni (0, 4, 0.2, 1.0).set (ids::osc (0, "width"), 1.0).an (1, "Saw", 0.55).tune (1, 0, 0, 6)),
     };
 }
 
@@ -246,7 +294,7 @@ std::vector<Ing> lowMotions()
 CategoryRecipe reeseRecipe()
 {
     CategoryRecipe R;
-    R.category = "REESE"; R.count = 120; R.lowEnd = true; R.tags = { "Reese", "Mono", "Wave" };
+    R.category = "REESE"; R.count = 40; R.lowEnd = true; R.tags = { "Reese", "Mono", "Wave" };
     R.sources = reeseSources();
     R.motions = lowMotions();
     R.filters = {
@@ -282,7 +330,7 @@ CategoryRecipe reeseRecipe()
 CategoryRecipe bassRecipe()
 {
     CategoryRecipe R;
-    R.category = "BASS"; R.count = 80; R.lowEnd = true; R.tags = { "Mono", "Wave" };
+    R.category = "BASS"; R.count = 30; R.lowEnd = true; R.tags = { "Mono", "Wave" };
     R.sources = {
         ING ("808", "a sine 808: pitch drops from an octave up, long boom", "808",
              p.an (0, "Sine", 0.9).tight (0, 0.25).env (1, 0.0, p.j (0.07, 0.2), 0.0, 0.05).mod ("ENV 2", "Osc A Pitch", 1.0)
@@ -304,6 +352,22 @@ CategoryRecipe bassRecipe()
         ING ("Sync Bass", "a hard-sync bass: sine sub under a synced saw", "Wave Bass",
              p.an (0, "Saw", 0.7).choice (ids::osc (0, "warp"), "Sync").set (ids::osc (0, "warp_amt"), p.j (0.35, 0.3)).choice (ids::osc (0, "warp_src"), "Osc B")
               .set (ids::osc (1, "on"), 0).choice (ids::osc (1, "engine"), "Analog").choice (ids::osc (1, "wave"), "Sine").sub ("Sine -1", 0.5)),
+        ING ("Yoi Bass", "the Yoi formant table over a sine sub", "Talking", bassCore (p, "Yoi")),
+        ING ("Robot Bass", "a robot-voice table over a sine sub", "Talking", bassCore (p, "Robot Voice")),
+        ING ("Wood Bass", "a woody FM bass", "FM", bassCore (p, "Wood FM")),
+        ING ("Sub FM Bass", "the Sub FM table: round with a harmonic edge", "FM", bassCore (p, "Sub FM")),
+        ING ("Metal Bass", "a metallic FM bass", "FM", bassCore (p, "Metal FM")),
+        ING ("Clarinet Bass", "a clarinet table: woody and hollow", "Wave Bass", bassCore (p, "Clarinet")),
+        ING ("Reed Bass", "a nasal reed table", "Wave Bass", bassCore (p, "Nasal Reed")),
+        ING ("Diode Bass", "a diode-clipped table: fuzzy and loud", "Grit", bassCore (p, "Diode Clip")),
+        ING ("Overdrive Bass", "an overdriven sine table", "Grit", bassCore (p, "Overdrive Sine")),
+        ING ("Crushed Bass", "a crushed-sine table: bit-reduced low end", "Grit", bassCore (p, "Crushed Sine")),
+        ING ("CZ Bass", "a CZ-style phase-distorted pulse", "Wave Bass", bassCore (p, "CZ Pulse")),
+        ING ("Throat Bass", "a throat-singer table", "Talking", bassCore (p, "Throat Singer")),
+        ING ("Even Bass", "even Chebyshev harmonics: warm and octave-heavy", "Wave Bass", bassCore (p, "Cheby Even")),
+        ING ("Peak Bass", "twin resonant peaks", "Wave Bass", bassCore (p, "Twin Peaks")),
+        ING ("Comb Bass", "a comb-swept table", "Neuro", bassCore (p, "Comb Sweep")),
+        ING ("Wobble Talk Bass", "the Wobble Talk table", "Talking", bassCore (p, "Wobble Talk")),
     };
     R.motions = {
         ING ("", "steady: weight first", "", p.set (ids::analog, 0.1)),
@@ -350,7 +414,7 @@ CategoryRecipe bassRecipe()
 CategoryRecipe leadRecipe()
 {
     CategoryRecipe R;
-    R.category = "LEAD"; R.superWet = true; R.count = 90; R.tags = { "Wave", "Wet" };
+    R.category = "LEAD"; R.superWet = true; R.count = 35; R.tags = { "Wave", "Wet" };
     R.sources = {
         ING ("Reese Lead", "two detuned saw pairs: a reese, an octave up as a lead", "Reese",
              p.an (0, "Saw", 0.7).uni (0, 3, p.j (0.18, 0.3), 0.6).an (1, "Saw", 0.5).tune (1, 0, 0, 12).uni (1, 2, 0.15, 0.6)),
@@ -369,6 +433,26 @@ CategoryRecipe leadRecipe()
              p.an (0, "Saw", 0.8).uni (0, 2, 0.1, 0.5).choice (ids::osc (0, "warp"), "Mirror").set (ids::osc (0, "warp_amt"), p.j (0.45, 0.3))),
         ING ("Organ Lead", "a gospel organ table", "Organ", p.wt (0, "Organ Gospel", p.j (0.4, 0.4), 0.8)),
         ING ("Saw Lead", "a single bright saw with a sub octave", "Saw", p.an (0, "Saw", 0.85).an (1, "Saw", 0.35).tune (1, -1, 0, 5)),
+        ING ("Clarinet Lead", "a clarinet table", "Woodwind", core (p, "Clarinet")),
+        ING ("Reed Lead", "a nasal reed table", "Woodwind", core (p, "Nasal Reed")),
+        ING ("Church Reed Lead", "a church reed-organ table", "Organ", core (p, "Church Reed")),
+        ING ("Throat Lead", "a throat-singer table", "Vocal", core (p, "Throat Singer")),
+        ING ("Yoi Lead", "the Yoi formant table", "Vocal", core (p, "Yoi")),
+        ING ("Robot Lead", "a robot-voice table", "Vocal", core (p, "Robot Voice")),
+        ING ("Talk Box Lead", "a talk-box table", "Vocal", core (p, "Talk Box")),
+        ING ("Shine Lead", "a Chebyshev shine table: glassy upper harmonics", "Bright", core (p, "Cheby Shine")),
+        ING ("Hollow Pulse Lead", "a hollow pulse table", "Pulse", core (p, "Hollow Pulse")),
+        ING ("Sync Square Lead", "a hard-synced square table", "Sync", core (p, "Sync Square")),
+        ING ("Sync Sine Lead", "a hard-synced sine table: whistling", "Sync", core (p, "Sync Sine")),
+        ING ("Fold Lead", "a wavefolded sine table", "Fold", core (p, "Sine Fold")),
+        ING ("Tri Fold Lead", "a folded triangle table", "Fold", core (p, "Tri Fold")),
+        ING ("Overdrive Lead", "an overdriven sine table", "Grit", core (p, "Overdrive Sine")),
+        ING ("Metal Lead", "a metallic FM table", "FM", core (p, "Metal FM")),
+        ING ("Feedback Lead", "a feedback-FM table", "FM", core (p, "Feedback FM")),
+        ING ("Comb Lead", "a comb-shimmer table", "Comb", core (p, "Comb Shimmer")),
+        ING ("Peak Lead", "a sweeping resonant-peak table", "Resonant", core (p, "Peak Sweep")),
+        ING ("Air Lead", "an airy tilted table", "Air", core (p, "Air Tilt").noise ("Pink", 0.03)),
+        ING ("Ring Lead", "a hollow ring-mod table", "Ring", core (p, "Ring Hollow")),
     };
     R.motions = {
         ING ("", "steady, with a touch of delayed vibrato on the mod wheel", "", p.lfo (1, "Sine", 5.0, 1.0, 0.2).mod ("LFO 2", "Osc A Pitch", 0.004)),
@@ -400,7 +484,7 @@ CategoryRecipe leadRecipe()
 CategoryRecipe synthRecipe()
 {
     CategoryRecipe R;
-    R.category = "SYNTH"; R.superWet = true; R.count = 90; R.tags = { "Wave", "Wet", "Poly" };
+    R.category = "SYNTH"; R.superWet = true; R.count = 35; R.tags = { "Wave", "Wet", "Poly" };
     R.sources = {
         ING ("Reese Stab", "a stab of detuned saw pairs (a reese, played as chords)", "Reese",
              p.an (0, "Saw", 0.7).uni (0, 2, 0.16, 0.7).an (1, "Saw", 0.6).uni (1, 2, 0.2, 0.7).tune (1, 0, 0, 10)),
@@ -418,6 +502,26 @@ CategoryRecipe synthRecipe()
         ING ("PWM Keys", "a wide PWM table", "PWM", p.wt (0, "PWM Wide", p.j (0.4, 0.4), 0.8).uni (0, 2, 0.1, 0.7)),
         ING ("Choir Keys", "a choir sample under a formant table", "Vocal", p.wt (0, "Choir Formant", 0.4, 0.6).smp ("Choir Ahh", 0.4, true)),
         ING ("Pluck", "a plucked-body sample over a soft saw", "Pluck", p.smp ("Pluck Body", 0.6, true).an (0, "Saw", 0.35).uni (0, 2, 0.1, 0.6)),
+        ING ("Wood Keys", "a woody FM table", "Keys", core (p, "Wood FM")),
+        ING ("Reed Organ", "a church reed-organ table", "Organ", core (p, "Church Reed")),
+        ING ("Gospel Organ", "a gospel organ table", "Organ", core (p, "Organ Gospel")),
+        ING ("Pipe Organ", "a pipe-organ table", "Organ", core (p, "Pipe Organ")),
+        ING ("Clarinet Keys", "a clarinet table", "Woodwind", core (p, "Clarinet")),
+        ING ("Flute Keys", "a breathy flute table", "Flute", core (p, "Breathy Flute")),
+        ING ("Reed Keys", "a nasal reed table", "Woodwind", core (p, "Nasal Reed")),
+        ING ("Ring Keys", "a hollow ring-mod table", "Ring", core (p, "Ring Hollow")),
+        ING ("Even Keys", "even harmonics only: organ-like", "Keys", core (p, "Even Harmonics")),
+        ING ("Odd Keys", "odd harmonics only: hollow", "Keys", core (p, "Odd Harmonics")),
+        ING ("Hollow Pulse Keys", "a hollow pulse table", "Pulse", core (p, "Hollow Pulse")),
+        ING ("Tri Saw Keys", "a triangle-to-saw table", "Keys", core (p, "Tri To Saw")),
+        ING ("Sine Pulse Keys", "a sine-to-pulse table", "Keys", core (p, "Sine To Pulse")),
+        ING ("Harmonic Keys", "the Harmonic Sweep table", "Keys", core (p, "Harmonic Sweep")),
+        ING ("Electric Keys", "an Electric FM table", "Keys", core (p, "Electric FM")),
+        ING ("Glass FM Keys", "a Glass FM table", "Glass", core (p, "Glass FM")),
+        ING ("Crystal Keys", "the Crystal table", "Crystal", core (p, "Crystal")),
+        ING ("Heaven Keys", "the Seventh Heaven chord table", "Heaven", core (p, "Seventh Heaven")),
+        ING ("Lo-Fi Keys", "a lo-fi sample-and-hold table", "Lo-Fi", core (p, "Lo-Fi Hold")),
+        ING ("Square Keys", "an analog square, slightly detuned", "Square", p.an (0, "Square", 0.7).uni (0, 2, 0.08, 0.6)),
     };
     R.motions = {
         ING ("", "steady", "", p.set (ids::analog, 0.2)),
@@ -452,7 +556,7 @@ CategoryRecipe synthRecipe()
 CategoryRecipe padRecipe()
 {
     CategoryRecipe R;
-    R.category = "PAD"; R.superWet = true; R.count = 95; R.tags = { "Wave", "Wet", "Pad" };
+    R.category = "PAD"; R.superWet = true; R.count = 35; R.tags = { "Wave", "Wet", "Pad" };
     R.sources = {
         ING ("Reese Pad", "two wide detuned saw pairs held as a pad: a slow reese", "Reese",
              p.an (0, "Saw", 0.6).uni (0, 4, p.j (0.22, 0.3), 0.9).an (1, "Saw", 0.5).uni (1, 3, 0.2, 0.9).tune (1, 0, 0, 9)),
@@ -469,6 +573,27 @@ CategoryRecipe padRecipe()
         ING ("Bell Pad", "bells over a held sine bed", "Bell", p.wt (0, "Bell FM", p.j (0.4, 0.4), 0.55).an (1, "Sine", 0.4).uni (1, 3, 0.1, 1.0)),
         ING ("Formant Pad", "a talking formant table", "Vocal", p.wt (0, "Formant Vox", p.j (0.5, 0.3), 0.7).uni (0, 3, 0.1, 1.0)),
         ING ("Flute Pad", "a breathy flute ensemble", "Flute", p.wt (0, "Breathy Flute", p.j (0.4, 0.4), 0.75).uni (0, 3, 0.1, 1.0)),
+        ING ("Reed Organ Pad", "a church reed-organ table, wide", "Organ", core (p, "Church Reed", 4, 0.12)),
+        ING ("Gospel Pad", "a gospel organ table, wide", "Organ", core (p, "Organ Gospel", 4, 0.12)),
+        ING ("Clarinet Pad", "a clarinet ensemble", "Woodwind", core (p, "Clarinet", 4, 0.12)),
+        ING ("Reed Pad", "a nasal reed ensemble", "Woodwind", core (p, "Nasal Reed", 4, 0.12)),
+        ING ("Throat Pad", "a throat-singer table, held", "Vocal", core (p, "Throat Singer", 3, 0.1)),
+        ING ("Ooh Pad", "an ooh-to-ahh vowel table", "Vocal", core (p, "Ooh To Ahh", 3, 0.1)),
+        ING ("Yoi Pad", "the Yoi formant table, held", "Vocal", core (p, "Yoi", 3, 0.1)),
+        ING ("Comb Pad", "a comb-shimmer table", "Comb", core (p, "Comb Shimmer", 4, 0.12)),
+        ING ("Even Pad", "even harmonics only: soft and organ-like", "Pad", core (p, "Even Harmonics", 4, 0.12)),
+        ING ("Odd Pad", "odd harmonics only: hollow", "Pad", core (p, "Odd Harmonics", 4, 0.12)),
+        ING ("Peak Pad", "a wide resonant-peak table", "Resonant", core (p, "Wide Peak", 4, 0.12)),
+        ING ("Air Tilt Pad", "an airy tilted table", "Air", core (p, "Air Tilt", 4, 0.12)),
+        ING ("Harmonic Pad", "the Harmonic Sweep table", "Pad", core (p, "Harmonic Sweep", 4, 0.12)),
+        ING ("Twin Peak Pad", "twin resonant peaks", "Resonant", core (p, "Twin Peaks", 4, 0.12)),
+        ING ("Electric Pad", "an Electric FM table held soft", "FM", core (p, "Electric FM", 4, 0.12)),
+        ING ("Wood Pad", "a woody FM table held soft", "FM", core (p, "Wood FM", 4, 0.12)),
+        ING ("Sync Pad", "a synced triangle table", "Sync", core (p, "Sync Tri", 4, 0.12)),
+        ING ("Fold Pad", "a folded triangle table", "Fold", core (p, "Tri Fold", 4, 0.12)),
+        ING ("Kalimba Pad", "a kalimba table held into a pad", "Kalimba", core (p, "Kalimba", 4, 0.12)),
+        ING ("Mallet Pad", "a mallet table held into a pad", "Mallet", core (p, "Mallet", 4, 0.12)),
+        ING ("Music Box Pad", "a music-box table held into a pad", "Music Box", core (p, "Music Box", 4, 0.12)),
     };
     R.motions = {
         ING ("", "steady, with a slow analog drift", "", p.set (ids::analog, 0.35)),
@@ -501,7 +626,7 @@ CategoryRecipe padRecipe()
 CategoryRecipe textureRecipe()
 {
     CategoryRecipe R;
-    R.category = "TEXTURE"; R.superWet = true; R.count = 70; R.tags = { "Wave", "Atmosphere", "Wet" };
+    R.category = "TEXTURE"; R.superWet = true; R.count = 25; R.tags = { "Wave", "Atmosphere", "Wet" };
     R.sources = {
         ING ("Rain", "a rain loop", "Rain", p.smp ("Rain", 0.7, false).smpLoop (0.05, 0.95)),
         ING ("Vinyl", "vinyl crackle", "Vinyl", p.smp ("Vinyl Crackle", 0.6, false).smpLoop (0.05, 0.95)),
@@ -516,6 +641,19 @@ CategoryRecipe textureRecipe()
         ING ("Drone", "a held drone of a fifth on hollow organ tables", "Drone", p.wt (0, "Hollow Organ", 0.4, 0.6).wt (1, "Pipe Organ", 0.3, 0.45).tune (1, 0, 7)),
         ING ("Chimes", "a glass-hit loop of chimes", "Glass", p.smp ("Glass Hit", 0.6, true).steps ("9050703060509070", "1", "s", { 0, 7, 12, 5, 0, 10, 7, 3 }, "1/8", 16, 0.0, true)),
         ING ("Swell", "a reversed swell", "Swell", p.smp ("Reverse Swell", 0.7, true)),
+        ING ("Throat Drone", "a held throat-singer drone", "Drone", core (p, "Throat Singer", 3, 0.1)),
+        ING ("Comb Drone", "a held comb-shimmer drone", "Drone", core (p, "Comb Shimmer", 3, 0.1)),
+        ING ("Chaos Drone", "a held chaotic table drone", "Drone", core (p, "Chaos I", 3, 0.1)),
+        ING ("Chaos Static", "a chaotic, crackling table", "Noise", core (p, "Chaos III", 2, 0.1)),
+        ING ("Reed Drone", "a held church reed-organ drone", "Drone", core (p, "Church Reed", 3, 0.1)),
+        ING ("Low Hum", "a low sine hum with a pink-noise bed", "Drone", p.an (0, "Sine", 0.6).tune (0, -1).uni (0, 2, 0.05, 0.5).noise ("Pink", 0.12)),
+        ING ("Glass Drone", "a held Glass Halo drone", "Drone", core (p, "Glass Halo", 3, 0.1)),
+        ING ("Vowel Drone", "a held vowel-sweep drone", "Drone", core (p, "Vowel Sweep", 3, 0.1)),
+        ING ("Bell Drone", "a held Bell FM drone", "Drone", core (p, "Bell FM", 3, 0.1)),
+        ING ("Metal Drone", "a held metallic FM drone", "Drone", core (p, "Metal FM", 3, 0.1)),
+        ING ("Air Drone", "a held airy tilted drone", "Drone", core (p, "Air Tilt", 3, 0.1)),
+        ING ("Crushed Drone", "a held crushed-sine drone", "Drone", core (p, "Crushed Sine", 3, 0.1)),
+        ING ("Organ Drone", "a held pipe-organ drone", "Drone", core (p, "Pipe Organ", 3, 0.1)),
     };
     R.motions = {
         ING ("", "steady", "", p.set (ids::analog, 0.3)),
@@ -560,7 +698,7 @@ CategoryRecipe textureRecipe()
 CategoryRecipe sequenceRecipe()
 {
     CategoryRecipe R;
-    R.category = "SEQUENCE"; R.superWet = true; R.count = 90; R.tags = { "Wave", "Wet", "Sequence" };
+    R.category = "SEQUENCE"; R.superWet = true; R.count = 30; R.tags = { "Wave", "Wet", "Sequence" };
     R.sources = {
         ING ("Reese Arp", "detuned saw pairs (a reese) arpeggiated", "Reese",
              p.an (0, "Saw", 0.7).uni (0, 2, 0.16, 0.6).an (1, "Saw", 0.55).uni (1, 2, 0.2, 0.6).tune (1, 0, 0, 10)),
@@ -575,6 +713,24 @@ CategoryRecipe sequenceRecipe()
         ING ("Music Box Arp", "a music-box table", "Music Box", p.wt (0, "Music Box", p.j (0.4, 0.4), 0.8)),
         ING ("Mallet Arp", "a mallet table", "Mallet", p.wt (0, "Mallet", p.j (0.4, 0.4), 0.85)),
         ING ("Vocal Arp", "a choir-formant table", "Vocal", p.wt (0, "Choir Formant", p.j (0.4, 0.4), 0.8)),
+        ING ("Clav Arp", "a clavinet table", "Clav", core (p, "Clavi")),
+        ING ("Organ Arp", "a jazz organ table", "Organ", core (p, "Organ Jazz")),
+        ING ("Flute Arp", "a breathy flute table", "Flute", core (p, "Breathy Flute")),
+        ING ("Clarinet Arp", "a clarinet table", "Woodwind", core (p, "Clarinet")),
+        ING ("Wood Arp", "a woody FM table", "FM", core (p, "Wood FM")),
+        ING ("Crystal Arp", "the Crystal table", "Crystal", core (p, "Crystal")),
+        ING ("Heaven Arp", "the Seventh Heaven chord table", "Heaven", core (p, "Seventh Heaven")),
+        ING ("Electric Arp", "an Electric FM table", "FM", core (p, "Electric FM")),
+        ING ("Sync Arp", "a laser-sync table", "Sync", core (p, "Laser Sync")),
+        ING ("Square Arp", "an analog square", "Square", p.an (0, "Square", 0.7).uni (0, 2, 0.06, 0.5)),
+        ING ("Ring Arp", "ring-modulated bells", "Bell", core (p, "Ring Bells")),
+        ING ("Shine Arp", "a Chebyshev shine table", "Bright", core (p, "Cheby Shine")),
+        ING ("Talk Box Arp", "a talk-box table", "Vocal", core (p, "Talk Box")),
+        ING ("Yoi Arp", "the Yoi formant table", "Vocal", core (p, "Yoi")),
+        ING ("Fold Arp", "a folded triangle table", "Fold", core (p, "Tri Fold")),
+        ING ("Hollow Pulse Arp", "a hollow pulse table", "Pulse", core (p, "Hollow Pulse")),
+        ING ("Brass Arp", "a brass-swell table", "Brass", core (p, "Brass Swell")),
+        ING ("String Arp", "a string-ensemble table", "Strings", core (p, "String Ensemble", 3, 0.12)),
     };
     // the movement here is the pattern itself
     R.motions = {
@@ -614,7 +770,7 @@ CategoryRecipe sequenceRecipe()
 CategoryRecipe percRecipe()
 {
     CategoryRecipe R;
-    R.category = "PERCUSSION"; R.count = 62; R.lowEnd = true; R.tags = { "Drums", "Wave" };
+    R.category = "PERCUSSION"; R.count = 16; R.lowEnd = true; R.tags = { "Drums", "Wave" };
     R.sources = {
         ING ("Hats", "closed hats", "Hats", p.smp ("Hat Closed", 0.8, false)),
         ING ("Metal Hats", "metallic hats", "Hats", p.smp ("Hat Metal", 0.75, false)),
@@ -659,7 +815,7 @@ CategoryRecipe percRecipe()
 CategoryRecipe fxRecipe()
 {
     CategoryRecipe R;
-    R.category = "FX"; R.count = 80; R.tags = { "FX", "Wave", "Transition" };
+    R.category = "FX"; R.count = 25; R.tags = { "FX", "Wave", "Transition" };
     R.sources = {
         ING ("Riser", "white noise rising through a band-pass over three seconds", "Riser",
              p.noise ("White", 0.7).filt (0, "Band Pass", 300, 0.4, 0.0, 0.0).env (1, 3.0, 0.1, 1.0, 0.5).mod ("ENV 2", "Filter 1 Cutoff", 0.85)),
@@ -761,11 +917,16 @@ void buildFromRecipe (const CategoryRecipe& R, std::vector<Spec>& out, juce::Str
     std::set<int> seen (order.begin(), order.end());
     for (int k = 0; (int) order.size() < R.count * 6; ++k) if (! seen.count (k)) order.push_back (k);   // fallbacks
     int made = 0;
+    std::map<int, int> perSource;
+    const int cap = R.category == "PERCUSSION" ? 2 : 1;   // one preset per core sound (a drum sample may get two patterns)
     for (int k : order)
     {
         if (made >= R.count) break;
+        const int src = drawChoice (R, k).src;
+        if (perSource[src] >= cap) continue;
         const auto n = nameFor (R, k, used);
         if (n.isEmpty()) continue;
+        ++perSource[src];
         auto s = makeCandidate (R, k);
         s.name = n;
         used.add (n);

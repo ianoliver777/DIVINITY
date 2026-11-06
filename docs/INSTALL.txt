@@ -40,6 +40,15 @@ Bitwig        Settings > Locations > Rescan
 Studio One    Options > Locations > VST Plug-ins > Reset Blocklist, then restart
 
 
+NEW IN 0.9.1
+------------
+- The wave bank is now 271 presets, and every one is built on its own
+  core sound. 0.9.0 had 777, but each category only had ~15 core sounds,
+  so the same sound came back every 8-10 presets with different effects.
+  REESE 40, BASS 30, LEAD 35, SYNTH 35, PAD 35, TEXTURE 25, SEQUENCE 30,
+  PERCUSSION 16, FX 25.
+
+
 NEW IN 0.9.0
 ------------
 - A completely new 777-preset bank built for wave music and Reese bass:
