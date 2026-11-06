@@ -26,6 +26,16 @@ struct FactoryPreset
 
 std::vector<FactoryPreset> createFactoryPresets();
 
+// ---- offline preset-variety tooling (tests only) ----
+/** Candidate designs `first`..`first+count-1` for a category (seeded, unnamed). heroSlots gets, per preset
+    slot, the source / movement a hero name forces (-1 = free). forced* >= 0 pins the candidate's source / movement. */
+std::vector<FactoryPreset> createCandidatePresets (const juce::String& category, int first, int count,
+                                                   std::vector<std::pair<int, int>>* heroSlots = nullptr, int forcedSource = -1, int forcedMotion = -1);
+std::vector<FactoryPreset> createCandidatePresetsV7 (const juce::String& category, int first, int count,
+                                                     std::vector<std::pair<int, int>>* heroSlots, int forcedSource, int forcedMotion);
+juce::StringArray factoryCategoriesV7();
+int factoryCountV7 (const juce::String& category);
+
 //==============================================================================
 /**
     Owns preset discovery, loading, saving and favourites. All methods must be

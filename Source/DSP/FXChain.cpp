@@ -975,6 +975,10 @@ void FXChain::process (juce::AudioBuffer<float>& buffer, double bpm, const Synth
             juce::dsp::AudioBlock<float> block (buffer.getArrayOfWritePointers(), 2, (size_t) start, (size_t) n);
             juce::dsp::ProcessContextReplacing<float> ctxLim (block);
             limiter.process (ctxLim);
+            // juce::dsp::Limiter can overshoot its threshold by a fraction of a dB on very fast
+            // transients; a final hard ceiling makes "never above the ceiling" literally true.
+            const float ceil = juce::Decibels::decibelsToGain (limCeiling->load());
+            for (int s = 0; s < n; ++s) { L[s] = juce::jlimit (-ceil, ceil, L[s]); R[s] = juce::jlimit (-ceil, ceil, R[s]); }
         }
         limiterWasOn = limiterOn;
 

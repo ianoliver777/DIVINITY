@@ -117,6 +117,13 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 ### Guardian Angel (v0.3.0)
 - Fully offline. Answers questions from a knowledge base + every parameter's help text; builds sounds from plain-English descriptions (type + vibe words → factory base + SOUL/macro/mod adjustments); suggests one idea at a time with one-click DO IT; musically-safe randomiser (all outputs tested audible, finite and under the ceiling); explain mode (click any control); "make it brighter / wider / grittier..." tweaks. Every change is undoable.
 
+### v0.7.3 (preset variety)
+- Problem: `FactoryPresetsV7` gave each category ~10 archetypes chosen by `i % 10`, so presets 1, 11, 21... were the same core patch with seeded jitter and a different FX flavour.
+- Now (`FactoryPresetsV7Recipes.inc`): each category recipe has independent decks of SOURCES, MOTIONS, FILTERS, envelope/play styles and FX; each candidate draws from every deck (shuffled decks of different lengths, no fixed period), and no two share source + motion + filter. Descriptions are assembled from the chosen ingredients.
+- Selection (`FactoryPresetsV7Picks.inc`): a few hundred candidates per category were rendered and fingerprinted (spectrum shape, loudness envelope, per-band movement, stereo width; level-independent), then picked greedily for maximum nearest-neighbour distance; hero names keep their character. Result: median nearest-neighbour distance up 1.5-2x per category (SUB about 6x) and 0 near-duplicates (the 0.7.2 bank had 63, 45 of them in SUB).
+- Tests: `soundFingerprint` + a variety check (no near-duplicates per category) in `testFactoryPresets`; `DivinityTests <dir> --presets` runs only the preset checks.
+- FX: hard ceiling after `juce::dsp::Limiter` (it can overshoot by a fraction of a dB).
+
 ### v0.7.2
 - `ScopeFifo` is now a broadcast ring (one writer, any number of readers with their own cursors). Before, the scope, the CREATE spectrum and the EFFECTS analyzer shared a single-reader FIFO and whichever pulled first starved the others, which froze the EFFECTS graph.
 - EFFECTS output: `StereoImager`: per-FFT-bin pan (|R|²-|L|²)/(|R|²+|L|²) on x, log frequency on y, mid/side spread as a streak and colour (cyan to violet), fading trail; correlation + width readouts.

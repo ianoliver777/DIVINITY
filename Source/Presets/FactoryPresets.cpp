@@ -55,30 +55,39 @@ void applySoundEngine2Finish (FactoryPreset& p)
     }
 }
 
+/** SOUL ENGINE character per category (emotion mapping + Divine Intervention mode), then the finishing pass. */
+static void finishFactoryPreset (FactoryPreset& p)
+{
+    struct SoulStyle { const char* cat; int mapping; const char* divine; };
+    static const SoulStyle styles[] = {
+        { "BASS", 2, "Shatter" }, { "808", 2, "Collapse" }, { "SUB", 2, "Collapse" }, { "LEAD", 0, "Ascension" },
+        { "SYNTH", 4, "Bloom" }, { "PLUCK", 0, "Bloom" }, { "PAD", 1, "Bloom" }, { "PERCUSSION", 2, "Collapse" }, { "FX", 3, "Abyss" } };
+    for (auto& st : styles)
+        if (p.category == st.cat)
+        {
+            const auto& m = soulMappingPresets()[(size_t) st.mapping];
+            for (int t = 0; t < kNumSoulTargets; ++t)
+                p.set (ids::soul (t, "x"), m.w[t][0]).set (ids::soul (t, "y"), m.w[t][1]);
+            p.choice (ids::divineMode, st.divine);
+        }
+    applySoundEngine2Finish (p);
+}
+
 std::vector<FactoryPreset> createFactoryPresets()
 {
     std::vector<FactoryPreset> list;
     list.reserve (777);
     addLibraryV7 (list);
-
-    // SOUL ENGINE character per category: emotion mapping + Divine Intervention mode
-    struct SoulStyle { const char* cat; int mapping; const char* divine; };
-    const SoulStyle styles[] = {
-        { "BASS", 2, "Shatter" }, { "808", 2, "Collapse" }, { "SUB", 2, "Collapse" }, { "LEAD", 0, "Ascension" },
-        { "SYNTH", 4, "Bloom" }, { "PLUCK", 0, "Bloom" }, { "PAD", 1, "Bloom" }, { "PERCUSSION", 2, "Collapse" }, { "FX", 3, "Abyss" } };
-    for (auto& p : list)
-        for (auto& st : styles)
-            if (p.category == st.cat)
-            {
-                const auto& m = soulMappingPresets()[(size_t) st.mapping];
-                for (int t = 0; t < kNumSoulTargets; ++t)
-                    p.set (ids::soul (t, "x"), m.w[t][0]).set (ids::soul (t, "y"), m.w[t][1]);
-                p.choice (ids::divineMode, st.divine);
-            }
-
-    for (auto& p : list)
-        applySoundEngine2Finish (p);
+    for (auto& p : list) finishFactoryPreset (p);
     return list;
+}
+
+std::vector<FactoryPreset> createCandidatePresets (const juce::String& category, int first, int count,
+                                                   std::vector<std::pair<int, int>>* heroSlots, int forcedSource, int forcedMotion)
+{
+    auto v = createCandidatePresetsV7 (category, first, count, heroSlots, forcedSource, forcedMotion);
+    for (auto& p : v) finishFactoryPreset (p);
+    return v;
 }
 
 } // namespace divinity
