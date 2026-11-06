@@ -158,7 +158,15 @@ void SynthEngine::reset()
         for (auto& f : v.comb) for (auto& c : f) c.reset();
         v.noiseL.reset(); v.noiseR.reset();
         v.rampsValid = false;
+        // a reset engine plays exactly like a fresh one (voice choice and per-voice state included)
+        v.order = 0;
+        for (auto& o : v.phase) o.fill (0.0);
+        for (auto& o : v.foldPrev) o.fill (0.0f);
+        for (auto& o : v.syncBlep) o.fill (0.0f);
+        for (auto& o : v.warpDcValid) o.fill (false);
+        v.modPhase.fill (0.0);
     }
+    noteCounter = 0;
     uint32_t seed = 0xC0FFEEu;
     for (auto& l : lfos) l.reset (seed++);
     rndRng.seed (0x7A11D0u); rndPhase = 0.0; rndTarget = rndValue = rndPrevTarget = 0.0f;

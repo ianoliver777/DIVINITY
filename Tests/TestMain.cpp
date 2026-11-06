@@ -120,30 +120,257 @@ static void testParameters (DivinityProcessor& p)
     CHECK (missingHelp == 0, missingHelp << " parameters without plain-English help text");
 }
 
+//==============================================================================
+// 0.9.0 wave bank: does every name deliver what it promises? Each preset is rendered (held note, then a
+// release tail) and the words in its name are checked against measurements. Words that describe the
+// patch structure (a table, a sample, a filter type) are checked against the preset's own values.
+//==============================================================================
+static juce::var presetValue (const FactoryPreset& fp, const juce::String& id)
+{
+    juce::var v;
+    for (auto& [k, x] : fp.values) if (k == id) v = x;
+    return v;
+}
+
+struct HeldAnalysis
+{
+    float sustainDb = -120, tailDb = -120, centroidLog2 = 0, centroidStd = 0, rmsStd = 0, gateDepth = 0,
+          lowCorr = 1, crestDb = 0, riseOct = 0, riseDb = 0, earlyPeakDb = 0, pitchFallOct = 0;
+};
+
+static HeldAnalysis analyseHeld (const juce::AudioBuffer<float>& b, double sr, double holdSecs)
+{
+    HeldAnalysis a;
+    const int hold = (int) (holdSecs * sr), n = b.getNumSamples();
+    auto rmsOf = [&b] (int from, int len) { double e = 0; for (int c = 0; c < 2; ++c) for (int i = from; i < from + len; ++i) e += b.getSample (c, i) * b.getSample (c, i); return std::sqrt (e / (2.0 * len)); };
+    const int s0 = (int) (0.05 * sr);
+    // body = the loudest 100 ms of the held note (plucks decay, pads swell)
+    float body = 0; for (int f = 0; f + 4800 <= hold; f += 2400) body = std::max (body, (float) rmsOf (f, 4800));
+    a.sustainDb = juce::Decibels::gainToDecibels (body, -120.0f);
+    const int t0 = hold + (int) (0.3 * sr), tl = juce::jmin (n - t0, (int) (1.0 * sr));
+    a.tailDb = juce::Decibels::gainToDecibels ((float) rmsOf (t0, tl), -120.0f) - a.sustainDb;
+    // frames over the held part (frames more than 30 dB under the body are left out: tails / silence)
+    constexpr int order = 11, N = 1 << order;
+    juce::dsp::FFT fft (order);
+    std::vector<float> buf ((size_t) N * 2), cents, levels;
+    for (int f = s0; f + N < hold; f += N / 2)
+    {
+        std::fill (buf.begin(), buf.end(), 0.0f);
+        for (int i = 0; i < N; ++i) buf[(size_t) i] = 0.5f * (b.getSample (0, f + i) + b.getSample (1, f + i)) * (0.5f - 0.5f * std::cos (6.2831853f * i / N));
+        const float lv = juce::Decibels::gainToDecibels ((float) rmsOf (f, N), -100.0f);
+        if (lv < a.sustainDb - 30.0f) continue;
+        fft.performFrequencyOnlyForwardTransform (buf.data());
+        double num = 0, den = 0;
+        for (int k = 2; k < N / 2; ++k) { const double m = buf[(size_t) k]; num += m * k * sr / N; den += m; }
+        if (den > 1.0e-6) { cents.push_back ((float) std::log2 (num / den)); levels.push_back (lv); }
+    }
+    auto meanStd = [] (const std::vector<float>& v, float& mean, float& sd)
+    { mean = 0; sd = 0; if (v.empty()) return; for (auto x : v) mean += x; mean /= v.size(); for (auto x : v) sd += (x - mean) * (x - mean); sd = std::sqrt (sd / v.size()); };
+    float m; meanStd (cents, a.centroidLog2, a.centroidStd); meanStd (levels, m, a.rmsStd);
+    if (cents.size() >= 6)
+    {
+        const size_t t = cents.size() / 3;
+        float c1 = 0, c3 = 0, l1 = 0, l3 = 0;
+        for (size_t i = 0; i < t; ++i) { c1 += cents[i]; c3 += cents[cents.size() - 1 - i]; l1 += levels[i]; l3 += levels[levels.size() - 1 - i]; }
+        a.riseOct = (c3 - c1) / t; a.riseDb = (l3 - l1) / t;
+    }
+    // 10 ms gate depth (p90 - p10)
+    std::vector<float> g;
+    for (int f = s0; f + 480 < hold; f += 480) g.push_back (juce::Decibels::gainToDecibels ((float) rmsOf (f, 480), -100.0f));
+    if (! g.empty()) { std::sort (g.begin(), g.end()); a.gateDepth = g[(size_t) (g.size() * 0.9)] - g[(size_t) (g.size() * 0.1)]; }
+    // low-band L/R correlation (four one-pole low-passes at 100 Hz: the fundamental region)
+    {
+        const float k = 1.0f - std::exp (-6.2831853f * 100.0f / (float) sr);
+        float l1 = 0, l2 = 0, l3 = 0, l4 = 0, r1 = 0, r2 = 0, r3 = 0, r4 = 0; double lr = 0, ll = 0, rr = 0;
+        for (int i = 0; i < hold; ++i)
+        {
+            l1 += k * (b.getSample (0, i) - l1); l3 += k * (l1 - l3); l4 += k * (l3 - l4); l2 += k * (l4 - l2);
+            r1 += k * (b.getSample (1, i) - r1); r3 += k * (r1 - r3); r4 += k * (r3 - r4); r2 += k * (r4 - r2);
+            lr += l2 * r2; ll += l2 * l2; rr += r2 * r2;
+        }
+        a.lowCorr = (ll > 1.0e-9 && rr > 1.0e-9) ? (float) (lr / std::sqrt (ll * rr)) : 1.0f;
+    }
+    // pitch fall: zero-crossing rate of the low-passed signal (600 Hz), first vs last active third
+    {
+        const float k = 1.0f - std::exp (-6.2831853f * 600.0f / (float) sr);
+        std::vector<float> zc;
+        float y1 = 0, y2 = 0, prev = 0;
+        const int W = 4800;
+        for (int f = 0; f + W < hold; f += W)
+        {
+            int z = 0; double e = 0;
+            for (int i = f; i < f + W; ++i)
+            {
+                y1 += k * (0.5f * (b.getSample (0, i) + b.getSample (1, i)) - y1); y2 += k * (y1 - y2);
+                if ((prev <= 0.0f) != (y2 <= 0.0f)) ++z;
+                prev = y2; e += y2 * y2;
+            }
+            if (juce::Decibels::gainToDecibels ((float) std::sqrt (e / W), -100.0f) > a.sustainDb - 30.0f && z > 2) zc.push_back ((float) z);
+        }
+        if (zc.size() >= 4)
+        {
+            std::vector<float> late (zc.begin() + (long) (zc.size() / 2), zc.end());
+            std::sort (late.begin(), late.end());
+            a.pitchFallOct = std::log2 (0.5f * (zc[0] + zc[1]) / late[late.size() / 2]);
+        }
+    }
+    float peak = 0; for (int c = 0; c < 2; ++c) peak = std::max (peak, b.getMagnitude (c, 0, hold));
+    a.crestDb = juce::Decibels::gainToDecibels (peak, -100.0f) - juce::Decibels::gainToDecibels ((float) rmsOf (0, hold), -100.0f);
+    float early = 0; for (int c = 0; c < 2; ++c) early = std::max (early, b.getMagnitude (c, 0, (int) (0.12 * sr)));
+    a.earlyPeakDb = juce::Decibels::gainToDecibels (early, -100.0f) - juce::Decibels::gainToDecibels ((float) rmsOf ((int) (0.8 * sr), (int) (0.8 * sr)), -100.0f);
+    return a;
+}
+
+/** Beating: the harmonics of a detuned stack swell and cancel against each other. Rendered dry and with
+    every modulator off, so only the oscillators themselves can make the harmonics move. */
+static float beatingAmount (DivinityProcessor& p, const FactoryPreset& fp)
+{
+    FactoryPreset dry = fp;
+    for (int s = 0; s < kNumModSlots; ++s) dry.set (ids::mod (s, "amt"), 0.0);
+    dry.set (arpids::on, 0).set (ids::stepOn, 0).set (ids::revOn, 0).set (ids::dlyOn, 0).set (ids::choOn, 0).set (ids::analog, 0.0)
+       .set (fxids::tremOn, 0).set (fxids::phaseOn, 0).set (fxids::flangOn, 0).set (fxids::fshiftOn, 0).set (fxids::stereoOn, 0)
+       .set (ids::smpOn, 0).set (ids::noiseOn, 0).set (ids::subOn, 0).set (ids::env (0, "attack"), 0.01).set (ids::env (0, "sustain"), 1.0).set (ids::env (0, "decay"), 1.0);
+    p.presets.applyFactoryPreset (dry);
+    const double sr = 48000;
+    auto b = render (p, sr, 256, 3.0, { { 0.0, 3.0, 48, 0.9f } });   // C3, 130.8 Hz
+    constexpr int order = 13, N = 1 << order;
+    juce::dsp::FFT fft (order);
+    std::vector<std::vector<float>> mags;
+    std::vector<float> buf ((size_t) N * 2);
+    for (int f = (int) (0.3 * sr); f + N < b.getNumSamples(); f += 1024)
+    {
+        std::fill (buf.begin(), buf.end(), 0.0f);
+        for (int i = 0; i < N; ++i) buf[(size_t) i] = b.getSample (0, f + i) * (0.5f - 0.5f * std::cos (6.2831853f * i / N));
+        fft.performFrequencyOnlyForwardTransform (buf.data());
+        std::vector<float> h;
+        for (int k = 1; k <= 10; ++k)
+        {
+            const int c = (int) std::lround (130.81 * k * N / sr);
+            float m = 0; for (int d = -4; d <= 4; ++d) m = std::max (m, buf[(size_t) (c + d)]);
+            h.push_back (m);
+        }
+        mags.push_back (h);
+    }
+    std::vector<float> cv;
+    for (size_t k = 0; k < 10; ++k)
+    {
+        double mean = 0, sd = 0;
+        for (auto& f : mags) mean += f[k];
+        mean /= mags.size();
+        if (mean < 1.0e-3) continue;
+        for (auto& f : mags) sd += (f[k] - mean) * (f[k] - mean);
+        cv.push_back ((float) (std::sqrt (sd / mags.size()) / mean));
+    }
+    if (cv.empty()) return 0.0f;
+    std::sort (cv.begin(), cv.end());
+    return cv[cv.size() / 2];
+}
+
+/** Renders one preset and checks every word in its name that makes a measurable promise.
+    Returns "claim: why" for each broken promise; `tally` (optional) counts pass / fail per claim. */
+static juce::StringArray claimFailures (DivinityProcessor& p, const FactoryPreset& fp, std::map<juce::String, std::pair<int, int>>* tally = nullptr,
+                                        juce::String* verboseLine = nullptr)
+{
+    const double sr = 48000;
+    const auto& c = fp.category;
+    p.presets.applyFactoryPreset (fp);
+    std::vector<Note> notes;
+    const double hold = (c == "SEQUENCE" || c == "PERCUSSION" || c == "FX" || c == "TEXTURE") ? 3.0 : 2.0;
+    const int key = c == "REESE" || c == "BASS" ? 36 : c == "LEAD" ? 72 : 60;
+    if (c == "SEQUENCE") notes = { { 0.0, hold, 60, 0.9f }, { 0.0, hold, 63, 0.9f }, { 0.0, hold, 67, 0.9f } };
+    else notes = { { 0.0, hold, key, 0.9f } };
+    auto b = render (p, sr, 256, hold + 2.0, notes);
+    HeldAnalysis a = analyseHeld (b, sr, hold);
+    if (c == "FX")
+    {   // the gesture (rise / fall / hit) is judged dry: a long reverb tail would blur the direction
+        FactoryPreset dry = fp; dry.set (ids::revOn, 0).set (ids::dlyOn, 0).set (ids::choOn, 0);
+        p.presets.applyFactoryPreset (dry);
+        const auto da = analyseHeld (render (p, sr, 256, hold + 2.0, notes), sr, hold);
+        a.riseOct = da.riseOct; a.riseDb = da.riseDb; a.pitchFallOct = da.pitchFallOct; a.earlyPeakDb = da.earlyPeakDb;
+        p.presets.applyFactoryPreset (fp);
+    }
+    if (c == "SYNTH")
+    {   // keys / stabs / plucks: the tail is judged after a short played note, like they're used
+        a.tailDb = analyseHeld (render (p, sr, 256, 2.5, { { 0.0, 0.5, 60, 0.9f } }), sr, 0.5).tailDb;
+    }
+    const auto words = juce::StringArray::fromTokens (fp.name, " ", "");
+    auto has = [&words] (const char* w) { return words.contains (w); };
+    const float beat = has ("Reese") ? beatingAmount (p, fp) : -1.0f;
+
+    juce::StringArray fails;
+    auto check = [&] (const juce::String& claim, bool ok, const juce::String& why)
+    {
+        if (tally != nullptr) { auto& t = (*tally)[claim]; (ok ? t.first : t.second)++; }
+        if (! ok) fails.add (claim + ": " + why);
+    };
+    auto num = [&fp] (const juce::String& id, double def) { auto v = presetValue (fp, id); return v.isVoid() || v.isString() ? def : (double) v; };
+    auto str = [&fp] (const juce::String& id) { auto v = presetValue (fp, id); return v.isString() ? v.toString() : juce::String(); };
+    static const juce::StringArray moving { "Breathing", "Drifting", "Wobbling", "Rolling", "Sweeping", "Evolving", "Swirling", "Twisting", "Stepping",
+                                            "Growling", "Siren", "Glitch", "Sweep", "Whoosh", "Tidal" };
+    static const juce::StringArray gated { "Pulsing", "Gated", "Stuttering" };
+
+    // nothing is dry
+    const bool wetFamily = c == "LEAD" || c == "SYNTH" || c == "PAD" || c == "TEXTURE" || c == "SEQUENCE";
+    const double rev = num (ids::revOn, 0) > 0.5 ? num (ids::revMix, 0) : 0.0, dly = num (ids::dlyOn, 0) > 0.5 ? num (ids::dlyMix, 0) : 0.0;
+    check ("not dry", rev + dly >= (wetFamily ? 0.45 : 0.1), "reverb " + juce::String (rev, 2) + " + delay " + juce::String (dly, 2));
+    if (wetFamily) check ("wet tail", a.tailDb > -30.0f, "tail " + juce::String (a.tailDb, 1) + " dB after release");
+    if (c == "REESE" || c == "BASS") check ("mono low end", a.lowCorr > 0.9f, "low-band L/R correlation " + juce::String (a.lowCorr, 2));
+    if (c == "PERCUSSION") check ("clear transients", a.crestDb > 9.0f, "crest " + juce::String (a.crestDb, 1) + " dB");
+    if (beat >= 0) check ("Reese beats", beat > 0.12f, "harmonic beating " + juce::String (beat, 3));
+    if (has ("808")) check ("808 pitch drop", str (ids::osc (0, "wave")) == "Sine" && (str (ids::mod (0, "dst")) == "Osc A Pitch" || str (ids::mod (1, "dst")) == "Osc A Pitch"), "sine + pitch envelope");
+    if (has ("Dark"))
+    {   // dark = clearly darker than the same patch with its filter opened up
+        FactoryPreset open = fp; open.choice (ids::filt (0, "type"), "Off");
+        p.presets.applyFactoryPreset (open);
+        const auto oa = analyseHeld (render (p, sr, 256, hold + 0.5, notes), sr, hold);
+        check ("Dark", oa.centroidLog2 - a.centroidLog2 > 0.6f, "centroid " + juce::String (std::exp2 (a.centroidLog2), 0) + " Hz vs " + juce::String (std::exp2 (oa.centroidLog2), 0) + " Hz unfiltered");
+    }
+    if (has ("Open") && c != "PERCUSSION") check ("Open", str (ids::filt (0, "type")) == "Off" || num (ids::filt (0, "cutoff"), 0) >= 8000.0, "filter " + str (ids::filt (0, "type")));
+    for (auto& w : moving)
+        if (words.contains (w)) check ("moving (" + w + ")", a.centroidStd > 0.08f || a.rmsStd > 1.5f,
+                                       "centroid wobble " + juce::String (a.centroidStd, 3) + " oct, level wobble " + juce::String (a.rmsStd, 2) + " dB");
+    for (auto& w : gated)
+        if (words.contains (w) && c != "SEQUENCE") check ("gated (" + w + ")", a.gateDepth > 6.0f, "gate depth " + juce::String (a.gateDepth, 1) + " dB");
+    if (has ("Cathedral") || has ("Abyss") || has ("Distant") || has ("Cavern") || has ("Hall"))
+        check ("long tail", a.tailDb > (c == "REESE" || c == "BASS" || c == "PERCUSSION" ? -40.0f : c == "FX" ? -36.0f : -30.0f), "tail " + juce::String (a.tailDb, 1) + " dB");
+    if (has ("Echo") || has ("Tunnel")) check ("echoes", dly >= 0.15, "delay mix " + juce::String (dly, 2));
+    if (c == "FX" && has ("Riser")) check ("rises", a.riseOct > 0.3f || a.riseDb > 4.0f, "centroid " + juce::String (a.riseOct, 2) + " oct, level " + juce::String (a.riseDb, 1) + " dB");
+    if (c == "FX" && (has ("Downlifter") || has ("Drop")))
+        check ("falls", a.riseOct < -0.3f || a.riseDb < -4.0f || a.pitchFallOct > 0.3f, "pitch fall " + juce::String (a.pitchFallOct, 2) + " oct, centroid " + juce::String (a.riseOct, 2) + " oct, level " + juce::String (a.riseDb, 1) + " dB");
+    if (c == "FX" && has ("Impact")) check ("impact", a.earlyPeakDb > 6.0f, "early peak " + juce::String (a.earlyPeakDb, 1) + " dB over the tail");
+    if (c == "SEQUENCE" && has ("Rising"))  check ("arp up", str (arpids::mode) == "Up", str (arpids::mode));
+    if (c == "SEQUENCE" && has ("Falling")) check ("arp down", str (arpids::mode) == "Down", str (arpids::mode));
+    if (has ("Gliding")) check ("glide", num (ids::glide, 0) >= 60.0, juce::String (num (ids::glide, 0), 0) + " ms");
+    if (has ("Swelling")) check ("swell", num (ids::env (0, "attack"), 0) >= 0.08, juce::String (num (ids::env (0, "attack"), 0), 2) + " s attack");
+    if (verboseLine != nullptr)
+        *verboseLine = c + " | " + fp.name + " | tail " + juce::String (a.tailDb, 1) + " | cent " + juce::String (std::exp2 (a.centroidLog2), 0)
+                     + " | cstd " + juce::String (a.centroidStd, 3) + " | rstd " + juce::String (a.rmsStd, 2) + " | gate " + juce::String (a.gateDepth, 1)
+                     + " | beat " + juce::String (beat, 3) + " | lowCorr " + juce::String (a.lowCorr, 2) + " | crest " + juce::String (a.crestDb, 1);
+    return fails;
+}
+
+static void testWaveBankClaims (DivinityProcessor& p, bool verbose)
+{
+    std::cout << "\n== Wave bank: do the names deliver?\n";
+    const auto list = createFactoryPresets();
+    std::map<juce::String, std::pair<int, int>> tally;
+    juce::StringArray claimFails;
+    for (auto& fp : list)
+    {
+        juce::String line;
+        for (auto& f : claimFailures (p, fp, &tally, verbose ? &line : nullptr)) claimFails.add (fp.name + " [" + fp.category + "] " + f);
+        if (verbose) std::cout << "  " << line << "\n";
+    }
+    for (auto& [claim, t] : tally) std::cout << "  " << claim << ": " << t.first << " pass, " << t.second << " fail\n";
+    for (int i = 0; i < juce::jmin (60, claimFails.size()); ++i) std::cout << "    x " << claimFails[i] << "\n";
+    CHECK (claimFails.isEmpty(), "every measured name claim holds (" << claimFails.size() << " failures)");
+    int numbered = 0;
+    for (auto& fp : list) numbered += fp.name.containsAnyOf ("0123456789#") && ! fp.name.contains ("808");
+    CHECK (numbered == 0, "no numbered / cosmetic-variant names");
+}
+
 static void testFactoryPresets (DivinityProcessor& p)
 {
-    {
-        // 0.8.1 naming rules: 777 unique names, 1-3 words, no word used twice, no waveform words
-        const auto list = createFactoryPresets();
-        std::set<juce::String> names, words;
-        bool wordsUnique = true, clean = true, shape = true;
-        for (auto& fp : list)
-        {
-            names.insert (fp.name);
-            const auto ws = juce::StringArray::fromTokens (fp.name.replace ("//", " "), " ", "");
-            if (ws.size() < 1 || ws.size() > 3) shape = false;
-            for (auto& w : ws)
-            {
-                if (! words.insert (w.toUpperCase()).second) { wordsUnique = false; INFO ("repeated word: " << w); }
-                for (auto* bad : { "SAW", "SINE", "SQUARE", "TRIANGLE", "PULSE" })
-                    if (w.toUpperCase().contains (bad)) { clean = false; INFO ("waveform word: " << fp.name); }
-            }
-        }
-        CHECK (list.size() == 777 && names.size() == 777, "777 factory presets with 777 unique names");
-        CHECK (wordsUnique, "no word appears in more than one preset name");
-        CHECK (clean, "no waveform names in preset names");
-        CHECK (shape, "preset names are 1-3 words");
-    }
     std::cout << "\n== Factory preset integrity\n";
     auto list = createFactoryPresets();
     int bad = 0;
@@ -164,8 +391,8 @@ static void testFactoryPresets (DivinityProcessor& p)
     for (auto& fp : list) { if (names.contains (fp.name)) { ++dupes; std::cout << "  duplicate " << fp.name << "\n"; } names.add (fp.name);
                             empty += fp.name.trim().isEmpty(); perCat[fp.category]++; }
     CHECK (dupes == 0 && empty == 0, "factory preset names are unique and non-empty");
-    const std::pair<const char*, int> want[] = { { "BASS", 110 }, { "808", 90 }, { "SUB", 50 }, { "LEAD", 100 }, { "SYNTH", 90 },
-                                                 { "PLUCK", 80 }, { "PAD", 100 }, { "PERCUSSION", 77 }, { "FX", 80 } };
+    const std::pair<const char*, int> want[] = { { "REESE", 120 }, { "BASS", 80 }, { "LEAD", 90 }, { "SYNTH", 90 }, { "PAD", 95 },
+                                                 { "TEXTURE", 70 }, { "SEQUENCE", 90 }, { "PERCUSSION", 62 }, { "FX", 80 } };
     bool counts = perCat.size() == 9;
     for (auto& [c, n] : want) { counts &= perCat[c] == n; std::cout << "  " << c << " " << perCat[c] << "\n"; }
     CHECK (list.size() == 777 && counts, "777 factory presets in the nine categories (" << (int) list.size() << ")");
@@ -328,6 +555,8 @@ static void testStateRoundTrip (DivinityProcessor& p)
 
     // identical audio from both instances = deterministic recall (seeded randomness)
     p.presets.loadPreset (0); q.presets.loadPreset (0);
+    // let parameter smoothing glide from whatever was loaded before (p has played other presets) to the preset
+    render (p, 48000, 256, 0.5, {}); render (q, 48000, 256, 0.5, {});
     auto a = render (p, 48000, 256, 1.0, { { 0.0, 0.8, 60, 0.8f }, { 0.1, 0.7, 64, 0.8f } });
     auto b = render (q, 48000, 256, 1.0, { { 0.0, 0.8, 60, 0.8f }, { 0.1, 0.7, 64, 0.8f } });
     float maxDiff = 0;
@@ -996,7 +1225,7 @@ static float fingerprintDistance (const std::vector<float>& a, const std::vector
 static std::vector<Note> phraseFor (const juce::String& cat, bool arpPatch)
 {
     std::vector<Note> phrase;
-    if (cat == "BASS" || cat == "808" || cat == "SUB")
+    if (cat == "BASS" || cat == "REESE")
         phrase = { { 0.0, 0.45, 36, 1.0f }, { 0.5, 0.45, 36, 0.9f }, { 1.0, 0.7, 39, 1.0f }, { 1.75, 0.6, 34, 1.0f } };
     else if (cat == "PERCUSSION")
         phrase = { { 0.0, 4.0, 60, 1.0f } };   // hold one key: the loop plays itself
@@ -1006,7 +1235,9 @@ static std::vector<Note> phraseFor (const juce::String& cat, bool arpPatch)
         phrase = { { 0.0, 2.4, 60, 0.9f }, { 0.0, 2.4, 63, 0.9f }, { 0.0, 2.4, 67, 0.9f } };
     else if (cat == "LEAD")
         phrase = { { 0.0, 0.45, 72, 0.9f }, { 0.5, 0.45, 75, 0.9f }, { 1.0, 0.45, 79, 0.9f }, { 1.5, 0.9, 77, 0.9f } };
-    else if (cat == "PLUCK")
+    else if (cat == "SEQUENCE")
+        phrase = { { 0.0, 3.0, 60, 0.9f }, { 0.0, 3.0, 63, 0.9f }, { 0.0, 3.0, 67, 0.9f } };   // hold a chord: arp / sequence plays
+    else if (cat == "SYNTH")
         phrase = { { 0.0, 0.3, 60, 0.9f }, { 0.25, 0.3, 64, 0.8f }, { 0.5, 0.3, 67, 0.9f }, { 0.75, 0.3, 71, 0.8f }, { 1.0, 0.3, 72, 0.9f }, { 1.25, 0.3, 67, 0.8f }, { 1.5, 0.6, 64, 0.9f } };
     else
         phrase = { { 0.0, 2.5, 48, 0.8f }, { 0.0, 2.5, 55, 0.8f }, { 0.0, 2.5, 60, 0.8f }, { 0.0, 2.5, 63, 0.8f } };
@@ -1038,21 +1269,29 @@ static void pickVariedPresets (DivinityProcessor& p, const juce::File& incFile, 
     for (auto& cat : factoryCategoriesV7())
     {
         if (! only.isEmpty() && ! only.contains (cat)) continue;
-        const int N = factoryCountV7 (cat), M = juce::jmax (N * (cat == "808" ? 9 : 4), 240);   // 808s are the most alike family: bigger pool
+        const int N = factoryCountV7 (cat), M = juce::jmax (N * 4, 240);
         std::vector<std::pair<int, int>> heroes;
         auto cands = createCandidatePresets (cat, 0, M, &heroes);
         std::vector<std::vector<float>> fps ((size_t) M);
         std::vector<bool> ok ((size_t) M, false);
-        for (int k = 0; k < M; ++k) ok[(size_t) k] = measure (cands[(size_t) k], fps[(size_t) k]);
+        int rejected = 0;
+        for (int k = 0; k < M; ++k)
+        {
+            ok[(size_t) k] = measure (cands[(size_t) k], fps[(size_t) k]);
+            if (ok[(size_t) k] && ! claimFailures (p, cands[(size_t) k]).isEmpty()) { ok[(size_t) k] = false; ++rejected; }   // its name would lie
+        }
+        std::cout << "  " << cat << ": " << rejected << " of " << M << " candidates rejected (name not backed by the sound)\n";
 
-        std::vector<int> picks ((size_t) N, -1);
+        int valid = 0; for (bool v : ok) valid += v;
+        const int P = juce::jmin (valid, N + N / 2);   // ranked extras: the bank skips any whose name is already taken
+        std::vector<int> picks ((size_t) P, -1);
         std::vector<std::vector<float>> chosen;
         auto minDist = [&chosen] (const std::vector<float>& f)
         {
             float d = 1.0e9f; for (auto& c : chosen) d = std::min (d, fingerprintDistance (f, c)); return d;
         };
         // hero slots first: the best of 24 candidates that keep the hero's source / movement
-        for (int slot = 0; slot < N; ++slot)
+        for (int slot = 0; slot < juce::jmin (N, P); ++slot)
         {
             const auto [fs, fm] = heroes[(size_t) slot];
             if (fs < 0 && fm < 0) continue;
@@ -1071,7 +1310,7 @@ static void pickVariedPresets (DivinityProcessor& p, const juce::File& incFile, 
         }
         // everything else: farthest-point sampling over the pool
         std::vector<bool> taken ((size_t) M, false);
-        for (int slot = 0; slot < N; ++slot)
+        for (int slot = 0; slot < P; ++slot)
         {
             if (picks[(size_t) slot] >= 0) continue;
             float best = -1.0f; int bk = -1;
@@ -1081,7 +1320,7 @@ static void pickVariedPresets (DivinityProcessor& p, const juce::File& incFile, 
                 const float d = chosen.empty() ? (float) (M - k) : minDist (fps[(size_t) k]);
                 if (d > best) { best = d; bk = k; }
             }
-            if (bk < 0) { for (int k = 0; k < M; ++k) if (! taken[(size_t) k]) { bk = k; break; } }
+            if (bk < 0) break;
             taken[(size_t) bk] = true;
             picks[(size_t) slot] = bk;
             chosen.push_back (fps[(size_t) bk]);
@@ -1090,10 +1329,9 @@ static void pickVariedPresets (DivinityProcessor& p, const juce::File& incFile, 
         float worst = 1.0e9f;
         for (size_t a = 0; a < chosen.size(); ++a)
             for (size_t b = a + 1; b < chosen.size(); ++b) worst = std::min (worst, fingerprintDistance (chosen[a], chosen[b]));
-        int valid = 0; for (bool v : ok) valid += v;
         std::cout << "  " << cat.paddedRight (' ', 12) << N << " of " << M << " candidates (" << valid << " valid)   closest pair " << worst << "\n";
         inc << "{ \"" << cat << "\", { ";
-        for (int i = 0; i < N; ++i) inc << picks[(size_t) i] << (i + 1 < N ? ", " : "");
+        for (int i = 0; i < P; ++i) if (picks[(size_t) i] >= 0) inc << picks[(size_t) i] << (i + 1 < P ? ", " : "");
         inc << " } },\n";
     }
     incFile.replaceWithText (inc);
@@ -1164,7 +1402,7 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
             // 808 / SUB are sine-based by nature, so their fingerprints sit closer together
             // 808s / subs are sine-body families and render a little differently per platform (macOS CI
             // measured 808 pairs ~1 unit closer than Linux), so their copy threshold sits lower.
-            const float limit = (prints[a].cat == "808" || prints[a].cat == "SUB") ? kNearDuplicate * 0.66f : kNearDuplicate;
+            const float limit = (prints[a].cat == "BASS" || prints[a].cat == "REESE") ? kNearDuplicate * 0.66f : kNearDuplicate;
             if (best < limit) { ++dc.first; if (dc.first <= 4) std::cout << "  near-duplicate: " << prints[a].name << " ~ " << prints[bi].name << " (" << best << ")\n"; }
             csv << prints[a].name << "," << prints[a].cat << "," << best << "," << prints[bi].name;
             for (auto v : prints[a].f) csv << "," << v;
@@ -1278,21 +1516,28 @@ static void testGuardianAngel (DivinityProcessor& p)
     CHECK (r.text.contains ("Ctrl+Z"), "answers how-to questions");
 
     r = brain.ask ("make me a dark aggressive bass");
-    CHECK (p.presets.getCurrentName() == "ROTTEN LEVIATHAN" && p.apvts.getRawParameterValue (ids::soulX)->load() > 0.6f
-           && p.apvts.getRawParameterValue (ids::soulY)->load() < 0.4f, "\"dark aggressive bass\" builds from Abyss Reese, pushed aggressive + dark");
+    auto currentIs = [&p] (const juce::String& cat, const juce::String& word)
+    {
+        for (auto& pr : p.presets.getPresets())
+            if (pr.isFactory && pr.name == p.presets.getCurrentName()) return pr.category == cat && (word.isEmpty() || juce::StringArray::fromTokens (pr.name, " ", "").contains (word));
+        return false;
+    };
+    CHECK (currentIs ("REESE", "Reese") && p.apvts.getRawParameterValue (ids::soulX)->load() > 0.6f
+           && p.apvts.getRawParameterValue (ids::soulY)->load() < 0.4f, "\"dark aggressive bass\" builds from a reese, pushed aggressive + dark");
     r = brain.createSound ("dreamy evolving wide pad");
-    CHECK (p.presets.getCurrentName() == "CELESTIAL NIRVANA" && p.apvts.getRawParameterValue (ids::macro (1))->load() > 0.3f
+    CHECK (currentIs ("PAD", "Pad") && p.apvts.getRawParameterValue (ids::macro (1))->load() > 0.3f
            && p.apvts.getRawParameterValue (ids::divineAmount)->load() > 0.2f, "\"dreamy evolving wide pad\" adds movement + Divine");
     {
         // the 0.7 library is reachable by asking
-        const std::pair<const char*, const char*> asks[] = { { "make me a grime 808", "FADED ASPHALT" }, { "give me an icy eski bell", "CLEAN OPAL" },
-                                                             { "dark wave pad please", "HEAVEN" }, { "make a wave reese", "HOLLOW UNDERTOW" },
-                                                             { "8-bit lead", "BURNING//TRUMPET" }, { "a distorted 808 that slaps", "DROWNED MIDNIGHT" },
-                                                             { "trap hat loop", "CLOCKWORK" }, { "give me a riser", "ASCENSION" },
-                                                             { "make something that sounds like a grime lead", "RISING WINGS" } };
+        struct Ask { const char* q; const char* cat; const char* word; };
+        const Ask asks[] = { { "make me a grime 808", "BASS", "808" }, { "give me an icy eski bell", "SYNTH", "Bell" },
+                             { "dark wave pad please", "PAD", "" }, { "make a wave reese", "REESE", "Reese" },
+                             { "8-bit lead", "LEAD", "Chip" }, { "a distorted 808 that slaps", "BASS", "Distorted" },
+                             { "trap hat loop", "PERCUSSION", "Hats" }, { "give me a riser", "FX", "Riser" },
+                             { "make something that sounds like a grime lead", "LEAD", "Square" } };
         int hits = 0;
-        for (auto& [q, want] : asks) { brain.createSound (q); const bool ok = p.presets.getCurrentName() == want; hits += ok; if (! ok) std::cout << "    \"" << q << "\" -> " << p.presets.getCurrentName() << "\n"; }
-        CHECK (hits == 9, "Guardian Angel builds from the 0.7 library (" << hits << "/9)");
+        for (auto& a : asks) { brain.createSound (a.q); const bool ok = currentIs (a.cat, a.word); hits += ok; if (! ok) std::cout << "    \"" << a.q << "\" -> " << p.presets.getCurrentName() << "\n"; }
+        CHECK (hits == 9, "Guardian Angel builds from the matching family of the bank (" << hits << "/9)");
         r = brain.ask ("how do i use the arp");
         CHECK (r.text.contains ("ARP") && r.text.contains ("LATCH"), "Guardian Angel explains the arpeggiator");
     }
@@ -1467,7 +1712,7 @@ static void testSoundEngine2 (DivinityProcessor& p)
         int missing = 0;
         for (auto& fp : createFactoryPresets())
         {
-            if (fp.category == "SUB" || fp.category == "808" || fp.category == "PERCUSSION") continue;
+            if (fp.category == "BASS" || fp.category == "PERCUSSION") continue;
             bool wheel = false, touch = false;
             for (auto& [id, v] : fp.values) { wheel |= v.toString() == "Mod Wheel"; touch |= v.toString() == "Aftertouch"; }
             if (! (wheel && touch)) { ++missing; std::cout << "    no wheel/aftertouch: " << fp.name << "\n"; }
@@ -1797,6 +2042,33 @@ static void testVersion08 (DivinityProcessor& p)
     }
 }
 
+/** Offline: measures every factory preset with its current trim and writes the trims that bring it to
+    -18 dBFS RMS on its category phrase (run, rebuild, run again: the limiter / saturation are nonlinear). */
+static void writeLevelTrims (DivinityProcessor& p, const juce::File& incFile)
+{
+    std::map<juce::String, double> current;
+    for (auto& line : juce::StringArray::fromLines (incFile.loadFileAsString()))
+        if (line.contains ("\""))
+            current[line.fromFirstOccurrenceOf ("\"", false, false).upToFirstOccurrenceOf ("\"", false, false)]
+                = line.fromLastOccurrenceOf (",", false, false).upToFirstOccurrenceOf ("}", false, false).trim().getDoubleValue();
+    juce::String inc;
+    const auto& list = p.presets.getPresets();
+    float worst = 0;
+    for (int i = 0; i < list.size(); ++i)
+    {
+        if (! list[i].isFactory) continue;
+        p.presets.loadPreset (i);
+        const bool arpPatch = p.apvts.getRawParameterValue (arpids::on)->load() > 0.5f;
+        auto b = render (p, 48000, 256, 4.5, phraseFor (list[i].category, arpPatch));
+        const float rms = juce::Decibels::gainToDecibels (b.getRMSLevel (0, 0, (int) (2.5 * 48000)), -120.0f);
+        const double trim = juce::jlimit (-24.0, 18.0, current[list[i].name] + (-18.0 - rms));
+        worst = std::max (worst, std::abs (-18.0f - rms));
+        inc << "{ \"" << list[i].name << "\", " << juce::String (trim, 1) << " },\n";
+    }
+    incFile.replaceWithText (inc);
+    std::cout << "  wrote " << incFile.getFullPathName() << "  (largest correction this pass " << worst << " dB)\n";
+}
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1809,6 +2081,21 @@ int main (int argc, char** argv)
         auto procOwner = std::make_unique<DivinityProcessor>();   // heap: the processor is ~350 KB (Windows stacks are 1 MB)
         auto& p = *procOwner;
         pickVariedPresets (p, juce::File (juce::String (argv[3])), argc > 4 ? juce::StringArray::fromTokens (juce::String (argv[4]), ",", "") : juce::StringArray());
+        return 0;
+    }
+    if (argc > 3 && juce::String (argv[2]) == "--levels")
+    {
+        auto procOwner = std::make_unique<DivinityProcessor>();
+        writeLevelTrims (*procOwner, juce::File (juce::String (argv[3])));
+        if (argc > 4)
+        {   // bank manifest: index, category, name, tags, description
+            juce::String csv ("index,category,name,tags,description\n");
+            int i = 0;
+            auto q = [] (juce::String x) { return "\"" + x.replace ("\"", "\"\"") + "\""; };
+            for (auto& fp : createFactoryPresets())
+                csv << ++i << "," << fp.category << "," << q (fp.name) << "," << q (fp.tags) << "," << q (fp.description) << "\n";
+            juce::File (juce::String (argv[4])).replaceWithText (csv);
+        }
         return 0;
     }
     if (argc > 2 && juce::String (argv[2]) == "--v08")
@@ -1826,7 +2113,7 @@ int main (int argc, char** argv)
         auto procOwner = std::make_unique<DivinityProcessor>();   // heap: the processor is ~350 KB (Windows stacks are 1 MB)
         auto& p = *procOwner;
         testFactoryPresets (p);
-        renderPresetDemos (p, outDir.getChildFile ("preset-demos"));
+        testWaveBankClaims (p, argc > 3 && juce::String (argv[3]) == "--verbose");
         std::cout << "\n" << (checks - failures) << " / " << checks << " checks passed\n";
         return failures == 0 ? 0 : 1;
     }
@@ -1835,6 +2122,7 @@ int main (int argc, char** argv)
         auto& p = *procOwner;
         testParameters (p);
         testFactoryPresets (p);
+        testWaveBankClaims (p, false);
         testEnvelopeTiming();
         testPitch (p);
         testModRouting (p);
