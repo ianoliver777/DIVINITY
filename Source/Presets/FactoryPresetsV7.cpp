@@ -1,6 +1,6 @@
-// DIVINITY factory library (0.9.0 wave bank): 777 presets in nine categories.
+// DIVINITY factory library (0.9.1 wave bank): 271 presets in nine categories, one per core sound.
 //
-//   REESE 120 . BASS 80 . LEAD 90 . SYNTH 90 . PAD 95 . TEXTURE 70 . SEQUENCE 90 . PERCUSSION 62 . FX 80
+//   REESE 40 . BASS 30 . LEAD 35 . SYNTH 35 . PAD 35 . TEXTURE 25 . SEQUENCE 30 . PERCUSSION 16 . FX 25
 //   Recipes: FactoryPresetsV8Recipes.inc. (The patch helpers and effect flavours below are shared.)
 //
 // Every preset = a category archetype (the engine, envelopes, routing and core
@@ -237,6 +237,7 @@ std::vector<FactoryPreset> createCandidatePresetsV7 (const juce::String& categor
                          &R.styles[(size_t) c.sty].word, &R.sources[(size_t) c.src].word })
             if (x->isNotEmpty()) w.add (*x);
         s.name = w.joinIntoString (" ");
+        s.tags << ", src:" << c.src;   // core-sound id, so the picker can keep one preset per core sound
         v.push_back (toFactoryPreset (s, 0.0));
     }
     return v;
