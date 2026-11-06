@@ -304,7 +304,7 @@ GuardianBrain::Reply GuardianBrain::createSound (const juce::String& raw)
         { { "wave+arp", "arp", "sequence" }, "SEQUENCE|Reese Arp;SEQUENCE|Arp", "arp" },
         { { "wave+vox", "wave+vocal", "vocal chop", "vox chop" }, "LEAD|Choir Lead", "vocal lead" },
         { { "wave+lead", "wave+supersaw" }, "LEAD|Supersaw Lead;LEAD|Reese Lead", "wave lead" },
-        { { "grime+pad", "grey", "dark+pad" }, "PAD|Dark Reese Pad;PAD|Dark", "dark pad" },
+        { { "grime+pad", "grey", "dark+pad" }, "PAD|Dark Reese Pad;PAD|Dark;PAD|Abyss;PAD|Distant", "dark pad" },
         { { "wave+pad", "ethereal", "wave music", "wavey" }, "PAD|Reese Pad", "wave pad" },
         { { "wave+atmos", "wave+ambient", "northern", "drone", "dark ambient" }, "TEXTURE|Drone;TEXTURE|Reese Drone", "drone" },
         { { "stab" }, "SYNTH|Stab", "stab" },

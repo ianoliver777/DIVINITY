@@ -423,7 +423,7 @@ CategoryRecipe synthRecipe()
         ING ("", "steady", "", p.set (ids::analog, 0.2)),
         ING ("Breathing", "a slow filter breath", "Moving", p.lfo (0, "Sine", p.j (0.16, 0.3), 1.0, 0.4).mod ("LFO 1", cutoffOrPos (p), 0.35)),
         ING ("Pulsing", "a sixteenth-note gate", "Pulsing", p.trem ("Square", "1/16", 0.75)),
-        ING ("Evolving", "a slow drift through the table", "Moving", p.lfo (0, "Triangle", p.j (0.08, 0.3), 1.0, 0.5).mod ("LFO 1", posOrCutoff (p), 0.45)),
+        ING ("Evolving", "a slow drift through the table", "Moving", p.lfo (0, "Triangle", p.j (0.08, 0.3), 1.0, 0.5).mod ("LFO 1", posOrCutoff (p), 0.6)),
         ING ("Swirling", "a slow phaser swirl", "Moving", p.phaser (0.12, 0.8, 900, 0.5, 0.5)),
         ING ("Wobbling", "a quarter-note wobble", "Wobble", p.lfoSync (0, "Sine", "1/4", 1.0, 0.1).mod ("LFO 1", cutoffOrPos (p), 0.45)),
     };

@@ -481,7 +481,13 @@ namespace
         void prepare (double sr, int maxBlock) override { fs = sr; spec = { sr, (juce::uint32) maxBlock, 2 }; phaser.prepare (spec); reset(); }
         // juce::dsp::Phaser::reset() keeps its smoothed LFO depth / filter state: re-preparing with the same spec
         // (no reallocation at the same size) makes a restarted phaser sound the same every time
-        void reset() override { phaser.prepare (spec); phaser.reset(); }
+        void reset() override
+        {
+            // juce::dsp::Phaser's smoothers restart from their last *target* on reset(): park the targets first so a
+            // restarted phaser always starts from the same state as a fresh one
+            phaser.setDepth (0.0f); phaser.setFeedback (0.0f); phaser.setMix (0.0f);
+            phaser.prepare (spec); phaser.reset();
+        }
         void process (float* L, float* R, int n, const FxContext&) noexcept override
         {
             phaser.setRate (rate->load()); phaser.setDepth (depth->load());
