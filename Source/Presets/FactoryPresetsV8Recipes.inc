@@ -442,6 +442,8 @@ CategoryRecipe synthRecipe()
     R.spaces = wetSpaces();
     R.characters = { Clean, Clean, Wide, Tape, Dream, LoFi, Motion };
     R.templates = { "P S", "M S", "F S", "Y S", "P M S", "Y P S", "M F S", "P F S" };
+    // the choir sample is louder than its formant table, so a table drift barely shows: no "Evolving" choir keys
+    R.allowed = [] (const juce::String& s, const juce::String& m) { return ! (s == "Choir Keys" && m == "Evolving"); };
     R.base = [] (Patch& p) { p.voices (10).level (-10.0).drift (0.25); };
     R.finish = [] (Patch& p) { p.stereo (1.4, true, 120.0); };
     return R;
