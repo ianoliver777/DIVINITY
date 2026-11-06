@@ -284,6 +284,18 @@ void addLibraryV7 (std::vector<FactoryPreset>& list)
     buildFromRecipe (recipeFx(), specs, used);
 
     for (auto& s : specs) list.push_back (toFactoryPreset (s, levelTrim (s.name)));
+
+    // 0.8.1: display names (celestial / nostalgic set, every word used once). Applied after the bank is
+    // built and level-matched, so the sounds are exactly the 0.7.3 ones; the internal design names above
+    // stay as keys for the recipes, picks and level table. Manifest: docs/PRESET_NAMES.csv.
+    static const char* const kNames[] = {
+       #include "FactoryPresetsV7Names.inc"
+    };
+    constexpr int kNumNames = (int) (sizeof (kNames) / sizeof (kNames[0]));
+    const int first = (int) list.size() - (int) specs.size();
+    jassert ((int) specs.size() == kNumNames);
+    for (int i = 0; i < juce::jmin ((int) specs.size(), kNumNames); ++i)
+        list[(size_t) (first + i)].name = kNames[i];
 }
 
 namespace
