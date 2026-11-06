@@ -526,7 +526,7 @@ CategoryRecipe textureRecipe()
              p.lfo (0, "Sine", p.j (0.45, 0.2), 1.0, 0.3).mod ("LFO 1", "Filter 1 Cutoff", 0.7)),
     };
     R.filters = {
-        ING ("Dark", "through a dark low-pass", "", p.filt (0, "Low Pass 24", p.j (380, 0.2), 0.1, 0.0, 0.0)),
+        ING ("Dark", "through a dark low-pass", "", p.filt (0, "Low Pass 24", p.j (550, 0.2), 0.1, 0.0, 0.0)),
         ING ("Distant", "through a band-pass, like it's next door", "", p.filt (0, "Band Pass", p.j (900, 0.3), 0.3, 0.0, 0.0)),
         ING ("Soft", "through a soft 12 dB low-pass", "", p.filt (0, "Low Pass 12", p.j (3500, 0.3), 0.1, 0.0, 0.0)),
         ING ("Open", "unfiltered", "", p.filt (0, "Off", 15000, 0.0)),
@@ -539,6 +539,11 @@ CategoryRecipe textureRecipe()
     R.characters = { Clean, Clean, LoFi, Tape, Shimmer, Wide };
     R.templates = { "M S", "F S", "P S", "M F S", "P M S", "F P S" };
     R.allowedMotionFilter = [] (const juce::String& m, const juce::String& f) { return f != "Open" || m.isEmpty() || m == "Swirling"; };
+    R.allowedFilter = [] (const juce::String& s, const juce::String& f)
+    {   // the sampled beds measure only slightly darker through the low-pass: "Dark" is kept for the synthesized ones
+        if (f != "Dark") return true;
+        return s == "Reese Drone" || s == "Drone" || s == "Noise Wash" || s == "Static";
+    };
     R.allowed = [] (const juce::String& s, const juce::String& m)
     {   // noise beds don't swirl audibly through a phaser
         if (m == "Swirling") return s == "Reese Drone" || s == "Choir Haze" || s == "Drone" || s == "Chimes" || s == "Swell";
