@@ -1015,7 +1015,7 @@ static void pickVariedPresets (DivinityProcessor& p, const juce::File& incFile, 
     for (auto& cat : factoryCategoriesV7())
     {
         if (! only.isEmpty() && ! only.contains (cat)) continue;
-        const int N = factoryCountV7 (cat), M = juce::jmax (N * 4, 240);
+        const int N = factoryCountV7 (cat), M = juce::jmax (N * (cat == "808" ? 9 : 4), 240);   // 808s are the most alike family: bigger pool
         std::vector<std::pair<int, int>> heroes;
         auto cands = createCandidatePresets (cat, 0, M, &heroes);
         std::vector<std::vector<float>> fps ((size_t) M);
