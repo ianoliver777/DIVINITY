@@ -3,7 +3,7 @@
 **TRIPLE SEVEN AUDIO — Engineered to Feel.**
 Hybrid software synthesizer · VST3 / AU / Standalone · macOS (Apple Silicon + Intel) & Windows · JUCE / C++17
 
-Current version: **0.7.1** — the interface now matches the v0.7 reference design (0.7.0 brought the new UI, OSC D + SAMPLER, 8 macros, a 16-step sequencer, 82 new wavetables (88 total) and a brand-new 777-preset library in nine categories). Built on Sound Engine 2.0 (old projects still auto-load on the Classic 1.0 engine). Measurements: [`docs/SOUND_ENGINE_2.md`](docs/SOUND_ENGINE_2.md). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
+Current version: **0.7.2** — MIDI generator with drag-to-DAW, spectral stereo imager on EFFECTS (0.7.1: — the interface matches the v0.7 reference design; 0.7.0 brought the new UI, OSC D + SAMPLER, 8 macros, a 16-step sequencer, 82 new wavetables (88 total) and a brand-new 777-preset library in nine categories). Built on Sound Engine 2.0 (old projects still auto-load on the Classic 1.0 engine). Measurements: [`docs/SOUND_ENGINE_2.md`](docs/SOUND_ENGINE_2.md). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
 
 ---
 

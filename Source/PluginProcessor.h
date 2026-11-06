@@ -9,35 +9,50 @@
 #include "DSP/StepSequencer.h"
 #include "DSP/Sampler.h"
 #include "Presets/PresetManager.h"
+#include "Midi/MidiPreview.h"
 
 namespace divinity
 {
 //==============================================================================
-/** Lock-free single-producer/single-consumer ring of mono samples for the UI scope. */
+/** Lock-free broadcast ring of stereo samples for the UI meters (scope, spectrum, stereo imager).
+    One writer (the audio thread); any number of readers, each with its own cursor, so a visible
+    display never starves another one. Readers that fall behind skip ahead to recent audio. */
 class ScopeFifo
 {
 public:
-    static constexpr int kSize = 8192;
+    static constexpr int kSize = 16384;   // power of two
     void push (const float* l, const float* r, int n) noexcept
     {
-        int s1, z1, s2, z2;
-        fifo.prepareToWrite (n, s1, z1, s2, z2);
-        for (int i = 0; i < z1; ++i) data[(size_t) (s1 + i)] = 0.5f * (l[i] + r[i]);
-        for (int i = 0; i < z2; ++i) data[(size_t) (s2 + i)] = 0.5f * (l[z1 + i] + r[z1 + i]);
-        fifo.finishedWrite (z1 + z2);
+        auto w = written.load (std::memory_order_relaxed);
+        for (int i = 0; i < n; ++i)
+        {
+            const auto idx = (size_t) ((w + i) & (kSize - 1));
+            left[idx] = l[i];
+            right[idx] = r[i];
+        }
+        written.store (w + n, std::memory_order_release);
     }
-    int pull (float* dest, int maxN) noexcept
+    /** Copies the samples written since `cursor` (at most maxN) and advances the cursor.
+        mono gets (L+R)/2; left / right (optional) get the channels. Returns the count. */
+    int pull (juce::int64& cursor, float* mono, int maxN, float* l = nullptr, float* r = nullptr) const noexcept
     {
-        int s1, z1, s2, z2;
-        fifo.prepareToRead (juce::jmin (maxN, fifo.getNumReady()), s1, z1, s2, z2);
-        std::copy (data.begin() + s1, data.begin() + s1 + z1, dest);
-        std::copy (data.begin() + s2, data.begin() + s2 + z2, dest + z1);
-        fifo.finishedRead (z1 + z2);
-        return z1 + z2;
+        const auto total = written.load (std::memory_order_acquire);
+        if (cursor > total || total - cursor > kSize / 2) cursor = total - std::min<juce::int64> ((juce::int64) maxN, (juce::int64) (kSize / 2));
+        if (cursor < 0) cursor = 0;
+        const int n = (int) std::min<juce::int64> ((juce::int64) maxN, total - cursor);
+        for (int i = 0; i < n; ++i)
+        {
+            const auto idx = (size_t) ((cursor + i) & (kSize - 1));
+            if (mono != nullptr) mono[i] = 0.5f * (left[idx] + right[idx]);
+            if (l != nullptr) l[i] = left[idx];
+            if (r != nullptr) r[i] = right[idx];
+        }
+        cursor += n;
+        return n;
     }
 private:
-    juce::AbstractFifo fifo { kSize };
-    std::array<float, kSize> data {};
+    std::atomic<juce::int64> written { 0 };
+    std::array<float, kSize> left {}, right {};
 };
 
 //==============================================================================
@@ -81,6 +96,17 @@ public:
     PresetManager presets;
     ScopeFifo scope;      // post-FX (what you hear)
     ScopeFifo scopePre;   // pre-FX (the raw voices) for the spectrum's PRE view
+
+    // MIDI generator (PLAY tab): audition player + the generator's state (message thread)
+    MidiPreview midiPreview;
+    std::atomic<double> hostBpm { 120.0 };
+    struct MidiGenState
+    {
+        midigen::Settings settings;
+        midigen::Progression progression;
+        midigen::Clip clip;
+        bool hasClip = false;
+    } midiGen;
 
     std::atomic<float> meterL { 0 }, meterR { 0 };
     std::atomic<float> cpuLoad { 0 };

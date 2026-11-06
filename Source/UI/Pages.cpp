@@ -1,4 +1,5 @@
 #include "Pages.h"
+#include "MidiGenPanel.h"
 #include "../PluginProcessor.h"
 
 namespace divinity::ui
@@ -17,9 +18,9 @@ SpectrumAnalyzer::SpectrumAnalyzer (DivinityProcessor& p) : proc (p)
     startTimerHz (30);
 }
 
-void SpectrumAnalyzer::analyse (Chan& c, ScopeFifo& fifo)
+void SpectrumAnalyzer::analyse (Chan& c, ScopeFifo& fifo, juce::int64& cursor)
 {
-    const int n = fifo.pull (pull.data(), (int) pull.size());
+    const int n = fifo.pull (cursor, pull.data(), (int) pull.size());
     for (int i = 0; i < n; ++i) { c.ring[(size_t) c.writePos] = pull[(size_t) i]; c.writePos = (c.writePos + 1) % kSize; }
     for (int i = 0; i < kSize; ++i) fftData[(size_t) i] = c.ring[(size_t) ((c.writePos + i) % kSize)];
     std::fill (fftData.begin() + kSize, fftData.end(), 0.0f);
@@ -35,9 +36,9 @@ void SpectrumAnalyzer::analyse (Chan& c, ScopeFifo& fifo)
 
 void SpectrumAnalyzer::timerCallback()
 {
-    if (! visibleInTree (*this)) { proc.scope.pull (pull.data(), (int) pull.size()); proc.scopePre.pull (pull.data(), (int) pull.size()); return; }
-    analyse (post, proc.scope);
-    analyse (pre, proc.scopePre);
+    if (! visibleInTree (*this)) return;   // every display has its own cursor: nothing to drain
+    analyse (post, proc.scope, postCursor);
+    analyse (pre, proc.scopePre, preCursor);
     repaint();
 }
 
@@ -104,6 +105,153 @@ void SpectrumAnalyzer::paint (juce::Graphics& g)
     if (mode == 1) drawCurve (pre, accent, true);
     else if (mode == 2) { drawCurve (post, accent, true); drawCurve (pre, juce::Colour (0xffb58cff), false); }
     else drawCurve (post, accent, true);
+}
+
+//==============================================================================
+// StereoImager
+//==============================================================================
+StereoImager::StereoImager (DivinityProcessor& p) : proc (p)
+{
+    ringL.assign (kSize, 0.0f); ringR.assign (kSize, 0.0f);
+    pullL.assign (ScopeFifo::kSize, 0.0f); pullR.assign (ScopeFifo::kSize, 0.0f);
+    fl.assign (kSize * 2, 0.0f); fr.assign (kSize * 2, 0.0f);
+    setTooltip ("Spectral stereo imager. Each dot is a frequency: left/right is where it sits in the stereo field, "
+                "the streak is how wide it is, low end at the bottom. Correlation: +1 mono-safe, 0 very wide, below 0 phase problems.");
+    startTimerHz (30);
+}
+
+juce::Rectangle<float> StereoImager::plotArea() const
+{
+    return getLocalBounds().toFloat().reduced (10.0f, 8.0f).withTrimmedLeft (30.0f).withTrimmedBottom (34.0f);
+}
+
+void StereoImager::resized()
+{
+    auto a = plotArea();
+    trail = juce::Image (juce::Image::ARGB, juce::jmax (1, (int) a.getWidth()), juce::jmax (1, (int) a.getHeight()), true);
+}
+
+void StereoImager::timerCallback()
+{
+    if (! visibleInTree (*this) || ! trail.isValid()) return;
+    const int n = proc.scope.pull (cursor, nullptr, (int) pullL.size(), pullL.data(), pullR.data());
+    for (int i = 0; i < n; ++i)
+    {
+        ringL[(size_t) writePos] = pullL[(size_t) i];
+        ringR[(size_t) writePos] = pullR[(size_t) i];
+        writePos = (writePos + 1) & (kSize - 1);
+    }
+
+    // time-domain correlation / width / level over the analysis window
+    double sLR = 0, sLL = 0, sRR = 0, sM = 0, sS = 0;
+    for (int i = 0; i < kSize; ++i)
+    {
+        const float l = ringL[(size_t) ((writePos + i) & (kSize - 1))], r = ringR[(size_t) ((writePos + i) & (kSize - 1))];
+        fl[(size_t) i] = l; fr[(size_t) i] = r;
+        sLR += l * r; sLL += l * l; sRR += r * r;
+        const float m = 0.5f * (l + r), sd = 0.5f * (l - r);
+        sM += m * m; sS += sd * sd;
+    }
+    const bool silent = sLL + sRR < 1.0e-9;
+    const float corr = silent ? 1.0f : (float) (sLR / std::sqrt (juce::jmax (1.0e-20, sLL * sRR)));
+    const float wid = silent ? 0.0f : (float) (std::sqrt (sS) / (std::sqrt (sM) + std::sqrt (sS) + 1.0e-12));
+    correlation += 0.2f * (corr - correlation);
+    width += 0.2f * (wid - width);
+    level = silent ? 0.0f : (float) std::sqrt ((sLL + sRR) / (2.0 * kSize));
+
+    // fade the trail, then draw this frame's bins
+    trail.multiplyAllAlphas (0.78f);
+    if (! silent)
+    {
+        std::fill (fl.begin() + kSize, fl.end(), 0.0f);
+        std::fill (fr.begin() + kSize, fr.end(), 0.0f);
+        window.multiplyWithWindowingTable (fl.data(), (size_t) kSize);
+        window.multiplyWithWindowingTable (fr.data(), (size_t) kSize);
+        fft.performRealOnlyForwardTransform (fl.data(), true);
+        fft.performRealOnlyForwardTransform (fr.data(), true);
+
+        juce::Graphics g (trail);
+        const float w = (float) trail.getWidth(), h = (float) trail.getHeight(), cx = w * 0.5f;
+        const double sr = juce::jmax (8000.0, proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000.0);
+        const float norm = 4.0f / (float) kSize;
+        for (int b = 1; b < kSize / 2; ++b)
+        {
+            const double f = b * sr / kSize;
+            if (f < 20.0 || f > 20000.0) continue;
+            const std::complex<float> L (fl[(size_t) (2 * b)], fl[(size_t) (2 * b + 1)]), R (fr[(size_t) (2 * b)], fr[(size_t) (2 * b + 1)]);
+            const float aL = std::abs (L), aR = std::abs (R);
+            const float mag = 0.5f * (aL + aR) * norm;
+            const float db = juce::Decibels::gainToDecibels (mag, -120.0f);
+            if (db < -80.0f) continue;
+            const float pan = (aR * aR - aL * aL) / (aR * aR + aL * aL + 1.0e-20f);              // -1 left .. +1 right
+            const float mid = std::abs (L + R), side = std::abs (L - R);
+            const float spread = side / (mid + side + 1.0e-20f);                               // 0 mono .. 1 wide / out of phase
+            const float y = h - h * (float) (std::log (f / 20.0) / std::log (1000.0));
+            const float x = cx + pan * cx * 0.92f;
+            const float a = juce::jlimit (0.0f, 1.0f, juce::jmap (db, -80.0f, -12.0f, 0.06f, 1.0f));
+            const auto col = colours::accent.interpolatedWith (juce::Colour (0xffc58cff), juce::jlimit (0.0f, 1.0f, spread * 1.4f));
+            const float half = spread * cx * 0.9f * a;   // quiet bins (window leakage) get short streaks
+            if (half > 1.0f)
+            {
+                g.setColour (col.withAlpha (a * 0.35f));
+                g.fillRect (juce::Rectangle<float> (x - half, y - 0.6f, half * 2.0f, 1.2f));
+            }
+            g.setColour (col.withAlpha (a));
+            g.fillEllipse (x - 1.6f, y - 1.6f, 3.2f, 3.2f);
+            if (a > 0.6f) { g.setColour (colours::glow.withAlpha ((a - 0.6f) * 1.5f)); g.fillEllipse (x - 0.9f, y - 0.9f, 1.8f, 1.8f); }
+        }
+    }
+    repaint();
+}
+
+void StereoImager::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    drawDisplayBackground (g, r);
+    const auto a = plotArea();
+
+    // grid: L / C / R columns and decade rows
+    g.setColour (accent.withAlpha (0.06f));
+    for (int k = 1; k < 4; ++k) g.drawVerticalLine ((int) (a.getX() + a.getWidth() * k / 4.0f), a.getY(), a.getBottom());
+    g.setColour (accent.withAlpha (0.16f));
+    g.drawVerticalLine ((int) a.getCentreX(), a.getY(), a.getBottom());
+    g.setFont (font (10.5f, Weight::Medium));
+    const double freqs[] = { 50, 100, 200, 500, 1000, 2000, 5000, 10000 };
+    const char* labels[] = { "50", "100", "200", "500", "1k", "2k", "5k", "10k" };
+    for (int i = 0; i < 8; ++i)
+    {
+        const float y = a.getBottom() - a.getHeight() * (float) (std::log (freqs[i] / 20.0) / std::log (1000.0));
+        g.setColour (accent.withAlpha (0.05f));
+        g.drawHorizontalLine ((int) y, a.getX(), a.getRight());
+        g.setColour (textDim);
+        g.drawText (labels[i], (int) r.getX() + 4, (int) y - 7, 32, 14, juce::Justification::centredRight);
+    }
+    g.drawImage (trail, a);
+
+    // stereo labels
+    g.setColour (text);
+    g.setFont (font (11.0f, Weight::Medium, 0.1f));
+    g.drawText ("L", (int) a.getX(), (int) a.getBottom() + 2, 20, 14, juce::Justification::centredLeft);
+    g.drawText ("C", (int) a.getCentreX() - 10, (int) a.getBottom() + 2, 20, 14, juce::Justification::centred);
+    g.drawText ("R", (int) a.getRight() - 20, (int) a.getBottom() + 2, 20, 14, juce::Justification::centredRight);
+
+    // correlation bar (-1 .. +1) and readouts
+    const float by = a.getBottom() + 20.0f;
+    auto bar = juce::Rectangle<float> (a.getX() + 110.0f, by + 2.0f, a.getWidth() - 220.0f, 6.0f);
+    g.setColour (juce::Colour (0xff15232c)); g.fillRoundedRectangle (bar, 3.0f);
+    const float cxBar = bar.getCentreX(), px = cxBar + juce::jlimit (-1.0f, 1.0f, correlation) * bar.getWidth() * 0.5f;
+    const bool bad = correlation < 0.0f && level > 0.0f;
+    auto lit = juce::Rectangle<float>::leftTopRightBottom (juce::jmin (cxBar, px), bar.getY(), juce::jmax (cxBar, px), bar.getBottom());
+    g.setColour ((bad ? juce::Colour (0xffff6b7a) : accent).withAlpha (level > 0.0f ? 0.9f : 0.25f)); g.fillRoundedRectangle (lit, 3.0f);
+    g.setColour (glow); g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ px, bar.getCentreY() }));
+    g.setColour (textDim);
+    g.setFont (font (10.0f, Weight::Medium));
+    g.drawText ("-1", (int) bar.getX() - 20, (int) by - 3, 16, 14, juce::Justification::centredRight);
+    g.drawText ("+1", (int) bar.getRight() + 4, (int) by - 3, 16, 14, juce::Justification::centredLeft);
+    g.setFont (font (11.0f, Weight::Medium, 0.06f));
+    g.setColour (text);
+    g.drawText ("CORR " + juce::String (correlation, 2), (int) a.getX(), (int) by - 4, 96, 16, juce::Justification::centredLeft);
+    g.drawText ("WIDTH " + juce::String (juce::roundToInt (width * 100.0f)) + "%", (int) a.getRight() - 96, (int) by - 4, 96, 16, juce::Justification::centredRight);
 }
 
 //==============================================================================
@@ -894,13 +1042,13 @@ namespace
 struct EffectsPage::Impl
 {
     Impl (DivinityProcessor& p, juce::Component& owner)
-        : chain (p), analyzer (p), master (p.apvts, ids::master, "Output"), limiterPower (p.apvts, ids::limOn),
+        : chain (p), imager (p), master (p.apvts, ids::master, "Output"), limiterPower (p.apvts, ids::limOn),
           ceiling (p.apvts, ids::limCeiling, "Ceiling"), meter (p, true)
     {
         for (auto& d : fxCatalog()) { editors.add (new FxEditor (p, d)); owner.addChildComponent (editors.getLast()); }
         chain.onSelect = [this] (int i) { show (i); };
         master.setCaptionSize (12.0f); ceiling.setCaptionSize (12.0f);
-        for (auto* c : std::initializer_list<juce::Component*> { &chain, &analyzer, &master, &limiterPower, &ceiling, &meter }) owner.addAndMakeVisible (c);
+        for (auto* c : std::initializer_list<juce::Component*> { &chain, &imager, &master, &limiterPower, &ceiling, &meter }) owner.addAndMakeVisible (c);
         show (fxIndexForKey ("reverb"));
         chain.selected = fxIndexForKey ("reverb");
     }
@@ -908,7 +1056,7 @@ struct EffectsPage::Impl
 
     ChainList chain;
     juce::OwnedArray<FxEditor> editors;
-    SpectrumAnalyzer analyzer;
+    StereoImager imager;
     Knob master;
     PowerButton limiterPower;
     Knob ceiling;
@@ -921,7 +1069,7 @@ EffectsPage::~EffectsPage() = default;
 void EffectsPage::paint (juce::Graphics& g)
 {
     drawPanelBackground (g, { 312.0f, 432.0f, 936.0f, 250.0f });
-    drawSectionTitle (g, { 328, 440, 300, 24 }, "OUTPUT");
+    drawSectionTitle (g, { 328, 440, 400, 24 }, "OUTPUT  -  STEREO IMAGE");
     g.setColour (textDim);
     g.setFont (font (11.0f, Weight::Medium, 0.1f));
     g.drawText ("LIMITER", 1010, 444, 100, 16, juce::Justification::centredLeft);
@@ -932,7 +1080,7 @@ void EffectsPage::resized()
     auto& m = *impl;
     m.chain.setBounds (0, 0, 300, 682);
     for (auto* e : m.editors) e->setBounds (312, 0, 936, 420);
-    m.analyzer.setBounds (328, 472, 660, 196);
+    m.imager.setBounds (328, 472, 660, 196);
     m.limiterPower.setBounds (1066, 440, 22, 22);
     m.ceiling.setBounds (1000, 480, 100, 120);
     m.master.setBounds (1100, 480, 100, 120);
@@ -1114,16 +1262,13 @@ namespace
 struct PlayPage::Impl
 {
     Impl (DivinityProcessor& p, juce::Component& owner)
-        : browser (p), info (p), arp (p), soul (p), macros (p, true), perf (p), keys (p)
+        : gen (p), arp (p), perf (p), keys (p)
     {
-        for (auto* c : std::initializer_list<juce::Component*> { &browser, &info, &arp, &soul, &macros, &perf, &keys })
+        for (auto* c : std::initializer_list<juce::Component*> { &gen, &arp, &perf, &keys })
             owner.addAndMakeVisible (c);
     }
-    PresetBrowser browser;
-    PresetInfoPanel info;
+    MidiGenPanel gen;
     ArpPanel arp;
-    SoulMini soul;
-    MacroSection macros;
     PerformancePanel perf;
     KeyboardBar keys;
 };
@@ -1134,12 +1279,9 @@ void PlayPage::paint (juce::Graphics&) {}
 void PlayPage::resized()
 {
     auto& m = *impl;
-    m.browser.setBounds (0, 0, 330, 530);
-    m.info.setBounds (342, 0, 400, 265);
+    m.gen.setBounds (0, 0, 742, 530);
     m.arp.setBounds (754, 0, 494, 265);
-    m.soul.setBounds (342, 277, 290, 253);
-    m.macros.setBounds (644, 277, 290, 253);
-    m.perf.setBounds (946, 277, 302, 253);
+    m.perf.setBounds (754, 277, 494, 253);
     m.keys.setBounds (0, 542, 1248, 140);
 }
 

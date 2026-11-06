@@ -5,6 +5,7 @@
 #include "PluginEditor.h"
 #include "DSP/DSPCore.h"
 #include "Assistant/GuardianBrain.h"
+#include "Midi/MidiGenerator.h"
 #include <chrono>
 #include <random>
 #include <map>
@@ -1232,6 +1233,107 @@ static void testSoundEngine2 (DivinityProcessor& p)
 }
 
 //==============================================================================
+//==============================================================================
+static void testMidiGeneratorAndMeters (DivinityProcessor& p)
+{
+    std::cout << "\n== MIDI generator, audition + meter feeds ==\n";
+    using namespace midigen;
+    // every part / style / scale / length gives a sane, in-key, deterministic clip
+    int bad = 0, outOfKey = 0, total = 0, nonDeterministic = 0;
+    for (int part = 0; part < 4; ++part)
+        for (int style = 0; style < styleNames().size(); ++style)
+            for (int scale = 0; scale < scaleNames().size(); ++scale)
+                for (int bars : { 2, 4, 8 })
+                {
+                    Settings st; st.part = (Part) part; st.style = style; st.scale = scale; st.bars = bars; st.key = (style * 5 + scale) % 12; st.seed = 1234u + (juce::uint32) style;
+                    const auto prog = makeProgression (style, st.seed);
+                    const auto c = generate (st, prog), c2 = generate (st, prog);
+                    ++total;
+                    if (c.notes.size() != c2.notes.size()) ++nonDeterministic;
+                    if (c.notes.empty() || c.lengthBeats != bars * 4.0) ++bad;
+                    for (auto& n : c.notes)
+                    {
+                        if (n.start < 0.0 || n.start + n.length > c.lengthBeats + 1.0e-6 || n.length <= 0.0 || n.pitch < 0 || n.pitch > 127) { ++bad; break; }
+                        if (part == 1)   // lead notes must be in the scale
+                        {
+                            static const std::vector<std::vector<int>> sc { { 0, 2, 3, 5, 7, 8, 10 }, { 0, 2, 4, 5, 7, 9, 11 }, { 0, 2, 3, 5, 7, 8, 11 }, { 0, 2, 3, 5, 7, 9, 10 }, { 0, 1, 3, 5, 7, 8, 10 }, { 0, 3, 5, 7, 10 } };
+                            const int pc = ((n.pitch - st.key) % 12 + 12) % 12;
+                            const auto& v = sc[(size_t) scale];
+                            if (std::find (v.begin(), v.end(), pc) == v.end()) ++outOfKey;
+                        }
+                    }
+                }
+    CHECK (bad == 0 && total == 4 * 6 * 6 * 3, "every generated clip is non-empty, in range and the right length (" << total << " clips)");
+    CHECK (outOfKey == 0, "generated leads stay in the chosen scale (" << outOfKey << " out-of-key notes)");
+    CHECK (nonDeterministic == 0, "the same settings + seed give the same clip");
+
+    // drums: GM notes, kick on the downbeat
+    {
+        Settings st; st.part = Part::Drums; st.style = 0; st.bars = 4;
+        const auto c = generate (st, makeProgression (0, 1));
+        bool kickOnOne = false; int nonGm = 0;
+        for (auto& n : c.notes) { if (n.pitch == drums::kick && n.start < 0.01) kickOnOne = true; if (n.pitch < 35 || n.pitch > 81) ++nonGm; }
+        CHECK (kickOnOne && nonGm == 0, "drum clips use GM drum notes and start with a kick");
+    }
+
+    // .mid round trip
+    {
+        Settings st; st.part = Part::Chords; st.style = 1; st.key = 9; st.bars = 4;
+        const auto c = generate (st, makeProgression (1, 7));
+        auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("divinity_test.mid");
+        const bool ok = writeMidiFile (c, 140.0, f);
+        juce::MidiFile mf; juce::FileInputStream in (f);
+        const bool read = ok && in.openedOk() && mf.readFrom (in);
+        int ons = 0; double tempo = 0;
+        if (read)
+        {
+            mf.convertTimestampTicksToSeconds();
+            for (int t = 0; t < mf.getNumTracks(); ++t)
+                for (auto* e : *mf.getTrack (t))
+                {
+                    if (e->message.isNoteOn()) ++ons;
+                    if (e->message.isTempoMetaEvent()) tempo = 60.0 / e->message.getTempoSecondsPerQuarterNote();
+                }
+        }
+        CHECK (read && ons == (int) c.notes.size() && std::abs (tempo - 140.0) < 0.5,
+               "exported .mid reads back with every note and the tempo (" << ons << "/" << (int) c.notes.size() << " notes, " << tempo << " BPM)");
+        INFO ("chords: " << c.summary);
+        f.deleteFile();
+    }
+
+    // audition: a chord clip plays through the synth, drums through the kit; stop goes quiet
+    {
+        cleanPatch (p);
+        Settings st; st.part = Part::Chords; st.style = 0; st.bars = 2;
+        p.midiPreview.play (generate (st, makeProgression (0, 3)));
+        auto b = render (p, 48000.0, 512, 1.0, {});
+        const float chordsRms = b.getRMSLevel (0, 0, b.getNumSamples());
+        st.part = Part::Drums;
+        p.midiPreview.play (generate (st, makeProgression (0, 3)));
+        b = render (p, 48000.0, 512, 1.0, {});
+        const float drumRms = b.getRMSLevel (0, 0, b.getNumSamples());
+        p.midiPreview.stop();
+        render (p, 48000.0, 512, 1.5, {});
+        b = render (p, 48000.0, 512, 0.5, {});
+        const float after = b.getMagnitude (0, 0, b.getNumSamples());
+        CHECK (chordsRms > 0.005f && drumRms > 0.005f && after < 1.0e-3f && allFinite (b),
+               "MIDI audition plays chords and drums, and stops cleanly (" << chordsRms << ", " << drumRms << ", tail " << after << ")");
+    }
+
+    // meter feed: two independent readers both see the same audio (spectrum + imager + scope at once)
+    {
+        cleanPatch (p);
+        juce::int64 c1 = -1, c2 = -1;
+        std::vector<float> a ((size_t) ScopeFifo::kSize), b2 ((size_t) ScopeFifo::kSize);
+        p.scope.pull (c1, a.data(), (int) a.size()); p.scope.pull (c2, b2.data(), (int) b2.size());
+        render (p, 48000.0, 512, 0.1, { { 0.0, 0.1, 60, 0.9f } });
+        const int n1 = p.scope.pull (c1, a.data(), (int) a.size());
+        const int n2 = p.scope.pull (c2, b2.data(), (int) b2.size());
+        float m1 = 0, m2 = 0; for (int i = 0; i < n1; ++i) m1 = std::max (m1, std::abs (a[(size_t) i])); for (int i = 0; i < n2; ++i) m2 = std::max (m2, std::abs (b2[(size_t) i]));
+        CHECK (n1 > 1000 && n1 == n2 && m1 > 0.01f && m1 == m2, "every display gets its own copy of the output feed (" << n1 << " / " << n2 << " samples)");
+    }
+}
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -1258,6 +1360,7 @@ int main (int argc, char** argv)
         testRatesAndBuffers (p);
         testLongNotesAndSilence (p);
         testSoundEngine2 (p);
+        testMidiGeneratorAndMeters (p);
         testPerformance (p);
         renderPresetDemos (p, outDir.getChildFile ("preset-demos"));
         snapshotEditor (p, outDir);

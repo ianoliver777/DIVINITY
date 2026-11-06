@@ -40,6 +40,19 @@ Bitwig        Settings > Locations > Rescan
 Studio One    Options > Locations > VST Plug-ins > Reset Blocklist, then restart
 
 
+NEW IN 0.7.2
+------------
+- MIDI GENERATOR (PLAY tab): chords, lead, bass or drums in Trap, Wave,
+  Hip-Hop, Drill, Lo-Fi or Emotional style, any key / scale, 2-8 bars.
+  Press PLAY to hear it, then drag the DRAG MIDI tile onto a track in
+  your DAW (or SAVE .MID). Chords, lead and bass share one progression.
+- EFFECTS tab: the output graph is now a live spectral stereo imager
+  (where each frequency sits left / centre / right, plus correlation).
+- All analyzers update together now (they could freeze each other).
+- The small scope rests on a flat line when nothing is playing.
+- Removed power icons that didn't switch anything (MOD MATRIX, SPECTRUM).
+
+
 NEW IN 0.7.1
 ------------
 - Interface rebuilt to match the v0.7 reference image: black-glass

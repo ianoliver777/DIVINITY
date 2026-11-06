@@ -22,7 +22,7 @@ public:
 private:
     void timerCallback() override;
     struct Chan { std::vector<float> ring, smooth; int writePos = 0; };
-    void analyse (Chan& c, ScopeFifo& fifo);
+    void analyse (Chan& c, ScopeFifo& fifo, juce::int64& cursor);
     juce::Path curveFor (const Chan& c, juce::Rectangle<float> r, double sr) const;
     DivinityProcessor& proc;
     static constexpr int kOrder = 11, kSize = 1 << kOrder;
@@ -30,7 +30,31 @@ private:
     juce::dsp::WindowingFunction<float> window { (size_t) kSize, juce::dsp::WindowingFunction<float>::hann };
     std::vector<float> pull, fftData;
     Chan post, pre;
+    juce::int64 postCursor = -1, preCursor = -1;
     int mode = 0;
+};
+
+/** Spectral stereo imager: every frequency of the output placed by where it sits in the stereo field
+    (left - centre - right) and how wide it is, low frequencies at the bottom, with a fading trail.
+    Below it: phase correlation and overall width. */
+class StereoImager : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
+{
+public:
+    explicit StereoImager (DivinityProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+private:
+    void timerCallback() override;
+    juce::Rectangle<float> plotArea() const;
+    DivinityProcessor& proc;
+    static constexpr int kOrder = 11, kSize = 1 << kOrder;
+    juce::dsp::FFT fft { kOrder };
+    juce::dsp::WindowingFunction<float> window { (size_t) kSize, juce::dsp::WindowingFunction<float>::hann };
+    std::vector<float> ringL, ringR, pullL, pullR, fl, fr;
+    int writePos = 0;
+    juce::int64 cursor = -1;
+    juce::Image trail;
+    float correlation = 1.0f, width = 0.0f, level = 0.0f;
 };
 
 /** Small titled panel used across pages. */
