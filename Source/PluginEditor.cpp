@@ -112,7 +112,7 @@ namespace
 
     const juce::StringArray& presetCategories()
     {
-        static const juce::StringArray c { "BASS", "808", "SUB", "LEAD", "SYNTH", "PLUCK", "PAD", "PERCUSSION", "FX" };
+        static const juce::StringArray c { "REESE", "BASS", "LEAD", "SYNTH", "PAD", "TEXTURE", "SEQUENCE", "PERCUSSION", "FX" };
         return c;
     }
 }

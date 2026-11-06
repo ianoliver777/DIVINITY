@@ -40,6 +40,19 @@ Bitwig        Settings > Locations > Rescan
 Studio One    Options > Locations > VST Plug-ins > Reset Blocklist, then restart
 
 
+NEW IN 0.9.0
+------------
+- A completely new 777-preset bank built for wave music and Reese bass:
+  REESE 120, BASS 80, LEAD 90, SYNTH 90, PAD 95, TEXTURE 70,
+  SEQUENCE 90 (arps / sequences: hold a chord), PERCUSSION 62, FX 80.
+- Every name describes the actual sound. Anything called "Reese" is a
+  real reese (detuned saws beating), "Breathing" really breathes,
+  "Cathedral" really has the long tail, risers rise, drops drop.
+- Leads, synths, pads, textures and sequences are soaked in reverb and
+  delay; basses keep a tight mono low end with space on top.
+- Note: favourites from older versions point at the old preset names.
+
+
 NEW IN 0.8.0
 ------------
 - WARP on every oscillator: Sync (hard sync), FM, AM, Bend +/-, PWM,

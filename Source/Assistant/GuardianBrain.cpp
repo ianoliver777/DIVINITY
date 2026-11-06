@@ -50,7 +50,7 @@ namespace
             { { "hide", "collapse", "go away", "smaller window", "minimi" },
               "Hit HIDE ANGEL next to the tabs and I'll tuck myself away; the window gets narrower. SHOW ANGEL brings me back whenever you need me." },
             { { "wave music", "neogrime", "grime", "eski", "barnacle" },
-              "DIVINITY ships with 777 factory presets in nine categories: BASS (reeses of every kind + wave bass), 808 (distorted, viral, gliding), SUB, LEAD, SYNTH (stabs, keys, gated and pumping chords, arps), PLUCK, PAD, PERCUSSION (hat and perc loops that lock to your tempo - just hold a key) and FX (risers, downlifters, impacts, noise patterns, sweeps). Open the BROWSER tab, or ask me for something like \"distorted 808\" or \"trap hat loop\"." },
+              "DIVINITY ships with 777 factory presets for wave music in nine categories: REESE (120 real reeses: detuned saw stacks that beat), BASS (808s, subs, growl / FM / vowel basses), LEAD, SYNTH (keys, stabs, plucks), PAD, TEXTURE (rain, vinyl, drones, washes), SEQUENCE (arps and step sequences: hold a chord), PERCUSSION (hat and perc loops that lock to your tempo - just hold a key) and FX (risers, downlifters, impacts, noise patterns, sweeps). Open the BROWSER tab, or ask me for something like \"distorted 808\" or \"trap hat loop\"." },
             { { "glide", "portamento", "legato", "slide" },
               "Set VOICES mode to LEGATO in LAB and raise GLIDE in the bottom bar: overlapping notes will slide instead of retriggering. 40-80 ms feels great on 808s and leads." },
             { { "cpu", "lag", "performance", "crackle" },
@@ -70,7 +70,7 @@ namespace
             { { "shortcut", "fine", "double", "right-click", "right click", "type a value" },
               "Shift-drag any knob for fine control, double-click to reset it and right-click to type an exact value. The computer keyboard plays notes when the keyboard on PLAY has focus." },
             { { "808", "bass", "sub" },
-              "For heavy low end: a sine or the Pure Sub / Void 808 / Viral 808 presets, random phase OFF for consistent punch, a little saturation for audibility on small speakers, LEGATO with 40-60 ms glide for slides. Push SOUL toward AGGRESSIVE with the Bass Pressure mapping for grit." },
+              "For heavy low end: the 808, Distorted 808 and Sub presets in BASS (or a REESE for movement), random phase OFF for consistent punch, a little saturation for audibility on small speakers, LEGATO with 40-60 ms glide for slides. Push SOUL toward AGGRESSIVE with the Bass Pressure mapping for grit." },
         };
         return k;
     }
@@ -274,62 +274,59 @@ GuardianBrain::Reply GuardianBrain::randomize()
 GuardianBrain::Reply GuardianBrain::createSound (const juce::String& raw)
 {
     const auto q = raw.toLowerCase();
+    // preset = "CATEGORY|words;CATEGORY|words": the first factory preset in that category whose name contains
+    // all the words (alternatives tried in order). Names in the bank describe the sound, so this finds the
+    // right family without hard-coding names.
     struct Base { std::vector<const char*> words; const char* preset; const char* noun; };
     static const std::vector<Base> bases {
         // most specific first ("a+b" = both words must appear)
-        { { "grime+808", "eski+808" }, "FADED ASPHALT", "grime 808" },
-        { { "viral+808", "distorted+808", "distortion+808", "clipped+808", "hard+808", "dirty+808" }, "DROWNED MIDNIGHT", "distorted 808" },
-        { { "glide+808", "slide+808" }, "CONCRETE", "gliding 808" },
-        { { "grime+bell", "eski+bell", "ice bell", "icy+bell" }, "CLEAN OPAL", "ice bell" },
-        { { "grime+pluck", "metal+pluck" }, "CRYSTAL", "metal pluck" },
-        { { "8-bit", "8 bit", "chiptune", "chip" }, "BURNING//TRUMPET", "8-bit lead" },
-        { { "siren" }, "ERRATIC//ARMAGEDDON", "siren" },
-        { { " hat", "hats", "hi-hat", "hihat", "perc loop", "drum loop", "trap loop" }, "CLOCKWORK", "hat loop" },
-        { { "shaker" }, "PENDULUM", "shaker loop" },
-        { { "clap", "snap" }, "SUNDIAL", "clap loop" },
-        { { " rim", "rims", "perc" }, "CLATTERING HOURGLASS", "perc loop" },
-        { { "downlifter", "down lifter", "fall" }, "APOCALYPTIC RAPTURE", "downlifter" },
-        { { "white noise", "noise pattern", "noise burst" }, "CHAOTIC EXODUS", "white noise pattern" },
-        { { "transition", "sweep" }, "CATASTROPHIC GENESIS", "transition sweep" },
-        { { "riser", "build", "uplifter" }, "ASCENSION", "riser" },
-        { { "impact", "hit", "cinematic", "boom" }, "REVELATION", "impact" },
-        { { "zap", "laser" }, "RAGNAROK", "laser zap" },
-        { { "reverse", "swell" }, "JUDGMENT", "reverse swell" },
-        { { "glitch", "stutter" }, "VOLATILE IMPACT", "glitch" },
-        { { "rain", "wind", "vinyl", "foley" }, "UNSTABLE CATACLYSM", "atmosphere" },
-        { { "wave+808" }, "HEARTBREAK", "wave 808" },
-        { { "wave+reese", "wave+bass" }, "HOLLOW UNDERTOW", "wave reese" },
-        { { "talking", "yoi", "vowel bass" }, "SUNKEN//OBSIDIAN", "talking reese" },
-        { { "wave+pluck" }, "TINY RAINDROP", "wave pluck" },
-        { { "wave+arp", "arp" , "sequence" }, "MIXTAPE", "arp" },
-        { { "wave+vox", "wave+vocal", "vocal chop", "vox chop" }, "ARCHANGEL", "vocal chop lead" },
-        { { "wave+lead", "wave+supersaw" }, "SERAPH", "wave lead" },
-        { { "wave+pad", "ethereal" }, "HEAVEN", "wave pad" },
-        { { "wave+atmos", "wave+ambient", "northern" }, "EMPYREAL UTOPIA", "wave atmosphere" },
-        { { "grime+pad", "grey" }, "ELYSIUM", "dark pad" },
-        { { "stab" }, "MEMORY", "cold stab" },
-        { { "eski", "grime", "square lead" }, "RISING WINGS", "eski lead" },
-        { { "gated", "trance gate" }, "WALKMAN", "gated chords" },
-        { { "pump", "sidechain" }, "FUTURE//DISCMAN", "pumping chords" },
-        { { "screech", "scream" }, "SOARING CHERUB", "screech lead" },
-        { { "wave music", "wavey" }, "HEAVEN", "wave pad" },
-        { { "808" }, "HEARTBREAK", "808" },
-        { { "wobble", "dubstep", "riddim" }, "BROKEN MAELSTROM", "wobble bass" },
-        { { "neuro" }, "BURIED MONOLITH", "neuro reese" },
-        { { "reese", "dnb" }, "ROTTEN LEVIATHAN", "reese bass" },
-        { { "sub", "deep bass" }, "BENEATH", "sub bass" },
-        { { "bass" }, "ROTTEN LEVIATHAN", "bass" },
-        { { "choir", "vocal", "voice", "vox", "angel" }, "ETHEREAL PARADISE", "choir" },
-        { { "drone", "dark ambient" }, "AVALON", "drone" },
-        { { "ambient", "atmosphere", "wash", "texture" }, "SERAPHIC SHANGRILA", "atmosphere" },
-        { { "pad" }, "CELESTIAL NIRVANA", "pad" },
-        { { "brass" }, "VINTAGE VHS", "brass" },
-        { { "lead", "supersaw", "trance" }, "SERAPH", "lead" },
-        { { "pluck" }, "DEWDROP", "pluck" },
-        { { "bell", "chime" }, "SPLASH", "bell" },
-        { { "organ" }, "NOSTALGIC POLAROID", "organ" },
-        { { "keys", "piano", "rhodes" }, "CASSETTE", "keys" },
-        { { "metal", "comb", "experimental", "weird" }, "CRYSTAL", "metallic sound" },
+        { { "viral+808", "distorted+808", "distortion+808", "clipped+808", "hard+808", "dirty+808" }, "BASS|Distorted 808", "distorted 808" },
+        { { "glide+808", "slide+808" }, "BASS|Gliding 808;BASS|808", "gliding 808" },
+        { { "grime+808", "eski+808", "wave+808" }, "BASS|808", "808" },
+        { { "grime+bell", "eski+bell", "ice bell", "icy+bell" }, "SYNTH|Bell;SEQUENCE|Bell", "bell" },
+        { { "grime+pluck", "metal+pluck", "wave+pluck" }, "SYNTH|Pluck;SYNTH|Plucked", "pluck" },
+        { { "8-bit", "8 bit", "chiptune", "chip" }, "LEAD|Chip Lead;SEQUENCE|Chip Arp", "8-bit lead" },
+        { { "siren" }, "FX|Siren", "siren" },
+        { { " hat", "hats", "hi-hat", "hihat", "drum loop", "trap loop" }, "PERCUSSION|Trap Hats;PERCUSSION|Hats", "hat loop" },
+        { { "shaker" }, "PERCUSSION|Shaker", "shaker loop" },
+        { { "clap", "snap" }, "PERCUSSION|Claps;PERCUSSION|Snaps", "clap loop" },
+        { { " rim", "rims", "perc" }, "PERCUSSION|Rims;PERCUSSION|Ticks", "perc loop" },
+        { { "downlifter", "down lifter", "fall" }, "FX|Downlifter", "downlifter" },
+        { { "white noise", "noise pattern", "noise burst" }, "FX|Sweep;FX|Whoosh", "noise sweep" },
+        { { "transition", "sweep", "whoosh" }, "FX|Whoosh;FX|Sweep", "transition" },
+        { { "riser", "build", "uplifter" }, "FX|Riser", "riser" },
+        { { "impact", "hit", "cinematic", "boom" }, "FX|Impact", "impact" },
+        { { "zap", "laser", "screech", "scream" }, "LEAD|Sync Lead", "sync lead" },
+        { { "reverse", "swell" }, "FX|Reverse Swell", "reverse swell" },
+        { { "glitch", "stutter" }, "FX|Glitch", "glitch" },
+        { { "rain", "wind", "vinyl", "foley" }, "TEXTURE|Rain;TEXTURE|Vinyl;TEXTURE|Wind", "atmosphere" },
+        { { "talking", "yoi", "vowel" }, "REESE|Vowel Reese;BASS|Talk Bass;BASS|Vowel Bass", "talking bass" },
+        { { "wave+arp", "arp", "sequence" }, "SEQUENCE|Reese Arp;SEQUENCE|Arp", "arp" },
+        { { "wave+vox", "wave+vocal", "vocal chop", "vox chop" }, "LEAD|Choir Lead", "vocal lead" },
+        { { "wave+lead", "wave+supersaw" }, "LEAD|Supersaw Lead;LEAD|Reese Lead", "wave lead" },
+        { { "grime+pad", "grey", "dark+pad" }, "PAD|Dark Reese Pad;PAD|Dark", "dark pad" },
+        { { "wave+pad", "ethereal", "wave music", "wavey" }, "PAD|Reese Pad", "wave pad" },
+        { { "wave+atmos", "wave+ambient", "northern", "drone", "dark ambient" }, "TEXTURE|Drone;TEXTURE|Reese Drone", "drone" },
+        { { "stab" }, "SYNTH|Stab", "stab" },
+        { { "eski", "grime", "square lead" }, "LEAD|Square Lead", "eski lead" },
+        { { "gated", "trance gate" }, "PAD|Gated;SYNTH|Pulsing", "gated chords" },
+        { { "pump", "sidechain" }, "PAD|Pulsing;SYNTH|Pulsing", "pumping chords" },
+        { { "wobble", "dubstep", "riddim" }, "REESE|Wobbling", "wobble reese" },
+        { { "neuro" }, "REESE|Neuro Reese", "neuro reese" },
+        { { "reese", "dnb" }, "REESE|Twin Saw Reese;REESE|Reese", "reese bass" },
+        { { "808" }, "BASS|808", "808" },
+        { { "sub", "deep bass" }, "BASS|Sub", "sub bass" },
+        { { "bass" }, "REESE|Reese", "reese bass" },
+        { { "choir", "vocal", "voice", "vox", "angel" }, "PAD|Choir", "choir" },
+        { { "ambient", "atmosphere", "wash", "texture" }, "TEXTURE|Noise Wash;TEXTURE|Breath;TEXTURE|Drone", "atmosphere" },
+        { { "pad" }, "PAD|Pad", "pad" },
+        { { "brass" }, "SYNTH|Brass;LEAD|Brass Lead", "brass" },
+        { { "lead", "supersaw", "trance" }, "LEAD|Supersaw Lead;LEAD|Lead", "lead" },
+        { { "pluck" }, "SYNTH|Pluck;SYNTH|Plucked", "pluck" },
+        { { "bell", "chime" }, "SYNTH|Bell;TEXTURE|Chimes", "bell" },
+        { { "organ" }, "SYNTH|Organ", "organ" },
+        { { "keys", "piano", "rhodes" }, "SYNTH|Keys", "keys" },
+        { { "metal", "comb", "experimental", "weird" }, "REESE|Hollow", "hollow reese" },
     };
 
     const Base* base = nullptr;
@@ -346,10 +343,27 @@ GuardianBrain::Reply GuardianBrain::createSound (const juce::String& raw)
     if (base == nullptr)
         return { "Tell me what kind of sound: pad, bass, 808, lead, pluck, keys, bell, choir, drone, riser, impact, arp... plus a vibe like dark, bright, aggressive, dreamy or wide. Example: \"dark aggressive bass\"." };
 
-    beginEdit ("create " + juce::String (base->noun));
     const auto& all = proc.presets.getPresets();
+    juce::String baseName;
+    for (auto& alt : juce::StringArray::fromTokens (base->preset, ";", ""))
+    {
+        const auto cat = alt.upToFirstOccurrenceOf ("|", false, false);
+        const auto want = juce::StringArray::fromTokens (alt.fromFirstOccurrenceOf ("|", false, false), " ", "");
+        for (int i = 0; i < all.size() && baseName.isEmpty(); ++i)
+        {
+            if (! all[i].isFactory || all[i].category != cat) continue;
+            const auto have = juce::StringArray::fromTokens (all[i].name, " ", "");
+            bool ok = true;
+            for (auto& w : want) ok &= have.contains (w, true);
+            if (ok) baseName = all[i].name;
+        }
+        if (baseName.isNotEmpty()) break;
+    }
+    if (baseName.isEmpty())
+        return { "I couldn't find a factory preset for that one. Try the BROWSER tab and search for "" + juce::String (base->noun) + ""." };
+    beginEdit ("create " + juce::String (base->noun));
     for (int i = 0; i < all.size(); ++i)
-        if (all[i].isFactory && all[i].name == base->preset) { proc.presets.loadPreset (i); break; }
+        if (all[i].isFactory && all[i].name == baseName) { proc.presets.loadPreset (i); break; }
 
     juce::StringArray did;
     auto soulTo = [this] (float x, float y) { set (ids::soulX, x); set (ids::soulY, y); };
@@ -380,7 +394,7 @@ GuardianBrain::Reply GuardianBrain::createSound (const juce::String& raw)
 
     Reply rep;
     rep.text = "Here's a " + (did.isEmpty() ? juce::String() : did.joinIntoString (", ") + " ") + base->noun
-             + ", built from \"" + base->preset + "\". Play it, then drag the SOUL pad or ride the macros to make it yours. Save it with the + button if it's a keeper.";
+             + ", built from \"" + baseName + "\". Play it, then drag the SOUL pad or ride the macros to make it yours. Save it with the + button if it's a keeper.";
     rep.actionLabel = "MAKE IT WILDER";
     rep.action = [this] { set (ids::macro (2), juce::jmin (1.0f, get (ids::macro (2)) + 0.3f)); set (ids::soulX, juce::jmin (1.0f, get (ids::soulX) + 0.25f)); };
     rep.secondaryLabel = "MAKE IT CALMER";

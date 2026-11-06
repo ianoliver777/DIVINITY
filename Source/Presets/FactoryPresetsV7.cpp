@@ -1,6 +1,7 @@
-// DIVINITY 0.7.0 factory library: 777 presets in nine categories.
+// DIVINITY factory library (0.9.0 wave bank): 777 presets in nine categories.
 //
-//   BASS 110 . 808 90 . SUB 50 . LEAD 100 . SYNTH 90 . PLUCK 80 . PAD 100 . PERCUSSION 77 . FX 80
+//   REESE 120 . BASS 80 . LEAD 90 . SYNTH 90 . PAD 95 . TEXTURE 70 . SEQUENCE 90 . PERCUSSION 62 . FX 80
+//   Recipes: FactoryPresetsV8Recipes.inc. (The patch helpers and effect flavours below are shared.)
 //
 // Every preset = a category archetype (the engine, envelopes, routing and core
 // effect chain that define the family) x a variant number (seeded parameter
@@ -159,77 +160,9 @@ namespace
     }
 
     //==========================================================================
-    // Names: two curated word pools per category; combinations walk the grid so
-    // neighbouring presets don't share a word.
-    //==========================================================================
-    struct Pools { std::vector<const char*> a, b; std::vector<const char*> heroes; };
-
-    /** heroes[i] (when non-empty) names slot i, so hand-picked names land on the archetype they describe. */
-    juce::StringArray makeNames (const Pools& pools, int count, juce::StringArray& used)
-    {
-        juce::StringArray pooled;
-        const int A = (int) pools.a.size(), B = (int) pools.b.size();
-        // walk every (a, b) pair once, diagonally, so neighbours never share a word
-        for (int k = 0; k < A * B; ++k)
-        {
-            const int i = k % A, jj = (k / A + i) % B;
-            const juce::String n = juce::String (pools.a[(size_t) i]) + " " + pools.b[(size_t) jj];
-            if (! used.contains (n) && ! pooled.contains (n)) pooled.add (n);
-        }
-        for (auto* h : pools.heroes) pooled.removeString (h);
-        juce::StringArray out;
-        int next = 0;
-        for (int i = 0; i < count; ++i)
-        {
-            juce::String n = i < (int) pools.heroes.size() ? juce::String (pools.heroes[(size_t) i]) : juce::String();
-            if (n.isEmpty() || used.contains (n))
-            {
-                while (next < pooled.size() && used.contains (pooled[next])) ++next;
-                n = next < pooled.size() ? pooled[next++] : juce::String (pools.a[(size_t) (i % A)]) + " " + pools.b[(size_t) (i % B)] + " " + juce::String (i);
-            }
-            out.add (n); used.add (n);
-        }
-        return out;
-    }
-
-    //==========================================================================
-    // Percussion patterns (16 steps)
-    //==========================================================================
-    struct Pattern { const char* name; const char* lvl; const char* rat; const char* gate; std::vector<int> pitch; const char* rate; double swing; };
-    const Pattern hatPatterns[] = {
-        { "straight eighths",      "9050905090509050", "1",                "s",                {},                 "1/16",   0.0 },
-        { "trap sixteenths",       "9575957595759575", "1111111111111121", "s",                {},                 "1/16",   0.0 },
-        { "rolled trap hats",      "9575957595759575", "1111211111113141", "s",                {},                 "1/16",   0.0 },
-        { "triplet rolls",         "957957957957",     "111121111131",     "s",                {},                 "1/16 T", 0.0 },
-        { "half-time bounce",      "9006900690069060", "1111111111111131", "sssssssssssssmss", {},                 "1/16",   0.18 },
-        { "open-hat lift",         "9575957595759575", "1",                "sssssssssssssssl", {},                 "1/16",   0.0 },
-        { "drill skitter",         "9070607090706070", "1112111211131114", "s",                {},                 "1/16",   0.0 },
-        { "swung sixteenths",      "9686968696869686", "1",                "s",                {},                 "1/16",   0.35 },
-        { "thirty-second burst",   "9554955495549554", "1",                "s",                {},                 "1/32",   0.0 },
-        { "offbeat open hats",     "0090009000900090", "1",                "l",                {},                 "1/16",   0.0 },
-        { "stutter gaps",          "9900990099009990", "1111111111111112", "s",                {},                 "1/16",   0.0 },
-    };
-    const Pattern percPatterns[] = {
-        { "rim groove",            "9007009070090700", "1",                "s",                { 0, 0, 0, 5, 0, 0, 7, 0, 0, 0, 0, 3, 0, 0, 5, 0 }, "1/16", 0.12 },
-        { "tom walk",              "9008006009007000", "1",                "m",                { 0, 0, 0, -3, 0, 0, -5, 0, 0, 0, 2, 0, 0, 0, -7, 0 }, "1/16", 0.0 },
-        { "click and snap",        "9070907090709575", "1111111111111121", "s",                { 12, 0, 0, 0, 7, 0, 0, 0, 12, 0, 0, 0, 7, 0, 0, 12 }, "1/16", 0.0 },
-        { "wave perc shuffle",     "9506950695069506", "1",                "s",                { 0, 0, 5, 0, 0, 0, 3, 0, 0, 0, 5, 0, 0, 0, 7, 0 }, "1/16", 0.25 },
-        { "triplet perc",          "960960960965",     "1111111111121",    "s",                { 0, 3, 7, 0, 3, 7, 0, 5, 8, 0, 5, 12 }, "1/16 T", 0.0 },
-        { "afro knock",            "9009009009009090", "1",                "m",                { 0, 0, 0, 7, 0, 0, 5, 0, 0, 3, 0, 0, 0, 7, 0, 5 }, "1/16", 0.08 },
-    };
-
-    //==========================================================================
     struct Spec { juce::String name, category, tags, description; Patch patch; };
 
-    void finishSpec (Spec& s, const juce::String& base, Flavour f, const juce::StringArray& extraTags)
-    {
-        juce::StringArray tags { flavourTag[(int) f] };
-        tags.addArray (extraTags);
-        s.tags = tags.joinIntoString (", ");
-        s.description = base + " This one: " + flavourPhrase[(int) f] + ".";
-    }
-
-    #include "FactoryPresetsV7Recipes.inc"
+    #include "FactoryPresetsV8Recipes.inc"
 
     //==========================================================================
     FactoryPreset toFactoryPreset (Spec& s, double trim)
@@ -261,7 +194,7 @@ namespace
     double levelTrim (const juce::String& name)
     {
         static const std::map<juce::String, double> trims {
-           #include "FactoryPresetsV7Levels.inc"
+           #include "FactoryPresetsV8Levels.inc"
         };
         auto it = trims.find (name);
         return it != trims.end() ? it->second : 0.0;
@@ -273,57 +206,31 @@ void addLibraryV7 (std::vector<FactoryPreset>& list)
 {
     std::vector<Spec> specs;
     juce::StringArray used;
-    buildFromRecipe (bassRecipe(), specs, used);
-    buildFromRecipe (recipe808(), specs, used);
-    buildFromRecipe (recipeSub(), specs, used);
-    buildFromRecipe (recipeLead(), specs, used);
-    buildFromRecipe (recipeSynth(), specs, used);
-    buildFromRecipe (recipePluck(), specs, used);
-    buildFromRecipe (recipePad(), specs, used);
-    buildFromRecipe (recipePerc(), specs, used);
-    buildFromRecipe (recipeFx(), specs, used);
-
+    for (auto& R : allRecipes()) buildFromRecipe (R, specs, used);
     for (auto& s : specs) list.push_back (toFactoryPreset (s, levelTrim (s.name)));
-
-    // 0.8.1: display names (celestial / nostalgic set, every word used once). Applied after the bank is
-    // built and level-matched, so the sounds are exactly the 0.7.3 ones; the internal design names above
-    // stay as keys for the recipes, picks and level table. Manifest: docs/PRESET_NAMES.csv.
-    static const char* const kNames[] = {
-       #include "FactoryPresetsV7Names.inc"
-    };
-    constexpr int kNumNames = (int) (sizeof (kNames) / sizeof (kNames[0]));
-    const int first = (int) list.size() - (int) specs.size();
-    jassert ((int) specs.size() == kNumNames);
-    for (int i = 0; i < juce::jmin ((int) specs.size(), kNumNames); ++i)
-        list[(size_t) (first + i)].name = kNames[i];
 }
 
 namespace
 {
     CategoryRecipe recipeFor (const juce::String& cat)
     {
-        if (cat == "BASS") return bassRecipe();
-        if (cat == "808") return recipe808();
-        if (cat == "SUB") return recipeSub();
-        if (cat == "LEAD") return recipeLead();
-        if (cat == "SYNTH") return recipeSynth();
-        if (cat == "PLUCK") return recipePluck();
-        if (cat == "PAD") return recipePad();
-        if (cat == "PERCUSSION") return recipePerc();
-        return recipeFx();
+        for (auto& R : allRecipes()) if (R.category == cat) return R;
+        return fxRecipe();
     }
 }
 
-juce::StringArray factoryCategoriesV7() { return { "BASS", "808", "SUB", "LEAD", "SYNTH", "PLUCK", "PAD", "PERCUSSION", "FX" }; }
+juce::StringArray factoryCategoriesV7() { return { "REESE", "BASS", "LEAD", "SYNTH", "PAD", "TEXTURE", "SEQUENCE", "PERCUSSION", "FX" }; }
 
-std::vector<FactoryPreset> createCandidatePresetsV7 (const juce::String& category, int first, int count, std::vector<std::pair<int, int>>* heroesOut, int forcedSource, int forcedMotion)
+std::vector<FactoryPreset> createCandidatePresetsV7 (const juce::String& category, int first, int count, std::vector<std::pair<int, int>>* heroesOut, int, int)
 {
     const auto R = recipeFor (category);
-    if (heroesOut != nullptr) *heroesOut = heroSlots (R);
+    if (heroesOut != nullptr) heroesOut->assign ((size_t) R.count, { -1, -1 });   // no hero slots: names follow the sound
     std::vector<FactoryPreset> v;
+    juce::StringArray none;
     for (int k = first; k < first + count; ++k)
     {
-        auto s = makeCandidate (R, k, forcedSource, forcedMotion);
+        auto s = makeCandidate (R, k);
+        s.name = nameFor (R, k, none);
         v.push_back (toFactoryPreset (s, 0.0));
     }
     return v;

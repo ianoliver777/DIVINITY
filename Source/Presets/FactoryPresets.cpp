@@ -13,8 +13,8 @@ void applySoundEngine2Finish (FactoryPreset& p)
     const auto& c = p.category;
     auto is = [&c] (std::initializer_list<const char*> words) { for (auto* w : words) if (c.contains (w)) return true; return false; };
 
-    const bool lowEnd = is ({ "SUB", "808", "PERCUSSION" });
-    const bool bass   = is ({ "BASS" });
+    const bool lowEnd = is ({ "PERCUSSION" });
+    const bool bass   = is ({ "BASS", "REESE" });
     const bool pad    = is ({ "PAD" });
 
     // what's already routed, and which slots are free
@@ -60,8 +60,8 @@ static void finishFactoryPreset (FactoryPreset& p)
 {
     struct SoulStyle { const char* cat; int mapping; const char* divine; };
     static const SoulStyle styles[] = {
-        { "BASS", 2, "Shatter" }, { "808", 2, "Collapse" }, { "SUB", 2, "Collapse" }, { "LEAD", 0, "Ascension" },
-        { "SYNTH", 4, "Bloom" }, { "PLUCK", 0, "Bloom" }, { "PAD", 1, "Bloom" }, { "PERCUSSION", 2, "Collapse" }, { "FX", 3, "Abyss" } };
+        { "REESE", 2, "Shatter" }, { "BASS", 2, "Collapse" }, { "LEAD", 0, "Ascension" }, { "SYNTH", 4, "Bloom" },
+        { "PAD", 1, "Bloom" }, { "TEXTURE", 1, "Abyss" }, { "SEQUENCE", 0, "Bloom" }, { "PERCUSSION", 2, "Collapse" }, { "FX", 3, "Abyss" } };
     for (auto& st : styles)
         if (p.category == st.cat)
         {
