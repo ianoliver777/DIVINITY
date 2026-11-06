@@ -14,7 +14,8 @@ namespace divinity
 /** Plain-value snapshot of every engine parameter, refreshed once per control block. */
 struct EngineSnapshot
 {
-    struct Osc   { bool on; int engine, table, wave, unison, oct, semi; float pos, fold, pw, detune, width, phase, fine, level; bool randPhase; float blend; };
+    struct Osc   { bool on; int engine, table, wave, unison, oct, semi; float pos, fold, pw, detune, width, phase, fine, level; bool randPhase; float blend;
+                   int warp, warpSrc; float warpAmt; };   // warp: 0.8.0
     struct Filt  { int type; float cutoff, res, drive, mix, keytrack; };
     struct Env   { float a, d, s, r, curve; };
     struct LfoP  { int shape, div; float rate, depth, phase, smooth; bool sync, on; };
@@ -42,6 +43,9 @@ struct EngineSnapshot
     std::array<float, kNumSteps> stepLvl {};
     bool smpOn = false; int smpSample = 0, smpTune = 0; float smpLevel = 0.75f, smpFine = 0, smpStart = 0, smpLoopStart = 0.1f, smpLoopEnd = 1.0f;
     bool smpLoop = false, smpReverse = false, smpKeytrack = true;
+    // 0.8.0
+    bool mpeOn = false; int mpeBend = 48;
+    int quality = (int) Quality::Standard;
 };
 
 /** Holds the APVTS atomics and produces snapshots without locks or allocation. */
@@ -52,7 +56,7 @@ public:
     void read (EngineSnapshot& s) const noexcept;
 
 private:
-    struct OscRefs { std::atomic<float>* p[17]; };
+    struct OscRefs { std::atomic<float>* p[20]; };
     std::array<OscRefs, kNumOscs> osc;
     std::atomic<float>* sub[3]; std::atomic<float>* noise[3];
     std::array<std::array<std::atomic<float>*, 6>, 2> filt;
@@ -66,6 +70,7 @@ private:
     std::atomic<float>* analog;
     std::atomic<float> *velSens, *rnd[4], *stepG[6], *smp[11];
     std::array<std::atomic<float>*, kNumSteps> stepLvl {};
+    std::atomic<float> *mpeOn, *mpeBend, *quality;
 };
 
 /** Host transport info needed by the engine. */
@@ -84,7 +89,11 @@ public:
     static constexpr int kControlBlock = 32;
 
     SynthEngine (juce::AudioProcessorValueTreeState& apvts, const WavetableBank& bank,
-                 const FactorySamples& factorySamples, const UserSampleSlot& userSample);
+                 const FactorySamples& factorySamples, const UserSampleSlot& userSample,
+                 const std::array<UserWavetableSlot, kNumOscs>& userTables);
+
+    /** Eco quality (unison cap) is read from the parameter; HQ oversampling is done by the processor. */
+    double getSampleRate() const noexcept { return sampleRate; }
 
     void prepare (double sampleRate, int maxBlockSize);
     void reset();
@@ -111,7 +120,8 @@ private:
     struct Voice
     {
         bool active = false, keyDown = false, sustained = false;
-        int note = 60;
+        int note = 60, channel = 1;
+        float mpeBend = 0.0f, mpePressure = 0.0f, mpeSlide = 0.0f;   // 0.8.0 per-note expression (semitones / 0..1)
         float velocity = 1.0f, aftertouch = 0.0f;
         uint64_t order = 0;
         double pitch = 60.0, targetPitch = 60.0;
@@ -148,11 +158,24 @@ private:
         bool smpDone = false;
         float lastSmp = 0.0f;
         int ageSamples = 0;                                                       // for the PUNCH transient
+
+        // ---- 0.8.0 warp ----
+        std::array<double, kNumOscs> modPhase {};                                // modulator (sync master / FM / AM source) phases
+        std::array<std::array<float, kMaxUnison>, kNumOscs> syncBlep {};         // pending sync-reset correction for the next sample
+        std::array<float, kNumOscs> lastWarp {};
+        std::array<std::array<float, kMaxUnison>, kNumOscs> warpDc {};           // running DC of a warped oscillator
+        std::array<std::array<bool, kMaxUnison>, kNumOscs> warpDcValid {};
     };
 
     void handleMidi (const juce::MidiMessage& m);
-    void noteOn (int note, float velocity);
-    void noteOff (int note);
+    void noteOn (int note, float velocity, int channel = 1);
+    void noteOff (int note, int channel = 1);
+    /** Renders the modulator signal of oscillator `o` (centre voice, pre-level) for SYNC / FM / AM targets. */
+    void renderModulator (Voice& v, int o, double basePitch, const float* dest, int n) noexcept;
+    void renderWarpedUnison (Voice& v, int o, int u, const EngineSnapshot::Osc& op, double& ph, double inc, int n, float invN,
+                             float gL, float gR, float level0, float levelT, float pos0, float posT, float fold0, float foldT,
+                             float warp0, float warpT, const UserWavetable* ut, float* mixL, float* mixR) noexcept;
+    int warpSourceOf (int o) const noexcept;
     void startVoice (Voice& v, int note, float velocity, bool retriggerFromScratch);
     void releaseVoice (Voice& v);
     Voice* findVoiceToSteal();
@@ -168,7 +191,13 @@ private:
     const WavetableBank& bank;
     const FactorySamples& factorySamples;
     const UserSampleSlot& userSample;
+    const std::array<UserWavetableSlot, kNumOscs>& userTables;
     EngineSnapshot snap;
+    // modulator scratch (n <= kControlBlock): signal + master wrap position (-1 = none in this sample)
+    std::array<std::array<float, kControlBlock>, kNumOscs> modBuf {}, wrapBuf {};
+    std::array<double, kNumOscs> modInc {};
+    int currentChannel = 1;
+    std::array<float, 17> mpeChBend {}, mpeChPressure {}, mpeChSlide {};   // per member channel (MPE)
 
     double sampleRate = 44100.0;
     std::array<Voice, kMaxVoices> voices;

@@ -525,7 +525,7 @@ void DivinityEditor::Content::paint (juce::Graphics& g)
     // stats (top right)
     g.setColour (text.withAlpha (0.92f));
     g.setFont (font (12.0f, Weight::Medium, 0.02f));
-    g.drawText (owner.cpuText, 1153, 20, 60, 15, juce::Justification::centredLeft);
+    g.drawText (owner.cpuText, 1153, 20, 90, 15, juce::Justification::centredLeft);
     g.drawText (owner.ramText, 1208, 20, 100, 15, juce::Justification::centredLeft);
     g.drawText (owner.voicesText, 1153, 37, 160, 15, juce::Justification::centredLeft);
     auto bar = juce::Rectangle<float> (1153.0f, 57.0f, 125.0f, 5.0f);
@@ -599,6 +599,11 @@ void DivinityEditor::showTab (const juce::String& tab)
 void DivinityEditor::timerCallback()
 {
     cpuText = "CPU " + juce::String (juce::roundToInt (proc.cpuLoad.load() * 100.0f)) + "%";
+    {
+        const int q = proc.getRunningQuality();
+        if (q == (int) Quality::Eco) cpuText << " ECO";
+        else if (q == (int) Quality::HQ) cpuText << " HQ";
+    }
     const auto mem = processMemoryBytes();
     ramText = mem > 0 ? (mem >= (juce::int64) 1 << 30 ? "RAM " + juce::String ((double) mem / (double) (1 << 30), 1) + " GB"
                                                       : "RAM " + juce::String ((int) (mem >> 20)) + " MB")
@@ -753,6 +758,22 @@ void DivinityEditor::showMainMenu()
     m.addSubMenu ("Interface size", size);
     m.addItem (6, "Guardian Angel tips", true, proc.uiAngelTips);
     m.addItem (7, "MIDI panic (all notes off)");
+    {
+        juce::PopupMenu q, mpe, bend;
+        const int curQ = (int) std::lround (proc.apvts.getRawParameterValue (ids::quality)->load());
+        q.addItem (40, "Eco  (lighter CPU, unison max 4)", true, curQ == 0);
+        q.addItem (41, "Standard", true, curQ == 1);
+        q.addItem (42, "HQ  (2x oversampled engine)", true, curQ == 2);
+        q.addSeparator();
+        q.addItem (43, "Always HQ when rendering / bouncing", true, proc.apvts.getRawParameterValue (ids::qualityRender)->load() > 0.5f);
+        m.addSubMenu ("Quality", q);
+        const bool mpeOn = proc.apvts.getRawParameterValue (ids::mpeOn)->load() > 0.5f;
+        const int curBend = (int) std::lround (proc.apvts.getRawParameterValue (ids::mpeBend)->load());
+        mpe.addItem (50, "MPE (lower zone, ch 2-16)", true, mpeOn);
+        for (int b : { 2, 12, 24, 48, 96 }) bend.addItem (60 + b, juce::String (b) + " semitones", true, curBend == b);
+        mpe.addSubMenu ("Per-note bend range", bend);
+        m.addSubMenu ("MPE", mpe);
+    }
     m.addSeparator();
     m.addItem (8, "DIVINITY " + juce::String (DIVINITY_VERSION_STRING), false);
     m.addItem (9, "TRIPLE SEVEN AUDIO  -  triplesevenaudio.com");
@@ -760,6 +781,15 @@ void DivinityEditor::showMainMenu()
     {
         auto& pm = proc.presets;
         if (r >= 10 && r < 17) { setUiScale (scales[r - 10]); return; }
+        auto setParam = [this] (const juce::String& id, float plain)
+        {
+            if (auto* p = proc.apvts.getParameter (id))
+            { p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (plain)); p->endChangeGesture(); }
+        };
+        if (r >= 40 && r <= 42) { setParam (ids::quality, (float) (r - 40)); return; }
+        if (r == 43) { setParam (ids::qualityRender, proc.apvts.getRawParameterValue (ids::qualityRender)->load() > 0.5f ? 0.0f : 1.0f); return; }
+        if (r == 50) { setParam (ids::mpeOn, proc.apvts.getRawParameterValue (ids::mpeOn)->load() > 0.5f ? 0.0f : 1.0f); return; }
+        if (r > 60 && r <= 156) { setParam (ids::mpeBend, (float) (r - 60)); return; }
         switch (r)
         {
             case 1: pm.loadInit(); break;

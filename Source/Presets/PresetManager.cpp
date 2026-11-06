@@ -86,7 +86,9 @@ void PresetManager::setAllToDefault()
     apvts.state.setProperty (fxOrderProperty, defaultFxOrder().joinIntoString (","), nullptr);
     for (auto* p : apvts.processor.getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
-            rp->setValueNotifyingHost (rp->getDefaultValue());
+            if (! isGlobalSetting (rp->getParameterID()))
+                rp->setValueNotifyingHost (rp->getDefaultValue());
+    for (int o = 0; o < kNumOscs; ++o) apvts.state.setProperty ("userTable" + juce::String (o), juce::String(), nullptr);
 }
 
 void PresetManager::setParamReal (const juce::String& id, float realValue)
@@ -168,10 +170,13 @@ std::unique_ptr<juce::XmlElement> PresetManager::createPresetXml (const PresetIn
     xml->setAttribute ("description", info.description);
     if (apvts.state.getProperty ("userSample").toString().isNotEmpty())
         xml->setAttribute ("userSample", apvts.state.getProperty ("userSample").toString());
+    for (int o = 0; o < kNumOscs; ++o)
+        if (apvts.state.getProperty ("userTable" + juce::String (o)).toString().isNotEmpty())
+            xml->setAttribute ("userTable" + juce::String (o), apvts.state.getProperty ("userTable" + juce::String (o)).toString());
     xml->setAttribute ("fxOrder", sanitiseFxOrder (juce::StringArray::fromTokens (apvts.state.getProperty (fxOrderProperty).toString(), ",", "")).joinIntoString (","));
     auto* params = xml->createNewChildElement ("Params");
     for (auto* p : apvts.processor.getParameters())
-        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p); rp != nullptr && ! isGlobalSetting (rp->getParameterID()))
         {
             auto* e = params->createNewChildElement ("P");
             e->setAttribute ("id", rp->getParameterID());
@@ -193,7 +198,7 @@ bool PresetManager::applyPresetXml (const juce::XmlElement& xml)
         apvts.state.setProperty (fxOrderProperty, sanitiseFxOrder (juce::StringArray::fromTokens (xml.getStringAttribute ("fxOrder"), ",", "")).joinIntoString (","), nullptr);
     bool hasEngineMode = false;
     for (auto* e : params->getChildWithTagNameIterator ("P"))
-        if (auto* p = apvts.getParameter (e->getStringAttribute ("id")))
+        if (auto* p = apvts.getParameter (e->getStringAttribute ("id")); p != nullptr && ! isGlobalSetting (e->getStringAttribute ("id")))
         {
             p->setValueNotifyingHost (p->convertTo0to1 ((float) e->getDoubleAttribute ("v")));
             hasEngineMode |= e->getStringAttribute ("id") == ids::engineMode;
@@ -205,6 +210,8 @@ bool PresetManager::applyPresetXml (const juce::XmlElement& xml)
     applyPre07Defaults (*params, "P", "id", apvts);
     if (xml.hasAttribute ("userSample"))
         apvts.state.setProperty ("userSample", xml.getStringAttribute ("userSample"), nullptr);
+    for (int o = 0; o < kNumOscs; ++o)
+        apvts.state.setProperty ("userTable" + juce::String (o), xml.getStringAttribute ("userTable" + juce::String (o)), nullptr);
     loading = wasLoading;
     return true;
 }

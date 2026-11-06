@@ -3,7 +3,7 @@
 **TRIPLE SEVEN AUDIO — Engineered to Feel.**
 Hybrid software synthesizer · VST3 / AU / Standalone · macOS (Apple Silicon + Intel) & Windows · JUCE / C++17
 
-Current version: **0.7.3** — preset bank redesigned for variety; 0.7.2: — MIDI generator with drag-to-DAW, spectral stereo imager on EFFECTS (0.7.1: — the interface matches the v0.7 reference design; 0.7.0 brought the new UI, OSC D + SAMPLER, 8 macros, a 16-step sequencer, 82 new wavetables (88 total) and a brand-new 777-preset library in nine categories). Built on Sound Engine 2.0 (old projects still auto-load on the Classic 1.0 engine). Measurements: [`docs/SOUND_ENGINE_2.md`](docs/SOUND_ENGINE_2.md). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
+Current version: **0.8.0** — oscillator WARP (hard sync, FM, AM, bend, PWM, phase distortion, mirror), import your own wavetables, MIDI learn + MPE, Eco / Standard / HQ quality; 0.7.3: preset bank redesigned for variety; 0.7.2: — MIDI generator with drag-to-DAW, spectral stereo imager on EFFECTS (0.7.1: — the interface matches the v0.7 reference design; 0.7.0 brought the new UI, OSC D + SAMPLER, 8 macros, a 16-step sequencer, 82 new wavetables (88 total) and a brand-new 777-preset library in nine categories). Built on Sound Engine 2.0 (old projects still auto-load on the Classic 1.0 engine). Measurements: [`docs/SOUND_ENGINE_2.md`](docs/SOUND_ENGINE_2.md). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the architecture, roadmap, UI plan and an honest list of what's in and what isn't yet.
 
 ---
 
@@ -64,6 +64,10 @@ Push to GitHub and `.github/workflows/build.yml` builds a **universal macOS** zi
 - **Guardian Angel** (right side) — ask questions, describe a sound to build, get ideas, explain any control, randomize.
 - **SOUL** — drag the emotion pad (soft ↔ aggressive, melancholy ↔ euphoria), edit how each target responds, and hit **Divine Intervention** (Ascension / Collapse / Shatter / Bloom / Abyss).
 - Every control: hover for help · double-click to reset · shift-drag for fine · right-click to type a value.
+- **WARP (every oscillator, 0.8.0):** the selector next to the table / wave picks a mode — **Sync** (hard sync to another oscillator), **FM** (phase modulation from another oscillator), **AM**, **Bend + / Bend -**, **PWM**, **Phase Dist**, **Mirror** — and the WARP knob sets the amount (it's a mod-matrix destination: "Osc A Warp" etc.). Sync / FM / AM pick their source oscillator in the box beside it; the source can be switched off and still modulate.
+- **Your own wavetables:** drop a WAV / AIFF / FLAC onto an oscillator (or click its display → Import wavetable). Serum / Vital-style tables (2048-sample frames, up to 256) load frame by frame; a single cycle works too. It shows up as "User Wavetable" and saves with the session and with presets.
+- **MIDI learn:** right-click any knob → MIDI learn, then move a controller. Right-click again to forget it. Mappings save with the session.
+- **Settings (gear):** Quality — Eco (lighter CPU, unison max 4), Standard, HQ (2x oversampled engine) and "Always HQ when rendering"; MPE (lower zone, per-note bend / pressure / slide; bend range 2-96). These are global: loading a preset doesn't change them.
 - Click a waveform display to change wavetable / wave. Drag the envelope points. `…` on a card opens all its settings.
 - Undo / redo: Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z. Presets are saved in `Documents/TRIPLE SEVEN AUDIO/DIVINITY/Presets`.
 

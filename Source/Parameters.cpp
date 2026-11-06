@@ -18,7 +18,8 @@ juce::StringArray modSourceNames()
     return { "-", "LFO 1", "LFO 2", "LFO 3", "LFO 4", "ENV 1", "ENV 2", "ENV 3",
              "Velocity", "Mod Wheel", "Aftertouch", "Pitch Bend", "Note",
              "Macro 1", "Macro 2", "Macro 3", "Macro 4", "Soul X", "Soul Y",
-             "ENV 4", "Macro 5", "Macro 6", "Macro 7", "Macro 8", "Random", "Step" };
+             "ENV 4", "Macro 5", "Macro 6", "Macro 7", "Macro 8", "Random", "Step",
+             "MPE Pressure", "MPE Slide" };
 }
 
 juce::StringArray modDestNames()
@@ -38,7 +39,8 @@ juce::StringArray modDestNames()
              "Saturation", "Chorus Depth", "Delay Mix", "Reverb Mix",
              "Soul X", "Soul Y", "Divine Amount",
              "Osc D Pitch", "Osc D WT Pos", "Osc D Level", "Osc D Fold", "Osc D PWM", "Osc D Detune",
-             "Sampler Level", "Sampler Pitch", "Sampler Start" };
+             "Sampler Level", "Sampler Pitch", "Sampler Start",
+             "Osc A Warp", "Osc B Warp", "Osc C Warp", "Osc D Warp" };
 }
 
 juce::StringArray wavetableNames()
@@ -48,6 +50,16 @@ juce::StringArray wavetableNames()
     for (int i = 0; i < libraryTableCount(); ++i) n.add (libraryTableName (i));
     return n;
 }
+
+juce::StringArray oscTableChoiceNames()
+{
+    auto n = wavetableNames();
+    n.add ("User Wavetable");   // index == bank.getNumTables(): this oscillator's imported table
+    return n;
+}
+
+juce::StringArray warpModeNames() { return { "No Warp", "Sync", "FM", "AM", "Bend +", "Bend -", "PWM", "Phase Dist", "Mirror" }; }
+juce::StringArray qualityNames()  { return { "Eco", "Standard", "HQ" }; }
 
 juce::StringArray filterTypeNames()
 {
@@ -201,7 +213,7 @@ static void addVersion07Parameters (juce::AudioProcessorValueTreeState::Paramete
         auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("oscD", "Osc D", " | ");
         group->addChild (std::make_unique<APB> (pid (ids::osc (i, "on")), "Osc D On", false));
         group->addChild (std::make_unique<APC> (pid (ids::osc (i, "engine")), "Osc D Engine", juce::StringArray { "Wavetable", "Analog" }, 0));
-        group->addChild (std::make_unique<APC> (pid (ids::osc (i, "table")), "Osc D Wavetable", wavetableNames(), 0));
+        group->addChild (std::make_unique<APC> (pid (ids::osc (i, "table")), "Osc D Wavetable", oscTableChoiceNames(), 0));
         group->addChild (std::make_unique<APF> (pid (ids::osc (i, "pos")), "Osc D WT Position", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct()));
         group->addChild (std::make_unique<APF> (pid (ids::osc (i, "fold")), "Osc D Fold", juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct()));
         group->addChild (std::make_unique<APC> (pid (ids::osc (i, "wave")), "Osc D Analog Wave", juce::StringArray { "Sine", "Triangle", "Saw", "Square", "Pulse" }, 2));
@@ -289,6 +301,35 @@ static void addVersion07Parameters (juce::AudioProcessorValueTreeState::Paramete
     }
 }
 
+//==============================================================================
+/** 0.8.0: oscillator WARP (sync / FM / AM / phase warps), MPE, quality. Appended after everything else. */
+static void addVersion08Parameters (juce::AudioProcessorValueTreeState::ParameterLayout& layout)
+{
+    auto pid = [] (const juce::String& id) { return juce::ParameterID { id, kParamVersion }; };
+    {
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("warp", "Oscillator Warp", " | ");
+        for (int i = 0; i < kNumOscs; ++i)
+        {
+            const auto letter = juce::String::charToString ((juce::juce_wchar) ('A' + i));
+            group->addChild (std::make_unique<APC> (pid (ids::osc (i, "warp")), "Osc " + letter + " Warp Mode", warpModeNames(), 0));
+            group->addChild (std::make_unique<APF> (pid (ids::osc (i, "warp_amt")), "Osc " + letter + " Warp Amount",
+                                                    juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct()));
+            juce::StringArray srcs;
+            for (int s = 0; s < kNumOscs; ++s) srcs.add ("Osc " + juce::String::charToString ((juce::juce_wchar) ('A' + s)));
+            group->addChild (std::make_unique<APC> (pid (ids::osc (i, "warp_src")), "Osc " + letter + " Warp Source", srcs, i == 0 ? 1 : 0));
+        }
+        layout.add (std::move (group));
+    }
+    {
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("v08", "MPE + Quality", " | ");
+        group->addChild (std::make_unique<APB> (pid (ids::mpeOn), "MPE", false));
+        group->addChild (std::make_unique<API> (pid (ids::mpeBend), "MPE Bend Range", 1, 96, 48));
+        group->addChild (std::make_unique<APC> (pid (ids::quality), "Quality", qualityNames(), 1));
+        group->addChild (std::make_unique<APB> (pid (ids::qualityRender), "HQ When Rendering", false));
+        layout.add (std::move (group));
+    }
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
@@ -304,7 +345,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         group->addChild (std::make_unique<APB> (pid (ids::osc (i, "on")), "Osc " + letter + " On", defaultOn));
         group->addChild (std::make_unique<APC> (pid (ids::osc (i, "engine")), "Osc " + letter + " Engine",
                                                 juce::StringArray { "Wavetable", "Analog" }, i == 2 ? 1 : 0));
-        group->addChild (std::make_unique<APC> (pid (ids::osc (i, "table")), "Osc " + letter + " Wavetable", wavetableNames(), 0));
+        group->addChild (std::make_unique<APC> (pid (ids::osc (i, "table")), "Osc " + letter + " Wavetable", oscTableChoiceNames(), 0));
         group->addChild (std::make_unique<APF> (pid (ids::osc (i, "pos")), "Osc " + letter + " WT Position",
                                                 juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f, pct()));
         group->addChild (std::make_unique<APF> (pid (ids::osc (i, "fold")), "Osc " + letter + " Fold",
@@ -476,6 +517,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     addFxRackParameters (layout);
     addArpParameters (layout);
     addVersion07Parameters (layout);
+    addVersion08Parameters (layout);
     return layout;
 }
 
@@ -498,6 +540,9 @@ juce::String helpTextFor (const juce::String& id)
 
     if (id.startsWith ("osc"))
     {
+        if (has ("_warp"))      return "Warp: reshapes this oscillator. SYNC hard-syncs it to the source oscillator (WARP sweeps the pitch for classic sync leads). FM phase-modulates it from the source (WARP = depth). AM multiplies it by the source (ring mod at 100%). BEND +/-, PWM, PHASE DIST and MIRROR bend the waveform's phase for new harmonics from any table.";
+        if (has ("_warp_amt"))  return "Warp Amount: how hard the warp mode works. Modulate it (matrix: Osc Warp) for sync sweeps, FM growls and moving phase distortion.";
+        if (has ("_warp_src"))  return "Warp Source: the oscillator that drives SYNC, FM and AM. It can be switched off (silent) and still act as the modulator.";
         if (has ("_pos"))       return "Wavetable Position: scans through the frames of the selected wavetable. Modulate it for evolving, animated tones.";
         if (has ("_table"))     return "Wavetable: picks the set of waveforms this oscillator scans through.";
         if (has ("_fold"))      return "Fold: wavefolds the oscillator, adding bright harmonics. Small amounts add bite; large amounts get metallic.";
@@ -525,6 +570,10 @@ juce::String helpTextFor (const juce::String& id)
         if (has ("_keytrack")) return "Key Track: makes the cutoff follow the notes you play, so high notes stay bright.";
         if (has ("_type"))     return "Filter Type: MG Low 24 is a warm 4-pole ladder; Low/High Pass 12 and 24, Band Pass, Notch and Peak are state-variable shapes. Comb + / Comb - ring at the cutoff pitch (bright or hollow). Formant sweeps through vowels as you move the cutoff.";
     }
+    if (id == ids::mpeOn)         return "MPE: per-note pitch bend, pressure and slide from MPE controllers (Roli, Linnstrument, Push 3, Osmose...). Notes on channels 2-16 bend on their own; pressure and slide are mod sources (MPE Pressure / MPE Slide).";
+    if (id == ids::mpeBend)       return "MPE Bend Range: semitones of per-note pitch bend (most MPE controllers send 48).";
+    if (id == ids::quality)       return "Quality: ECO caps unison at 4 voices for lighter CPU while writing. STANDARD is the normal engine. HQ runs every voice 2x oversampled (cleaner sync, FM, folding and filter drive) for about twice the CPU.";
+    if (id == ids::qualityRender) return "HQ When Rendering: bounce / export in HQ automatically, whatever the live setting.";
     if (id == ids::filterRouting) return "Filter Routing: Serial runs Filter 1 into Filter 2. Parallel runs them side by side.";
     if (id.startsWith ("env"))
     {

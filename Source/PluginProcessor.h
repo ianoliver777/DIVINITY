@@ -132,6 +132,24 @@ public:
     juce::String loadUserSample (const juce::File& file, bool selectIt = true);
     static inline const juce::Identifier userSampleProperty { "userSample" };
 
+    //--------------------------------------------------------------------------
+    // 0.8.0: imported wavetables (one per oscillator, path saved with the session / preset as userTableN)
+    juce::String loadUserWavetable (int osc, const juce::File& file, bool selectIt = true);
+    void clearUserWavetable (int osc);
+    const UserWavetableSlot& getUserWavetable (int osc) const noexcept { return userTables[(size_t) osc]; }
+    static juce::Identifier userTableProperty (int osc) { return juce::Identifier ("userTable" + juce::String (osc)); }
+
+    // 0.8.0: MIDI learn. Right-click a knob -> learn; the next CC moves it from then on.
+    void startMidiLearn (const juce::String& paramID);
+    void cancelMidiLearn() { learnParam.store (-1); }
+    void forgetMidiMapping (const juce::String& paramID);
+    int getMidiCcFor (const juce::String& paramID) const;              // -1 = not mapped
+    bool isLearning (const juce::String& paramID) const;
+    static inline const juce::Identifier midiMapProperty { "midiMap" };
+
+    // 0.8.0: quality actually running (HQ = synth voices 2x oversampled)
+    int getRunningQuality() const noexcept { return runningQuality.load(); }
+
     /** FX rack order (module keys). Setting it is undoable and saved with sessions and presets. */
     juce::StringArray getFxOrder() const;
     void setFxOrder (const juce::StringArray& keys, bool undoable = true);
@@ -144,11 +162,27 @@ public:
 
 private:
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
-    void timerCallback() override { userSample.collectGarbage(); }
+    void timerCallback() override;
+    int wantedQuality() const;
+    void configureQuality (int q);
+    void applyMidiMapString (const juce::String& s);
+    juce::String midiMapString() const;
+    void renderSynth (juce::AudioBuffer<float>& buffer, const juce::MidiBuffer& midi, const TransportInfo& transport);
     juce::SharedResourcePointer<WavetableBank> bank;
     juce::SharedResourcePointer<FactorySamples> factorySamples;
     UserSampleSlot userSample;
+    std::array<UserWavetableSlot, kNumOscs> userTables;
     SynthEngine engine;
+    // HQ: the synth renders at 2x and comes down through a polyphase half-band filter before the FX
+    std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
+    juce::MidiBuffer hqMidi;
+    std::atomic<int> runningQuality { (int) Quality::Standard };
+    double baseRate = 44100.0; int baseBlock = 512;
+    int timerTicks = 0;
+    // MIDI learn
+    std::array<std::atomic<int>, 128> ccMap {};      // CC -> parameter index (-1 none)
+    std::atomic<int> learnParam { -1 };
+    std::atomic<bool> midiMapDirty { false };
     FXChain fx;
 public:
     Arpeggiator arp;   // public: the UI reads its display atomics

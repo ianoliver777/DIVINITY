@@ -40,6 +40,22 @@ Bitwig        Settings > Locations > Rescan
 Studio One    Options > Locations > VST Plug-ins > Reset Blocklist, then restart
 
 
+NEW IN 0.8.0
+------------
+- WARP on every oscillator: Sync (hard sync), FM, AM, Bend +/-, PWM,
+  Phase Dist and Mirror, with a WARP amount knob you can modulate.
+  Sync / FM / AM use another oscillator as the source (even one that's
+  switched off).
+- Import your own wavetables: drag a WAV / AIFF / FLAC onto an oscillator
+  (Serum / Vital tables work). Saved with your session and presets.
+- MIDI learn: right-click any knob > MIDI learn, move a knob on your
+  controller. Right-click > Forget to remove it.
+- MPE: gear menu > MPE (per-note bend, pressure and slide for Roli,
+  Linnstrument, Push 3, Osmose...).
+- Quality: gear menu > Quality: Eco / Standard / HQ (2x oversampled), plus
+  "Always HQ when rendering" for clean bounces.
+
+
 NEW IN 0.7.3
 ------------
 - Preset bank redesigned for variety. The 777 presets used to cycle

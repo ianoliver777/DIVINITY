@@ -13,10 +13,11 @@ EngineParamRefs::EngineParamRefs (juce::AudioProcessorValueTreeState& s)
         jassert (p != nullptr);
         return p;
     };
-    static const char* oscNames[17] = { "on", "engine", "table", "pos", "fold", "wave", "pw", "unison", "detune",
-                                        "width", "phase", "randphase", "oct", "semi", "fine", "level", "blend" };
+    static const char* oscNames[20] = { "on", "engine", "table", "pos", "fold", "wave", "pw", "unison", "detune",
+                                        "width", "phase", "randphase", "oct", "semi", "fine", "level", "blend",
+                                        "warp", "warp_src", "warp_amt" };
     for (int i = 0; i < kNumOscs; ++i)
-        for (int k = 0; k < 17; ++k)
+        for (int k = 0; k < 20; ++k)
             osc[(size_t) i].p[k] = get (ids::osc (i, oscNames[k]));
 
     sub[0] = get (ids::subOn); sub[1] = get (ids::subMode); sub[2] = get (ids::subLevel);
@@ -57,6 +58,7 @@ EngineParamRefs::EngineParamRefs (juce::AudioProcessorValueTreeState& s)
     const juce::String smpIds[11] = { ids::smpOn, ids::smpSample, ids::smpLevel, ids::smpTune, ids::smpFine, ids::smpStart,
                                       ids::smpLoop, ids::smpLoopStart, ids::smpLoopEnd, ids::smpReverse, ids::smpKeytrack };
     for (int i = 0; i < 11; ++i) smp[i] = get (smpIds[i]);
+    mpeOn = get (ids::mpeOn); mpeBend = get (ids::mpeBend); quality = get (ids::quality);
 }
 
 void EngineParamRefs::read (EngineSnapshot& s) const noexcept
@@ -72,6 +74,7 @@ void EngineParamRefs::read (EngineSnapshot& s) const noexcept
         o.wave = i (p[5]); o.pw = f (p[6]); o.unison = juce::jlimit (1, kMaxUnison, i (p[7])); o.detune = f (p[8]);
         o.width = f (p[9]); o.phase = f (p[10]); o.randPhase = b (p[11]); o.oct = i (p[12]); o.semi = i (p[13]);
         o.fine = f (p[14]); o.level = f (p[15]); o.blend = f (p[16]);
+        o.warp = juce::jlimit (0, (int) OscWarp::Mirror, i (p[17])); o.warpSrc = juce::jlimit (0, kNumOscs - 1, i (p[18])); o.warpAmt = f (p[19]);
     }
     s.subOn = b (sub[0]); s.subMode = i (sub[1]); s.subLevel = f (sub[2]);
     s.noiseOn = b (noise[0]); s.noiseType = i (noise[1]); s.noiseLevel = f (noise[2]);
@@ -110,12 +113,13 @@ void EngineParamRefs::read (EngineSnapshot& s) const noexcept
     s.smpOn = b (smp[0]); s.smpSample = i (smp[1]); s.smpLevel = f (smp[2]); s.smpTune = i (smp[3]); s.smpFine = f (smp[4]);
     s.smpStart = f (smp[5]); s.smpLoop = b (smp[6]); s.smpLoopStart = f (smp[7]); s.smpLoopEnd = f (smp[8]);
     s.smpReverse = b (smp[9]); s.smpKeytrack = b (smp[10]);
+    s.mpeOn = b (mpeOn); s.mpeBend = juce::jlimit (1, 96, i (mpeBend)); s.quality = juce::jlimit (0, 2, i (quality));
 }
 
 //==============================================================================
 SynthEngine::SynthEngine (juce::AudioProcessorValueTreeState& apvts, const WavetableBank& b,
-                          const FactorySamples& fs, const UserSampleSlot& us)
-    : refs (apvts), soul (apvts), bank (b), factorySamples (fs), userSample (us)
+                          const FactorySamples& fs, const UserSampleSlot& us, const std::array<UserWavetableSlot, kNumOscs>& ut)
+    : refs (apvts), soul (apvts), bank (b), factorySamples (fs), userSample (us), userTables (ut)
 {
     heldNotes.reserve (128);
     refs.read (snap);
@@ -221,14 +225,30 @@ void SynthEngine::process (juce::AudioBuffer<float>& buffer, const juce::MidiBuf
 //==============================================================================
 void SynthEngine::handleMidi (const juce::MidiMessage& m)
 {
+    // MPE (lower zone): channel 1 is the master channel, 2-16 carry one note each with its own bend,
+    // pressure and slide (CC74). Without MPE every channel behaves like channel 1.
+    const bool mpeNote = snap.mpeOn && m.getChannel() >= 2;
     if (m.isNoteOn())
-        noteOn (m.getNoteNumber(), m.getFloatVelocity());
+        noteOn (m.getNoteNumber(), m.getFloatVelocity(), m.getChannel());
     else if (m.isNoteOff())
-        noteOff (m.getNoteNumber());
+        noteOff (m.getNoteNumber(), m.getChannel());
     else if (m.isPitchWheel())
-        pitchBend = juce::jlimit (-1.0f, 1.0f, (float) (m.getPitchWheelValue() - 8192) / 8192.0f);
+    {
+        const float bend = juce::jlimit (-1.0f, 1.0f, (float) (m.getPitchWheelValue() - 8192) / 8192.0f);
+        if (mpeNote) { mpeChBend[(size_t) m.getChannel()] = bend; for (auto& v : voices) if (v.active && v.channel == m.getChannel()) v.mpeBend = bend * (float) snap.mpeBend; }
+        else pitchBend = bend;
+    }
     else if (m.isChannelPressure())
-        channelPressure = (float) m.getChannelPressureValue() / 127.0f;
+    {
+        const float pr = (float) m.getChannelPressureValue() / 127.0f;
+        if (mpeNote) { mpeChPressure[(size_t) m.getChannel()] = pr; for (auto& v : voices) if (v.active && v.channel == m.getChannel()) v.mpePressure = pr; }
+        else channelPressure = pr;
+    }
+    else if (mpeNote && m.isController() && m.getControllerNumber() == 74)
+    {
+        mpeChSlide[(size_t) m.getChannel()] = (float) m.getControllerValue() / 127.0f;
+        for (auto& v : voices) if (v.active && v.channel == m.getChannel()) v.mpeSlide = (float) m.getControllerValue() / 127.0f;
+    }
     else if (m.isAftertouch())
     {
         for (auto& v : voices)
@@ -260,6 +280,13 @@ void SynthEngine::startVoice (Voice& v, int note, float velocity, bool fresh)
 {
     v.active = true; v.keyDown = true; v.sustained = false;
     v.note = note; v.velocity = velocity; v.aftertouch = 0.0f;
+    v.channel = currentChannel;
+    // MPE: a member channel's bend / pressure / slide sent before the note applies to it straight away
+    const bool mpeCh = snap.mpeOn && juce::isPositiveAndBelow (v.channel, 17) && v.channel >= 2;
+    v.mpeBend = mpeCh ? mpeChBend[(size_t) v.channel] * (float) snap.mpeBend : 0.0f;
+    v.mpePressure = mpeCh ? mpeChPressure[(size_t) v.channel] : 0.0f;
+    v.mpeSlide = mpeCh ? mpeChSlide[(size_t) v.channel] : 0.0f;
+    v.modPhase.fill (0.0);   // FM / sync modulators restart with the note: tight, repeatable attacks
     v.order = ++noteCounter;
     v.targetPitch = note;
 
@@ -275,6 +302,8 @@ void SynthEngine::startVoice (Voice& v, int note, float velocity, bool fresh)
         for (auto& e : v.env) e.reset();
         v.rampsValid = false;
         v.subPhase = 0.0;
+        for (auto& o : v.syncBlep) o.fill (0.0f);
+        for (auto& o : v.warpDcValid) o.fill (false);
         for (int o = 0; o < kNumOscs; ++o)
         {
             const auto& op = snap.osc[(size_t) o];
@@ -337,8 +366,9 @@ SynthEngine::Voice* SynthEngine::findVoiceToSteal()
     return best;
 }
 
-void SynthEngine::noteOn (int note, float velocity)
+void SynthEngine::noteOn (int note, float velocity, int channel)
 {
+    currentChannel = channel;
     if (snap.voiceMode != (int) VoiceMode::Poly)
     {
         heldNotes.erase (std::remove (heldNotes.begin(), heldNotes.end(), note), heldNotes.end());
@@ -362,7 +392,7 @@ void SynthEngine::noteOn (int note, float velocity)
 
     // Poly: retrigger a voice already holding this note
     for (auto& v : voices)
-        if (v.active && v.note == note && (v.keyDown || v.sustained))
+        if (v.active && v.note == note && (v.keyDown || v.sustained) && (! snap.mpeOn || v.channel == channel))
         {
             startVoice (v, note, velocity, false);
             return;
@@ -379,7 +409,7 @@ void SynthEngine::noteOn (int note, float velocity)
         startVoice (*v, note, velocity, false);
 }
 
-void SynthEngine::noteOff (int note)
+void SynthEngine::noteOff (int note, int channel)
 {
     if (snap.voiceMode != (int) VoiceMode::Poly)
     {
@@ -402,7 +432,7 @@ void SynthEngine::noteOff (int note)
     }
 
     for (auto& v : voices)
-        if (v.active && v.keyDown && v.note == note)
+        if (v.active && v.keyDown && v.note == note && (! snap.mpeOn || v.channel == channel || channel <= 1))
         {
             if (sustainPedal) { v.keyDown = false; v.sustained = true; }
             else releaseVoice (v);
@@ -420,7 +450,10 @@ void SynthEngine::computeVoiceMods (const Voice& v, const float* globalSrc, floa
     src[(size_t) ModSource::Env4] = v.env[3].getLevel();
     src[(size_t) ModSource::Velocity] = v.velocity;
     src[(size_t) ModSource::NoteNumber] = (float) (v.note - 60) / 60.0f;
-    src[(size_t) ModSource::Aftertouch] = juce::jmax (channelPressure, v.aftertouch);
+    src[(size_t) ModSource::Aftertouch] = juce::jmax (channelPressure, v.aftertouch, v.mpePressure);
+    // MPE sources fall back to ordinary pressure when MPE is off, so patches still respond to a normal keyboard
+    src[(size_t) ModSource::MpePressure] = snap.mpeOn ? v.mpePressure : juce::jmax (channelPressure, v.aftertouch);
+    src[(size_t) ModSource::MpeSlide] = v.mpeSlide;
 
     std::fill (dest, dest + (size_t) ModDest::NumDests, 0.0f);
     for (const auto& slot : snap.mod)
@@ -573,6 +606,221 @@ namespace
     constexpr float kUnisonIrregular[kMaxUnison] = { 1.0f, 0.93f, 1.06f, 0.97f, 1.03f, 0.91f, 1.08f, 0.96f };
 }
 
+//==============================================================================
+// 0.8.0 WARP: SYNC / FM / AM / phase warps + imported tables
+//==============================================================================
+namespace
+{
+    inline double wrap01 (double p) noexcept { p -= std::floor (p); return p >= 1.0 ? 0.0 : p; }
+    constexpr double kWarpTwoPi = 6.283185307179586;
+    /** Mirror: 0 -> 1 -> 0 with a smooth turn-around (no kink, so no aliasing from the reversal). */
+    inline double mirrorPhase (double p) noexcept { return 0.5 - 0.5 * std::cos (kWarpTwoPi * p); }
+    inline float fmDepth (float a) noexcept { return a * a * 1.5f; }                  // cycles of phase deviation
+    inline double syncRatio (float a) noexcept { return std::exp2 ((double) a * 4.0); } // slave up to +4 octaves
+    /** Phase-warp modes. Every curve keeps the phase *speed* continuous across the cycle wrap (no kinks):
+        a kink right on a saw's edge aliases badly, a smooth speed change doesn't.
+        Bend +/-: speed 1 + c sin(2 pi p)  - squeezes the cycle into its first (+) or second (-) half.
+        Phase Dist: speed 1 - c cos(2 pi p) - slow edges, fast middle (Casio-style PD, smoothed).
+        PWM: the cycle plays in the first w of the period (smooth in and out), then holds. */
+    inline double warpPhase (int mode, double p, float a) noexcept
+    {
+        const double c = 0.95 * a;
+        switch (mode)
+        {
+            case (int) OscWarp::BendPlus:  return p + c * (1.0 - std::cos (kWarpTwoPi * p)) / kWarpTwoPi;
+            case (int) OscWarp::BendMinus: return p - c * (1.0 - std::cos (kWarpTwoPi * p)) / kWarpTwoPi;
+            case (int) OscWarp::Pwm:       { const double w = 1.0 - 0.94 * a; return p < w ? 0.5 - 0.5 * std::cos (3.141592653589793 * p / w) : 0.0; }
+            case (int) OscWarp::PhaseDist: return p - c * std::sin (kWarpTwoPi * p) / kWarpTwoPi;
+            default: return p;
+        }
+    }
+    inline double warpSlope (int mode, float a) noexcept
+    {
+        switch (mode)
+        {
+            case (int) OscWarp::BendPlus: case (int) OscWarp::BendMinus: case (int) OscWarp::PhaseDist: return 1.0 + 0.95 * a;
+            case (int) OscWarp::Pwm:       return 1.5707963 / (1.0 - 0.94 * a);
+            case (int) OscWarp::Mirror:    return 3.14159265;
+            case (int) OscWarp::Sync:      return syncRatio (a);
+            default: return 1.0;
+        }
+    }
+}
+
+int SynthEngine::warpSourceOf (int o) const noexcept
+{
+    const int s = snap.osc[(size_t) o].warpSrc;
+    return s == o ? (o == 0 ? 1 : 0) : s;   // an oscillator can't modulate itself: fall back to its neighbour
+}
+
+void SynthEngine::renderModulator (Voice& v, int o, double basePitch, const float* dest, int n) noexcept
+{
+    const auto& op = snap.osc[(size_t) o];
+    const double pitch = basePitch + op.oct * 12 + op.semi + op.fine / 100.0 + dest[(size_t) oscModDest (0, o)] * 12.0;
+    const double inc = juce::jmin (0.49, (double) noteToHz (pitch) / sampleRate);
+    modInc[(size_t) o] = inc;
+    const int lvl = WavetableBank::levelForIncrement (inc, 0.45);
+    const bool wt = op.engine == (int) OscEngine::Wavetable;
+    const float pos = juce::jlimit (0.0f, 1.0f, op.pos + dest[(size_t) oscModDest (1, o)]);
+    const UserWavetable* ut = (wt && op.table >= bank.getNumTables()) ? userTables[(size_t) o].get() : nullptr;
+    const int table = juce::jlimit (0, bank.getNumTables() - 1, op.table);
+    const float pw = juce::jlimit (0.03f, 0.97f, op.pw + dest[(size_t) oscModDest (4, o)] * 0.45f);
+
+    WavetableBank::FrameView F;
+    if (wt)
+    {
+        if (ut != nullptr) F = ut->getStoredFrame ((int) std::lround (pos * (float) (ut->frames - 1)), lvl);
+        else if (op.table >= bank.getNumTables()) F = bank.getStoredFrame (bank.getAnalogTable(), WavetableBank::kAnalogSine, lvl);
+        else F = bank.getStoredFrame (table, (int) std::lround (pos * (float) (bank.framesFor (table) - 1)), lvl);
+    }
+    else
+    {
+        const int frame = op.wave == (int) AnalogWave::Sine ? WavetableBank::kAnalogSine
+                        : op.wave == (int) AnalogWave::Triangle ? WavetableBank::kAnalogTriangle
+                        : op.wave == (int) AnalogWave::Square ? WavetableBank::kAnalogSquare : WavetableBank::kAnalogSaw;
+        F = bank.getStoredFrame (bank.getAnalogTable(), frame, lvl);
+    }
+    const bool pulse = ! wt && op.wave == (int) AnalogWave::Pulse;
+    double ph = v.modPhase[(size_t) o];
+    auto& out = modBuf[(size_t) o];
+    auto& wraps = wrapBuf[(size_t) o];
+    for (int s = 0; s < n; ++s)
+    {
+        out[(size_t) s] = pulse ? F.at (wrap01 (ph - pw)) - F.at (ph) : F.at (ph);
+        const double next = ph + inc;
+        if (next >= 1.0) { wraps[(size_t) s] = (float) ((1.0 - ph) / inc); ph = next - 1.0; }
+        else { wraps[(size_t) s] = -1.0f; ph = next; }
+    }
+    v.modPhase[(size_t) o] = ph;
+}
+
+void SynthEngine::renderWarpedUnison (Voice& v, int o, int u, const EngineSnapshot::Osc& op, double& ph, double inc, int n, float invN,
+                                      float gL, float gR, float level0, float levelT, float pos0, float posT, float fold0, float foldT,
+                                      float warp0, float warpT, const UserWavetable* ut, float* mixL, float* mixR) noexcept
+{
+    const int mode = op.warp;
+    const bool wt = op.engine == (int) OscEngine::Wavetable;
+    const int table = juce::jlimit (0, bank.getNumTables() - 1, op.table);
+    const int src = warpSourceOf (o);
+    const float* mod = modBuf[(size_t) src].data();
+    const float* wraps = wrapBuf[(size_t) src].data();
+    const bool v2 = snap.v2;
+
+    // mip level: the steepest phase slope this block (warps and sync speed the waveform up) + FM sidebands
+    const float aMax = juce::jmax (warp0, warpT);
+    double effInc = inc * juce::jmin (16.0, warpSlope (mode, aMax));
+    if (mode == (int) OscWarp::FM) effInc = inc + fmDepth (aMax) * juce::MathConstants<double>::twoPi * modInc[(size_t) src];
+    const int lvl = WavetableBank::levelForIncrement (juce::jmin (0.49, effInc), 0.6);
+
+    const float pw = juce::jlimit (0.03f, 0.97f, op.pw);
+    const int nf = ut != nullptr ? ut->frames : (wt ? bank.framesFor (table) : 1);
+    int analogFrame = WavetableBank::kAnalogSaw;
+    if (! wt)
+        analogFrame = op.wave == (int) AnalogWave::Sine ? WavetableBank::kAnalogSine
+                    : op.wave == (int) AnalogWave::Triangle ? WavetableBank::kAnalogTriangle
+                    : op.wave == (int) AnalogWave::Square ? WavetableBank::kAnalogSquare : WavetableBank::kAnalogSaw;
+    const auto A = bank.getStoredFrame (bank.getAnalogTable(), analogFrame, lvl);
+    const bool pulse = ! wt && op.wave == (int) AnalogWave::Pulse;
+
+    // per-sample frame interpolation state
+    int f0 = 0, f1 = 0; float fr = 0.0f;
+    WavetableBank::FrameView FA, FB;
+    auto setFrames = [&] (float t)
+    {
+        if (! wt) return;
+        const float fpos = juce::jlimit (0.0f, (float) (nf - 1), (pos0 + (posT - pos0) * t) * (float) (nf - 1));
+        const int a = juce::jlimit (0, nf - 1, (int) fpos), b = juce::jmin (a + 1, nf - 1);
+        fr = fpos - (float) a;
+        if (a != f0 || b != f1 || FA.data == nullptr)
+        {
+            f0 = a; f1 = b;
+            FA = ut != nullptr ? ut->getStoredFrame (a, lvl) : bank.getStoredFrame (table, a, lvl);
+            FB = ut != nullptr ? ut->getStoredFrame (b, lvl) : bank.getStoredFrame (table, b, lvl);
+        }
+    };
+    auto read = [&] (double p) noexcept -> float
+    {
+        if (wt) { const float a = FA.at (p); return a + fr * (FB.at (p) - a); }
+        if (pulse) return 0.9f * (A.at (wrap01 (p - pw)) - A.at (p));
+        return 0.9f * A.at (p);
+    };
+
+    float& fprev = v.foldPrev[(size_t) o][(size_t) u];
+    float& blep = v.syncBlep[(size_t) o][(size_t) u];
+
+    // Bend / PWM / phase-dist / sync / AM shift the waveform's average: track and remove it (≈6 Hz),
+    // seeded with the cycle mean at note start so there's no thump.
+    float& dc = v.warpDc[(size_t) o][(size_t) u];
+    if (! v.warpDcValid[(size_t) o][(size_t) u])
+    {
+        v.warpDcValid[(size_t) o][(size_t) u] = true;
+        setFrames (0.0f);
+        double sum = 0.0;
+        constexpr int K = 64;
+        for (int k = 0; k < K; ++k)
+        {
+            const double q = (k + 0.5) / K;
+            switch (mode)
+            {
+                case (int) OscWarp::Sync:   sum += read (wrap01 (q * syncRatio (warp0))); break;
+                case (int) OscWarp::Mirror: { const float x0 = read (q); sum += x0 + warp0 * (read (mirrorPhase (q)) - x0); break; }
+                case (int) OscWarp::FM: case (int) OscWarp::AM: case (int) OscWarp::Off: sum += read (q); break;
+                default:                    sum += read (warpPhase (mode, q, warp0)); break;
+            }
+        }
+        dc = (float) (sum / K);
+        FA.data = nullptr;   // re-pick frames in the loop
+    }
+    const float dcCoeff = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 6.0f / (float) sampleRate);
+
+    for (int s = 0; s < n; ++s)
+    {
+        const float t = (float) s * invN;
+        setFrames (t);
+        const float a = warp0 + (warpT - warp0) * t;
+        float x;
+        switch (mode)
+        {
+            case (int) OscWarp::FM:     x = read (wrap01 (ph + fmDepth (a) * mod[s])); break;
+            case (int) OscWarp::AM:     x = read (ph) * (1.0f - a + a * mod[s]); break;
+            case (int) OscWarp::Mirror: { const float x0 = read (ph); x = x0 + a * (read (mirrorPhase (ph)) - x0); break; }
+            case (int) OscWarp::Sync:   x = read (ph); break;
+            default:                    x = read (warpPhase (mode, ph, a)); break;
+        }
+
+        // advance (hard sync resets on the master's wrap, with a 2-point polyBLEP on the jump)
+        if (mode == (int) OscWarp::Sync)
+        {
+            x += blep; blep = 0.0f;
+            const double incS = juce::jmin (0.49, inc * syncRatio (a));
+            const float f = wraps[s];
+            if (f >= 0.0f)
+            {
+                const double pe = wrap01 (ph + (double) f * incS);
+                const float d = read (0.0) - read (pe);
+                x += d * 0.5f * (1.0f - f) * (1.0f - f);
+                blep = -d * 0.5f * f * f;
+                // polyBLAMP for the slope change at the reset (matters for saw-like tables: phase 0 sits on the edge)
+                const float ds = (read (incS) - read (0.0)) - (read (pe) - read (wrap01 (pe - incS)));
+                const float g = 1.0f - f;
+                x += ds * g * g * g / 6.0f;
+                blep += ds * f * f * f / 6.0f;
+                ph = (1.0 - (double) f) * incS;
+            }
+            else { ph += incS; if (ph >= 1.0) ph -= 1.0; }
+        }
+        else { ph += inc; if (ph >= 1.0) ph -= 1.0; }
+
+        dc += dcCoeff * (x - dc);
+        x -= dc;
+
+        const float fAmt = fold0 + (foldT - fold0) * t;
+        x = v2 ? dsp::FoldAdaa::process (x, fprev, fAmt) : fold (x, fAmt);
+        x *= level0 + (levelT - level0) * t;
+        mixL[s] += x * gL; mixR[s] += x * gR;
+    }
+}
+
 void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const float* globalSrc)
 {
     float dest[(size_t) ModDest::NumDests];
@@ -619,7 +867,7 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
     else v.pitch = v.targetPitch;
 
     if (! std::isfinite (v.pitch)) v.pitch = v.targetPitch;
-    const double basePitch = v.pitch + snap.masterTune / 100.0 + pitchBend * snap.bendRange
+    const double basePitch = v.pitch + snap.masterTune / 100.0 + pitchBend * snap.bendRange + (double) v.mpeBend
                            + (double) (v.drift * juce::jlimit (0.0f, 100.0f, perf.driftCents)) / 100.0
                            + (double) pitchDriftCents / 100.0;
 
@@ -627,6 +875,20 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
     float* mixR = scratchR.data();
     std::fill (mixL, mixL + n, 0.0f);
     std::fill (mixR, mixR + n, 0.0f);
+
+    // ---- modulators for SYNC / FM / AM (0.8.0) ----
+    // Each source is rendered once per voice (centre pitch, pre-level) so it can be switched off and still modulate.
+    {
+        std::array<bool, kNumOscs> need {};
+        for (int o = 0; o < kNumOscs; ++o)
+        {
+            const auto& op = snap.osc[(size_t) o];
+            if (op.on && (op.warp == (int) OscWarp::Sync || op.warp == (int) OscWarp::FM || op.warp == (int) OscWarp::AM))
+                need[(size_t) warpSourceOf (o)] = true;
+        }
+        for (int o = 0; o < kNumOscs; ++o)
+            if (need[(size_t) o]) renderModulator (v, o, basePitch, dest, n);
+    }
 
     // ---- oscillators ----
     for (int o = 0; o < kNumOscs; ++o)
@@ -649,7 +911,7 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
         v.lastLevel[(size_t) o] = levelT; v.lastPos[(size_t) o] = posT; v.lastFold[(size_t) o] = foldT;
         if (level0 < 1.0e-5f && levelT < 1.0e-5f) continue;
 
-        const int nU = op.unison;
+        const int nU = snap.quality == (int) Quality::Eco ? juce::jmin (op.unison, 4) : op.unison;
         // Unison blend: outer voices at `blend` against the centre, loudness-normalised (blend 1 = v0.6 exactly)
         const float blend = juce::jlimit (0.0f, 1.0f, op.blend);
         float uniPow = 0.0f;
@@ -662,6 +924,14 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
         const float uniGain = blend >= 1.0f ? 1.0f / std::sqrt ((float) nU) : 1.0f / std::sqrt (juce::jmax (1.0e-6f, uniPow));
         const bool wt = op.engine == (int) OscEngine::Wavetable;
         const int table = juce::jlimit (0, bank.getNumTables() - 1, op.table);
+        // 0.8.0: WARP modes and imported tables take the generic renderer; everything else stays on the
+        // original paths (bit-identical output for every pre-0.8 patch)
+        const UserWavetable* userTable = (wt && op.table >= bank.getNumTables()) ? userTables[(size_t) o].get() : nullptr;
+        if (wt && op.table >= bank.getNumTables() && userTable == nullptr) continue;   // "User Wavetable" with nothing loaded: silent
+        const float warpT = juce::jlimit (0.0f, 1.0f, op.warpAmt + dest[(size_t) oscModDest (6, o)]);
+        const float warp0 = v.rampsValid ? v.lastWarp[(size_t) o] : warpT;
+        v.lastWarp[(size_t) o] = warpT;
+        const bool warped = op.warp != (int) OscWarp::Off || userTable != nullptr;
 
         for (int u = 0; u < nU; ++u)
         {
@@ -682,7 +952,11 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
             const double inc = juce::jmin (0.49, (double) noteToHz (oscPitch + cents / 100.0) / sampleRate);
             double ph = v.phase[(size_t) o][(size_t) u];
 
-            if (wt)
+            if (warped)
+            {
+                renderWarpedUnison (v, o, u, op, ph, inc, n, invN, gL, gR, level0, levelT, pos0, posT, fold0, foldT, warp0, warpT, userTable, mixL, mixR);
+            }
+            else if (wt)
             {
                 float& fprev = v.foldPrev[(size_t) o][(size_t) u];
                 // Classic 1.0 reads the original float tables exactly as v0.5 did; Divine 2.0 (and any
