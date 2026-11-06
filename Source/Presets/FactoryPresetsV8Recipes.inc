@@ -526,7 +526,7 @@ CategoryRecipe textureRecipe()
              p.lfo (0, "Sine", p.j (0.45, 0.2), 1.0, 0.3).mod ("LFO 1", "Filter 1 Cutoff", 0.7)),
     };
     R.filters = {
-        ING ("Dark", "through a dark low-pass", "", p.filt (0, "Low Pass 24", p.j (550, 0.2), 0.1, 0.0, 0.0)),
+        ING ("Dark", "through a dark low-pass", "", p.filt (0, "Low Pass 24", p.j (380, 0.2), 0.1, 0.0, 0.0)),
         ING ("Distant", "through a band-pass, like it's next door", "", p.filt (0, "Band Pass", p.j (900, 0.3), 0.3, 0.0, 0.0)),
         ING ("Soft", "through a soft 12 dB low-pass", "", p.filt (0, "Low Pass 12", p.j (3500, 0.3), 0.1, 0.0, 0.0)),
         ING ("Open", "unfiltered", "", p.filt (0, "Off", 15000, 0.0)),
