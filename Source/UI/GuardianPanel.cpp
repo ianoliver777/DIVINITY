@@ -157,7 +157,7 @@ public:
     {
         auto r = getLocalBounds().toFloat().reduced (0.5f);
         const bool on = getToggleState();
-        g.setColour (on ? juce::Colour (0xff0c2c55) : panel2.withAlpha (over ? 0.95f : 0.7f));
+        g.setColour (on ? colours::selBottom : panel2.withAlpha (over ? 0.95f : 0.7f));
         g.fillRoundedRectangle (r, 6.0f);
         if (on) { g.setColour (accent.withAlpha (0.2f)); g.drawRoundedRectangle (r.expanded (1.0f), 7.0f, 3.0f); }
         g.setColour (on ? accent : (over ? borderBright : border));

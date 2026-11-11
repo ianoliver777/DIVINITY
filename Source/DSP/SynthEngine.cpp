@@ -29,15 +29,18 @@ EngineParamRefs::EngineParamRefs (juce::AudioProcessorValueTreeState& s)
             filt[(size_t) i][(size_t) k] = get (ids::filt (i, fNames[k]));
     routing = get (ids::filterRouting);
 
-    static const char* eNames[5] = { "attack", "decay", "sustain", "release", "curve" };
+    static const char* eNames[8] = { "attack", "decay", "sustain", "release", "curve", "a_curve", "d_curve", "r_curve" };
     for (int i = 0; i < kNumEnvs; ++i)
-        for (int k = 0; k < 5; ++k)
+        for (int k = 0; k < 8; ++k)
             env[(size_t) i][(size_t) k] = get (ids::env (i, eNames[k]));
 
     static const char* lNames[8] = { "shape", "rate", "sync", "div", "depth", "phase", "smooth", "on" };
     for (int i = 0; i < kNumLfos; ++i)
         for (int k = 0; k < 8; ++k)
             lfo[(size_t) i][(size_t) k] = get (ids::lfo (i, lNames[k]));
+    for (int i = 0; i < kNumLfos; ++i)
+        for (int k = 0; k < kLfoPoints; ++k)
+            lfo[(size_t) i][(size_t) (8 + k)] = get (ids::lfoPoint (i, k));
 
     static const char* mNames[3] = { "src", "dst", "amt" };
     for (int i = 0; i < kNumModSlots; ++i)
@@ -88,12 +91,14 @@ void EngineParamRefs::read (EngineSnapshot& s) const noexcept
     {
         auto& e = s.env[(size_t) k]; const auto& p = env[(size_t) k];
         e.a = f (p[0]); e.d = f (p[1]); e.s = f (p[2]); e.r = f (p[3]); e.curve = f (p[4]);
+        e.ac = f (p[5]); e.dc = f (p[6]); e.rc = f (p[7]);
     }
     for (int k = 0; k < kNumLfos; ++k)
     {
         auto& l = s.lfo[(size_t) k]; const auto& p = lfo[(size_t) k];
         l.shape = i (p[0]); l.rate = f (p[1]); l.sync = b (p[2]); l.div = i (p[3]); l.depth = f (p[4]); l.phase = f (p[5]); l.smooth = f (p[6]);
         l.on = b (p[7]);
+        for (int q = 0; q < kLfoPoints; ++q) l.pts[q] = f (p[(size_t) (8 + q)]);
     }
     for (int k = 0; k < kNumModSlots; ++k)
     {
@@ -342,7 +347,7 @@ void SynthEngine::startVoice (Voice& v, int note, float velocity, bool fresh)
     for (int e = 0; e < kNumEnvs; ++e)
     {
         const auto& ep = snap.env[(size_t) e];
-        v.env[(size_t) e].setParameters (ep.a, ep.d, ep.s, ep.r, ep.curve);
+        v.env[(size_t) e].setParameters (ep.a, ep.d, ep.s, ep.r, ep.curve, ep.ac, ep.dc, ep.rc);
         v.env[(size_t) e].noteOn();
     }
     lastNotePitch = note;
@@ -493,7 +498,7 @@ void SynthEngine::renderChunk (float* outL, float* outR, int n, const TransportI
         const double ppqNow = tr.ppqAtBlockStart + ((double) (sampleOffset + n) / sampleRate) * tr.bpm / 60.0;
         if (! std::isfinite (rate)) rate = 1.0;
         rate = juce::jlimit (0.0, 2000.0, rate);
-        float raw = lfos[(size_t) i].advance (lp.shape, rate, seconds, lp.smooth, lp.phase, locked && std::isfinite (ppqNow), ppqNow / beats);
+        float raw = lfos[(size_t) i].advance (lp.shape, rate, seconds, lp.smooth, lp.phase, locked && std::isfinite (ppqNow), ppqNow / beats, lp.pts, kLfoPoints);
         if (! std::isfinite (raw)) { lfos[(size_t) i].reset (0xC0FFEEu + (uint32_t) i); raw = 0.0f; }
         if (! lp.on) raw = 0.0f;   // LFO power (0.7): an LFO that's off moves nothing
         lfoValues[(size_t) i] = raw * lp.depth * (1.0f + 2.0f * movement) * juce::jmax (0.1f, 1.0f + perf.motion);
@@ -844,7 +849,7 @@ void SynthEngine::renderVoice (Voice& v, float* outL, float* outR, int n, const 
         const auto& ep = snap.env[(size_t) e];
         const float am = e == 0 ? std::pow (2.0f, juce::jlimit (-6.0f, 6.0f, perf.attackLog2) - punch * 4.0f) : 1.0f;   // PUNCH: snappier attack
         const float rm = e == 0 ? std::pow (2.0f, juce::jlimit (-6.0f, 6.0f, perf.releaseLog2)) : 1.0f;
-        v.env[(size_t) e].setParameters (juce::jlimit (0.0005f, 30.0f, ep.a * am), ep.d, ep.s, juce::jlimit (0.001f, 40.0f, ep.r * rm), ep.curve);
+        v.env[(size_t) e].setParameters (juce::jlimit (0.0005f, 30.0f, ep.a * am), ep.d, ep.s, juce::jlimit (0.001f, 40.0f, ep.r * rm), ep.curve, ep.ac, ep.dc, ep.rc);
     }
 
     // SOUL instability: slow random per-voice pitch wander

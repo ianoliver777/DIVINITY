@@ -43,6 +43,8 @@ namespace fxids
     inline const juce::String compOn = "comp_on", compThresh = "comp_thresh", compRatio = "comp_ratio", compAttack = "comp_attack",
                               compRelease = "comp_release", compMakeup = "comp_makeup", compMix = "comp_mix";
     inline const juce::String mbOn = "mb_on", mbDepth = "mb_depth", mbTime = "mb_time", mbOut = "mb_out";
+    inline const juce::String mbLowX = "mb_low_x", mbHighX = "mb_high_x";
+    inline juce::String mbBand (int b, const char* what) { static const char* n[3] = { "low", "mid", "high" }; return juce::String ("mb_") + n[b] + "_" + what; }
     inline const juce::String transOn = "trans_on", transAttack = "trans_attack", transSustain = "trans_sustain";
     inline const juce::String flangOn = "flanger_on", flangRate = "flanger_rate", flangDepth = "flanger_depth", flangFb = "flanger_feedback", flangMix = "flanger_mix";
     inline const juce::String phaseOn = "phaser_on", phaseRate = "phaser_rate", phaseDepth = "phaser_depth", phaseFb = "phaser_feedback",

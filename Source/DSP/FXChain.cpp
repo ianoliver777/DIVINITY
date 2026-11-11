@@ -123,7 +123,7 @@ namespace
         }
         void process (float* L, float* R, int n, const FxContext&) noexcept override
         {
-            const int t = juce::jlimit (0, 4, (int) std::lround (type->load()));
+            const int t = juce::jlimit (0, 11, (int) std::lround (type->load()));
             driveS.setTargetValue (drive->load()); mixS.setTargetValue (mix->load());
             const float toneHz = juce::jmin ((float) (fs * 0.45), 500.0f * std::pow (2.0f, tone->load() * 5.3f));
             const float a = 1.0f - std::exp (-2.0f * kPi * toneHz / (float) fs);
@@ -154,7 +154,14 @@ namespace
                 case 1:  return std::sin (x * kPi * 0.5f);
                 case 2:  return std::tanh (x + 0.3f) - std::tanh (0.3f);
                 case 3:  return std::abs (x);
-                default: { const float ax = std::abs (x); return 1.5f * (ax <= 1.0f ? x - x * x * x / 3.0f : (x < 0 ? -2.0f / 3.0f : 2.0f / 3.0f)); }
+                case 4:  { const float ax = std::abs (x); return 1.5f * (ax <= 1.0f ? x - x * x * x / 3.0f : (x < 0 ? -2.0f / 3.0f : 2.0f / 3.0f)); }
+                case 5:  return x / (1.0f + std::abs (x));                                         // fuzz
+                case 6:  return x >= 0.0f ? std::tanh (x) : 0.4f * std::tanh (x / 0.4f);           // diode (asymmetric)
+                case 7:  return (2.0f / kPi) * std::atan (x);                                      // overdrive
+                case 8:  return std::tanh (x);                                                     // tape
+                case 9:  return x > 0.0f ? x : 0.0f;                                               // half rectify
+                case 10: return 0.5f * juce::jlimit (-1.0f, 1.0f, 2.0f * x);                       // crunch
+                default: return (x < 0 ? -1.0f : 1.0f) * (1.0f - std::exp (-3.0f * std::abs (x))); // square fuzz
             }
         }
         static float anti (int t, float x)
@@ -165,7 +172,14 @@ namespace
                 case 1:  { const float k = kPi * 0.5f; return -std::cos (k * x) / k; }
                 case 2:  return logCosh (x + 0.3f) - x * std::tanh (0.3f);
                 case 3:  return 0.5f * x * std::abs (x);
-                default: { const float ax = std::abs (x); return 1.5f * (ax <= 1.0f ? 0.5f * x * x - x * x * x * x / 12.0f : (2.0f / 3.0f) * ax - 0.25f); }
+                case 4:  { const float ax = std::abs (x); return 1.5f * (ax <= 1.0f ? 0.5f * x * x - x * x * x * x / 12.0f : (2.0f / 3.0f) * ax - 0.25f); }
+                case 5:  { const float ax = std::abs (x); return ax - std::log1p (ax); }
+                case 6:  return x >= 0.0f ? logCosh (x) : 0.16f * logCosh (x / 0.4f);
+                case 7:  return (2.0f / kPi) * (x * std::atan (x) - 0.5f * std::log1p (x * x));
+                case 8:  return logCosh (x);
+                case 9:  return x > 0.0f ? 0.5f * x * x : 0.0f;
+                case 10: { const float y = 2.0f * x, ay = std::abs (y); return 0.25f * (ay <= 1.0f ? 0.5f * y * y : ay - 0.5f); }
+                default: { const float ax = std::abs (x); return ax + (std::exp (-3.0f * ax) - 1.0f) / 3.0f; }
             }
         }
         std::atomic<float> *type, *drive, *tone, *mix;
@@ -289,13 +303,21 @@ namespace
     {
     public:
         explicit MultibandModule (juce::AudioProcessorValueTreeState& s)
-            : FxModule (s, mbOn), depth (p (mbDepth)), time (p (mbTime)), out (p (mbOut)) {}
+            : FxModule (s, mbOn), depth (p (mbDepth)), time (p (mbTime)), out (p (mbOut)), lowX (p (mbLowX)), highX (p (mbHighX))
+        {
+            for (int b = 0; b < 3; ++b)
+            {
+                gain[b] = p (mbBand (b, "gain")); dthr[b] = p (mbBand (b, "dthr")); drat[b] = p (mbBand (b, "dratio"));
+                uthr[b] = p (mbBand (b, "uthr")); uamt[b] = p (mbBand (b, "uamt"));
+            }
+        }
         void prepare (double sr, int maxBlock) override
         {
             fs = sr;
             juce::dsp::ProcessSpec spec { sr, (juce::uint32) maxBlock, 2 };
             for (auto* f : { &lr1, &lr2, &ap }) f->prepare (spec);
-            lr1.setCutoffFrequency (150.0f); lr2.setCutoffFrequency (2500.0f); ap.setCutoffFrequency (2500.0f);
+            curLo = lowX->load(); curHi = juce::jmax (curLo * 1.5f, highX->load());
+            lr1.setCutoffFrequency (curLo); lr2.setCutoffFrequency (curHi); ap.setCutoffFrequency (curHi);
             ap.setType (juce::dsp::LinkwitzRileyFilterType::allpass);
             depthS.reset (sr, 0.02); outS.reset (sr, 0.02);
             reset();
@@ -313,6 +335,15 @@ namespace
             const float aA = 1.0f - std::exp (-1.0f / (0.001f * attMs * (float) fs));
             const float aR = 1.0f - std::exp (-1.0f / (0.001f * relMs * (float) fs));
             depthS.setTargetValue (depth->load()); outS.setTargetValue (juce::Decibels::decibelsToGain (out->load()));
+            const float lo = juce::jlimit (20.0f, (float) fs * 0.2f, lowX->load()), hi = juce::jlimit (lo * 1.5f, (float) fs * 0.45f, highX->load());
+            if (lo != curLo) { curLo = lo; lr1.setCutoffFrequency (lo); }
+            if (hi != curHi) { curHi = hi; lr2.setCutoffFrequency (hi); ap.setCutoffFrequency (hi); }
+            float bGain[3], bDt[3], bDs[3], bUt[3], bUs[3];
+            for (int b = 0; b < 3; ++b)
+            {
+                bGain[b] = juce::Decibels::decibelsToGain (gain[b]->load()); bDt[b] = dthr[b]->load();
+                bDs[b] = 1.0f - 1.0f / juce::jmax (1.0f, drat[b]->load()); bUt[b] = uthr[b]->load(); bUs[b] = uamt[b]->load();
+            }
             for (int s = 0; s < n; ++s)
             {
                 float band[3][2];
@@ -333,9 +364,9 @@ namespace
                     env[b] = juce::jmax (env[b], 1.0e-6f);
                     const float dbl = juce::Decibels::gainToDecibels (env[b]);
                     float gDb = 0.0f;
-                    if (dbl > -24.0f) gDb -= (dbl + 24.0f) * 0.75f;                                            // 4:1 downward
-                    else if (dbl < -40.0f && dbl > -80.0f) gDb += juce::jmin (18.0f, (-40.0f - dbl) * 0.66f);  // ~3:1 upward
-                    const float g = juce::Decibels::decibelsToGain (gDb);
+                    if (dbl > bDt[b]) gDb -= (dbl - bDt[b]) * bDs[b];                                                 // downward (default 4:1 over -24 dB)
+                    else if (dbl < bUt[b] && dbl > -80.0f) gDb += juce::jmin (18.0f, (bUt[b] - dbl) * bUs[b]);         // upward (default ~3:1 under -40 dB)
+                    const float g = juce::Decibels::decibelsToGain (gDb) * bGain[b];
                     sumL += band[b][0] * g; sumR += band[b][1] * g;
                 }
                 const float dpt = depthS.getNextValue(), og = outS.getNextValue();
@@ -344,7 +375,9 @@ namespace
             }
         }
     private:
-        std::atomic<float> *depth, *time, *out;
+        std::atomic<float> *depth, *time, *out, *lowX, *highX;
+        std::atomic<float> *gain[3] {}, *dthr[3] {}, *drat[3] {}, *uthr[3] {}, *uamt[3] {};
+        float curLo = 150.0f, curHi = 2500.0f;
         juce::dsp::LinkwitzRileyFilter<float> lr1, lr2, ap;
         float env[3] {};
         double fs = 44100.0;

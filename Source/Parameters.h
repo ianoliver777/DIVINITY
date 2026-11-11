@@ -156,7 +156,10 @@ namespace divinity
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     /** Studio settings rather than sound (quality, MPE): presets neither store nor reset them. */
-    inline bool isGlobalSetting (const juce::String& id)
+    constexpr int kLfoPoints = 16;   // drawable LFO (shape "Custom")
+namespace ids { inline juce::String lfoPoint (int l, int k) { return "lfo" + juce::String (l + 1) + "_pt" + juce::String (k + 1); } }
+
+inline bool isGlobalSetting (const juce::String& id)
     {
         return id == ids::quality || id == ids::qualityRender || id == ids::mpeOn || id == ids::mpeBend;
     }

@@ -156,7 +156,7 @@ public:
 
     // UI preference (not part of the sound): workspace & scale are stored with the session.
     juce::String uiWorkspace { "CREATE" };   // CREATE / EFFECTS / PLAY / SOUL / LAB
-    float uiScale = 1.0f;
+    float uiScale = 1.15f;   // 1.0: opens a little bigger by default
     bool uiAngelOpen = false;   // 0.7: Guardian Angel starts tucked away (SHOW ANGEL)
     bool uiAngelTips = true;
 

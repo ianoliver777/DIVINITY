@@ -17,8 +17,8 @@ struct EngineSnapshot
     struct Osc   { bool on; int engine, table, wave, unison, oct, semi; float pos, fold, pw, detune, width, phase, fine, level; bool randPhase; float blend;
                    int warp, warpSrc; float warpAmt; };   // warp: 0.8.0
     struct Filt  { int type; float cutoff, res, drive, mix, keytrack; };
-    struct Env   { float a, d, s, r, curve; };
-    struct LfoP  { int shape, div; float rate, depth, phase, smooth; bool sync, on; };
+    struct Env   { float a, d, s, r, curve, ac, dc, rc; };
+    struct LfoP  { int shape, div; float rate, depth, phase, smooth; bool sync, on; float pts[16]; };
     struct Step  { float lvl; };
     struct Slot  { int src, dst; float amt; };
 
@@ -61,8 +61,8 @@ private:
     std::atomic<float>* sub[3]; std::atomic<float>* noise[3];
     std::array<std::array<std::atomic<float>*, 6>, 2> filt;
     std::atomic<float>* routing;
-    std::array<std::array<std::atomic<float>*, 5>, kNumEnvs> env;
-    std::array<std::array<std::atomic<float>*, 8>, kNumLfos> lfo;
+    std::array<std::array<std::atomic<float>*, 8>, kNumEnvs> env;
+    std::array<std::array<std::atomic<float>*, 8 + 16>, kNumLfos> lfo;
     std::array<std::array<std::atomic<float>*, 3>, kNumModSlots> mod;
     std::array<std::atomic<float>*, kNumMacros> macro;
     std::atomic<float>* global[5];

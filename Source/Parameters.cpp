@@ -303,6 +303,55 @@ static void addVersion07Parameters (juce::AudioProcessorValueTreeState::Paramete
 
 //==============================================================================
 /** 0.8.0: oscillator WARP (sync / FM / AM / phase warps), MPE, quality. Appended after everything else. */
+/** 1.0: per-segment envelope curves, drawable LFOs, a detailed multiband. Appended, defaults = old sound. */
+static void addVersion10Parameters (juce::AudioProcessorValueTreeState::ParameterLayout& layout)
+{
+    auto pid = [] (const juce::String& id) { return juce::ParameterID { id, kParamVersion }; };
+    {
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("envcurves", "Envelope Curves", " | ");
+        static const char* seg[3] = { "a_curve", "d_curve", "r_curve" };
+        static const char* segName[3] = { "Attack", "Decay", "Release" };
+        for (int e = 0; e < kNumEnvs; ++e)
+            for (int k = 0; k < 3; ++k)
+                group->addChild (std::make_unique<APF> (pid (ids::env (e, seg[k])), "Env " + juce::String (e + 1) + " " + segName[k] + " Curve",
+                                                        juce::NormalisableRange<float> (-1.0f, 1.0f), 0.0f, bipolarPct()));
+        layout.add (std::move (group));
+    }
+    {
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("lfodraw", "LFO Custom Shapes", " | ");
+        for (int l = 0; l < kNumLfos; ++l)
+            for (int k = 0; k < kLfoPoints; ++k)
+            {
+                const float def = (float) std::sin (juce::MathConstants<double>::twoPi * k / kLfoPoints);   // starts as a sine
+                group->addChild (std::make_unique<APF> (pid (ids::lfoPoint (l, k)), "LFO " + juce::String (l + 1) + " Point " + juce::String (k + 1),
+                                                        juce::NormalisableRange<float> (-1.0f, 1.0f), def, bipolarPct()));
+            }
+        layout.add (std::move (group));
+    }
+    {
+        using namespace fxids;
+        auto db = Attr().withStringFromValueFunction ([] (float v, int) { return (v > 0.05f ? "+" : "") + juce::String (v, 1) + " dB"; });
+        auto hz = Attr().withStringFromValueFunction ([] (float v, int) { return v >= 1000.0f ? juce::String (v / 1000.0f, 2) + " kHz" : juce::String (juce::roundToInt (v)) + " Hz"; });
+        auto ratio = Attr().withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1) + ":1"; });
+        auto upr = Attr().withStringFromValueFunction ([] (float v, int) { return juce::String (1.0f / juce::jmax (0.01f, 1.0f - v), 1) + ":1"; });
+        auto skew = [] (float lo, float hi, float c) { juce::NormalisableRange<float> r (lo, hi); r.setSkewForCentre (c); return r; };
+        auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("mbdetail", "Multiband Bands", " | ");
+        group->addChild (std::make_unique<APF> (pid (mbLowX), "Multiband Low/Mid Split", skew (40.0f, 1000.0f, 200.0f), 150.0f, hz));
+        group->addChild (std::make_unique<APF> (pid (mbHighX), "Multiband Mid/High Split", skew (800.0f, 12000.0f, 3000.0f), 2500.0f, hz));
+        static const char* bandName[3] = { "Low", "Mid", "High" };
+        for (int b = 0; b < 3; ++b)
+        {
+            const juce::String n = juce::String ("Multiband ") + bandName[b];
+            group->addChild (std::make_unique<APF> (pid (mbBand (b, "gain")), n + " Gain", juce::NormalisableRange<float> (-18.0f, 18.0f), 0.0f, db));
+            group->addChild (std::make_unique<APF> (pid (mbBand (b, "dthr")), n + " Down Threshold", juce::NormalisableRange<float> (-60.0f, 0.0f), -24.0f, db));
+            group->addChild (std::make_unique<APF> (pid (mbBand (b, "dratio")), n + " Down Ratio", skew (1.0f, 20.0f, 4.0f), 4.0f, ratio));
+            group->addChild (std::make_unique<APF> (pid (mbBand (b, "uthr")), n + " Up Threshold", juce::NormalisableRange<float> (-80.0f, -10.0f), -40.0f, db));
+            group->addChild (std::make_unique<APF> (pid (mbBand (b, "uamt")), n + " Up Ratio", juce::NormalisableRange<float> (0.0f, 0.9f), 0.66f, upr));
+        }
+        layout.add (std::move (group));
+    }
+}
+
 static void addVersion08Parameters (juce::AudioProcessorValueTreeState::ParameterLayout& layout)
 {
     auto pid = [] (const juce::String& id) { return juce::ParameterID { id, kParamVersion }; };
@@ -429,7 +478,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         const auto n = juce::String (i + 1);
         auto group = std::make_unique<juce::AudioProcessorParameterGroup> ("lfo" + n, "LFO " + n, " | ");
         group->addChild (std::make_unique<APC> (pid (ids::lfo (i, "shape")), "LFO " + n + " Shape",
-                                                juce::StringArray { "Sine", "Square", "Triangle", "Random", "Saw Up", "Saw Down" }, 0));
+                                                juce::StringArray { "Sine", "Square", "Triangle", "Random", "Saw Up", "Saw Down", "Custom" }, 0));
         group->addChild (std::make_unique<APF> (pid (ids::lfo (i, "rate")), "LFO " + n + " Rate",
                                                 skewed (0.01f, 30.0f, 2.0f), 1.0f, hz()));
         group->addChild (std::make_unique<APB> (pid (ids::lfo (i, "sync")), "LFO " + n + " Sync", false));
@@ -518,6 +567,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     addArpParameters (layout);
     addVersion07Parameters (layout);
     addVersion08Parameters (layout);
+    addVersion10Parameters (layout);
     return layout;
 }
 
@@ -593,6 +643,17 @@ juce::String helpTextFor (const juce::String& id)
         if (has ("_shape"))  return "Shape: the waveform the LFO follows.";
         if (has ("_div"))    return "Division: the tempo-synced LFO cycle length.";
         if (has ("_on"))     return "LFO power: an LFO only moves anything while it's switched on. Off by default, so patches stay still unless the sound calls for motion.";
+        if (id.contains ("_pt"))     return "Custom LFO point: one of 16 points of the hand-drawn shape. Draw on the LFO display to write them.";
+    }
+    if (id.startsWith ("mb_"))
+    {
+        if (id == "mb_low_x")  return "Low Split: the crossover between the LOW and MID bands.";
+        if (id == "mb_high_x") return "High Split: the crossover between the MID and HIGH bands.";
+        if (has ("_gain"))  return "Band Gain: boosts or cuts this band after compression.";
+        if (has ("_dthr"))  return "Down Threshold: level above which this band gets squashed down.";
+        if (has ("_dratio")) return "Down Ratio: how hard loud parts of this band are pushed down.";
+        if (has ("_uthr"))  return "Up Threshold: level below which quiet detail in this band is lifted.";
+        if (has ("_uamt"))  return "Up Ratio: how strongly quiet detail in this band is pulled up.";
     }
     if (id.startsWith ("mod"))
     {

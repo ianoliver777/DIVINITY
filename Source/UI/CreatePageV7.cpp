@@ -218,7 +218,7 @@ namespace
                 auto r = item (i).toFloat();
                 const bool sel = i == selected;
                 drawGlassControl (g, r, sel, i == hover, 7.0f);
-                if (! sel) { g.setColour (juce::Colour (0xff010305).withAlpha (0.6f)); g.fillRoundedRectangle (r.reduced (1.0f), 6.0f); }
+                if (! sel) { g.setColour (colours::well.withAlpha (0.6f)); g.fillRoundedRectangle (r.reduced (1.0f), 6.0f); }
                 const bool on = isOn (i);
                 auto ic = wavePath (icon[i], { r.getX() + 14.0f, r.getCentreY() - 6.0f, 24.0f, 12.0f });
                 if (sel) strokeGlow (g, ic, 1.6f, glow);
@@ -852,8 +852,8 @@ namespace
         {
             static const float values[kCount] = { -0.8f, -0.35f, 0.0f, 0.6f };
             auto box = getLocalBounds().toFloat();
-            g.setColour (juce::Colour (0xff050c11).withAlpha (0.9f)); g.fillRoundedRectangle (box, 6.0f);
-            g.setColour (juce::Colour (0xff22394a)); g.drawRoundedRectangle (box.reduced (0.5f), 6.0f, 1.0f);
+            g.setColour (colours::well.withAlpha (0.9f)); g.fillRoundedRectangle (box, 6.0f);
+            g.setColour (colours::wellBorder); g.drawRoundedRectangle (box.reduced (0.5f), 6.0f, 1.0f);
             const float cur = param.convertFrom0to1 (param.getValue());
             int best = 0; for (int i = 1; i < kCount; ++i) if (std::abs (cur - values[i]) < std::abs (cur - values[best])) best = i;
             for (int i = 0; i < kCount; ++i)
@@ -907,15 +907,17 @@ namespace
             auto* reset = new IconButton ("Reset the amp envelope", gridGlyph(), true);
             reset->onClick = [this]
             {
-                for (auto* n : { "attack", "decay", "sustain", "release", "curve" })
+                for (auto* n : { "attack", "decay", "sustain", "release", "curve", "a_curve", "d_curve", "r_curve" })
                     if (auto* prm = apvts.getParameter (ids::env (0, n))) { prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->getDefaultValue()); prm->endChangeGesture(); }
             };
             for (auto* b : { open, reset }) { header.add (b); addAndMakeVisible (b); }
+            addAndMakeVisible (modHandle);
         }
         std::function<void()> onOpenEditor;
         void resized() override
         {
             const int w = getWidth(), h = getHeight();
+            modHandle.setBounds (w - 86, 10, 24, 24);
             header[0]->setBounds (w - 58, 10, 24, 24);
             header[1]->setBounds (w - 32, 10, 24, 24);
             display.setBounds (12, 41, w - 24, h - 135);
@@ -928,6 +930,7 @@ namespace
         CurveButtons curves;
         juce::OwnedArray<Knob> knobs;
         juce::OwnedArray<IconButton> header;
+        ModHandle modHandle { [] { return juce::String ("ENV 1"); } };
     };
 
     //==========================================================================
@@ -939,33 +942,41 @@ namespace
         ShapeButtons (APVTS& s, int lfo) : param (*s.getParameter (ids::lfo (lfo, "shape"))), attach (param, [this] (float) { repaint(); })
         {
             attach.sendInitialUpdate();
-            setTooltip ("LFO shape: sine, triangle, square, saw up, saw down, random.");
+            setTooltip ("LFO shape: sine, triangle, square, saw up, saw down, random, custom (draw on the display).");
         }
         void paint (juce::Graphics& g) override
         {
-            static const int order[6] = { 0, 2, 1, 4, 5, 3 };       // parameter index per button
-            static const int icon[6]  = { 0, 1, 3, 2, 7, 8 };
+            static const int order[7] = { 0, 2, 1, 4, 5, 3, 6 };       // parameter index per button
+            static const int icon[7]  = { 0, 1, 3, 2, 7, 8, -1 };
             const int cur = (int) std::lround (param.convertFrom0to1 (param.getValue()));
             auto box = getLocalBounds().toFloat();
-            g.setColour (juce::Colour (0xff050c11)); g.fillRoundedRectangle (box, 7.0f);
-            g.setColour (juce::Colour (0xff22394a)); g.drawRoundedRectangle (box.reduced (0.5f), 7.0f, 1.0f);
-            for (int i = 0; i < 6; ++i)
+            g.setColour (colours::well); g.fillRoundedRectangle (box, 7.0f);
+            g.setColour (colours::wellBorder); g.drawRoundedRectangle (box.reduced (0.5f), 7.0f, 1.0f);
+            for (int i = 0; i < 7; ++i)
             {
                 auto r = slot (i).toFloat();
                 const bool sel = order[i] == cur;
                 if (sel) drawGlassControl (g, r.reduced (3.0f, 3.0f), true, false, 5.0f);
-                auto ic = wavePath (icon[i], r.reduced (r.getWidth() * 0.27f, r.getHeight() * 0.33f));
+                juce::Path ic;
+                if (icon[i] >= 0) ic = wavePath (icon[i], r.reduced (r.getWidth() * 0.27f, r.getHeight() * 0.33f));
+                else
+                {   // pencil: freehand / custom shape
+                    auto b = r.reduced (r.getWidth() * 0.3f, r.getHeight() * 0.28f);
+                    ic.startNewSubPath (b.getX(), b.getBottom()); ic.lineTo (b.getX() + 2.0f, b.getBottom() - 5.0f);
+                    ic.lineTo (b.getRight() - 3.0f, b.getY()); ic.lineTo (b.getRight(), b.getY() + 3.0f);
+                    ic.lineTo (b.getX() + 5.0f, b.getBottom() - 2.0f); ic.closeSubPath();
+                }
                 if (sel) strokeGlow (g, ic, 1.5f, glow);
                 else { g.setColour (text.withAlpha (0.85f)); g.strokePath (ic, juce::PathStrokeType (1.4f)); }
             }
         }
         void mouseUp (const juce::MouseEvent& e) override
         {
-            static const int order[6] = { 0, 2, 1, 4, 5, 3 };
-            for (int i = 0; i < 6; ++i) if (slot (i).contains (e.getPosition())) attach.setValueAsCompleteGesture ((float) order[i]);
+            static const int order[7] = { 0, 2, 1, 4, 5, 3, 6 };
+            for (int i = 0; i < 7; ++i) if (slot (i).contains (e.getPosition())) attach.setValueAsCompleteGesture ((float) order[i]);
         }
     private:
-        juce::Rectangle<int> slot (int i) const { const int w = (getWidth() - 4) / 6; return { 2 + i * w, 0, w, getHeight() }; }
+        juce::Rectangle<int> slot (int i) const { const int w = (getWidth() - 4) / 7; return { 2 + i * w, 0, w, getHeight() }; }
         juce::RangedAudioParameter& param;
         juce::ParameterAttachment attach;
     };
@@ -1051,6 +1062,7 @@ namespace
             };
             auto* more = headerButton (header, *this, "Open this LFO in the editor below", gridGlyph(), true);
             more->onClick = [this] { if (onOpenEditor) onOpenEditor (current); };
+            addAndMakeVisible (modHandle);
             select (0);
         }
         std::function<void (int)> onOpenEditor;
@@ -1064,6 +1076,7 @@ namespace
         void resized() override
         {
             const int w = getWidth(), h = getHeight();
+            modHandle.setBounds (w - 92, 9, 24, 24);
             header[0]->setBounds (w - 64, 9, 26, 24);
             header[1]->setBounds (w - 34, 9, 26, 24);
             for (auto* b : blocks)
@@ -1082,6 +1095,7 @@ namespace
         juce::OwnedArray<IconButton> header;
         juce::OwnedArray<LfoBlock> blocks;
         int current = 0;
+        ModHandle modHandle { [this] { return "LFO " + juce::String (current + 1); } };
     };
 
     //==========================================================================
@@ -1363,6 +1377,7 @@ namespace
         {
             auto& s = p.apvts;
             for (auto* t : { &envTabs, &lfoTabs, &mtxTabs }) addAndMakeVisible (t);
+            addAndMakeVisible (modHandle);
             addChildComponent (envDisplay);
             for (int e = 0; e < kNumEnvs; ++e) { envCurves.add (new CurveButtons (s, e)); addChildComponent (envCurves.getLast()); }
             {
@@ -1374,7 +1389,7 @@ namespace
                 envTools[1]->onClick = [this] { scaleEnvTimes (current, 2.0f); };
                 envTools[2]->onClick = [this]
                 {
-                    for (auto* n : { "attack", "decay", "sustain", "release", "curve" })
+                    for (auto* n : { "attack", "decay", "sustain", "release", "curve", "a_curve", "d_curve", "r_curve" })
                         if (auto* prm = proc.apvts.getParameter (ids::env (current, n))) { prm->beginChangeGesture(); prm->setValueNotifyingHost (prm->getDefaultValue()); prm->endChangeGesture(); }
                 };
                 for (auto* b : envTools) { b->boxed = true; addChildComponent (b); }
@@ -1413,7 +1428,7 @@ namespace
         }
         void select (int t)
         {
-            current = t;
+            current = t; modHandle.setVisible (t < 10);
             const bool env = t < 4, lfo = t >= 4 && t < 8, step = t == 8, rnd = t == 9, matrix = t == 10;
             envDisplay.setVisible (env);
             if (env) envDisplay.setEnvelope (t);
@@ -1461,7 +1476,9 @@ namespace
             // three tab groups like the mockup: ENV 1-4 | LFO 1-4 STEP RANDOM | MATRIX
             const float u = (float) (w - 20) / 1180.0f;
             envTabs.setBounds (10, 8, juce::roundToInt (440 * u), 30);
-            lfoTabs.setBounds (envTabs.getRight() + 3, 8, juce::roundToInt (636 * u), 30);
+            lfoTabs.setBounds (envTabs.getRight() + 3, 8, juce::roundToInt (636 * u) - 34, 30);
+            modHandle.setBounds (lfoTabs.getRight() + 5, 9, 28, 28);
+            modHandle.setVisible (current < 10);
             mtxTabs.setBounds (w - 10 - juce::roundToInt (92 * u), 8, juce::roundToInt (92 * u), 30);
             const auto area = juce::Rectangle<int> (12, 46, w - 24, h - 54);
             // ENV
@@ -1538,7 +1555,7 @@ namespace
         void copyEnv (int from, int to)
         {
             if (from == to) return;
-            for (auto* n : { "attack", "decay", "sustain", "release", "curve" })
+            for (auto* n : { "attack", "decay", "sustain", "release", "curve", "a_curve", "d_curve", "r_curve" })
                 if (auto* a = proc.apvts.getParameter (ids::env (from, n))) if (auto* b = proc.apvts.getParameter (ids::env (to, n)))
                     { b->beginChangeGesture(); b->setValueNotifyingHost (a->getValue()); b->endChangeGesture(); }
         }
@@ -1570,6 +1587,14 @@ namespace
         juce::OwnedArray<MatrixRow> rows;
         std::vector<std::unique_ptr<APVTS::ButtonAttachment>> attach;
         int current = 0;
+        ModHandle modHandle { [this]
+        {
+            if (current < 4) return "ENV " + juce::String (current + 1);
+            if (current < 8) return "LFO " + juce::String (current - 3);
+            if (current == 8) return juce::String ("Step");
+            if (current == 9) return juce::String ("Random");
+            return juce::String();
+        } };
     };
 
     //==========================================================================

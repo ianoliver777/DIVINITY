@@ -3,6 +3,61 @@
 
 namespace divinity::ui
 {
+namespace colours
+{
+    static bool nightNow = false;
+    void setNightMode (bool night)
+    {
+        nightNow = night;
+        auto c = [] (juce::uint32 v) { return juce::Colour (v); };
+        if (night)
+        {
+            background = c (0xff010205); panel = c (0xff060c11); card = c (0xff0b161d); panel2 = c (0xff0f1d26);
+            border = c (0xff1c2f3b); borderBright = c (0xff3a6278); text = c (0xfff3f9fc); textDim = c (0xffb4c4cd);
+            textFaint = c (0xff5b6f7c); accent = c (0xff3ccbff); accentStrong = c (0xff1ba6ee); accentDeep = c (0xff0c4766);
+            modulation = c (0xffa8f2ff); glow = c (0xffbff6ff);
+            well = c (0xff050c11); well2 = c (0xff0b1a22); wellBorder = c (0xff22394a);
+            panelTop = c (0xff0b1820); panelBottom = c (0xff03070a); panelRimTop = c (0xff86b9d2); panelRimBottom = c (0xff17262f);
+            displayTop = c (0xff04121a); displayBottom = c (0xff010508); displayBorder = c (0xff142530);
+            selTop = c (0xff11587c); selBottom = c (0xff083049); btnTop = c (0xff11222c); btnBottom = c (0xff070f14); btnHover = c (0xff17303d);
+            menuBg = c (0xff071117); trackBg = c (0xff142632); knobTop = c (0xff3a434b); knobBottom = c (0xff050709);
+            knobRimTop = c (0xffa9bccb); knobRimBottom = c (0xff0d1216); meterBg = c (0xff15232c);
+            cardTop = c (0xff0e1d26); cardBottom = c (0xff060d12); onAccent = c (0xffffffff);
+        }
+        else
+        {
+            // DAY: warm porcelain panels, charcoal type, amber selection (the 1.0 reference design)
+            background = c (0xffece7e3); panel = c (0xfff6f3f0); card = c (0xfffbf9f7); panel2 = c (0xffefeae6);
+            border = c (0xffddd5cf); borderBright = c (0xffc4b9b0); text = c (0xff24232a); textDim = c (0xff4f4d57);
+            textFaint = c (0xff9b9599); accent = c (0xffe8962a); accentStrong = c (0xffd9821a); accentDeep = c (0xfffbe1b8);
+            modulation = c (0xffe8962a); glow = c (0xffd27a12);
+            well = c (0xfff3efeb); well2 = c (0xffeee9e4); wellBorder = c (0xffddd4cd);
+            panelTop = c (0xfffcfbf9); panelBottom = c (0xfff3efeb); panelRimTop = c (0xffffffff); panelRimBottom = c (0xffdcd3cc);
+            displayTop = c (0xfff6f2ee); displayBottom = c (0xfff0ebe6); displayBorder = c (0xffe0d8d1);
+            selTop = c (0xfffde6be); selBottom = c (0xfff8d08f); btnTop = c (0xfffdfcfb); btnBottom = c (0xfff0ebe7); btnHover = c (0xffffffff);
+            menuBg = c (0xfffbf9f7); trackBg = c (0xffe3dcd6); knobTop = c (0xffffffff); knobBottom = c (0xffe4ded8);
+            knobRimTop = c (0xffffffff); knobRimBottom = c (0xffc9c0b8); meterBg = c (0xffe6e0da);
+            cardTop = c (0xfffcfbf9); cardBottom = c (0xfff3efeb); onAccent = c (0xff24232a);
+        }
+    }
+    bool isNightMode() { return nightNow; }
+
+    static juce::PropertiesFile& settingsFile()
+    {
+        static juce::PropertiesFile f ([] {
+            juce::PropertiesFile::Options o;
+            o.applicationName = "DIVINITY"; o.folderName = "TRIPLE SEVEN AUDIO"; o.filenameSuffix = ".settings";
+            o.osxLibrarySubFolder = "Application Support";
+            return o; }());
+        return f;
+    }
+    void loadSavedSkin() { setNightMode (settingsFile().getBoolValue ("nightMode", false)); }
+    void saveSkin (bool night) { settingsFile().setValue ("nightMode", night); settingsFile().saveIfNeeded(); }
+
+    struct PaletteInit { PaletteInit() { setNightMode (false); } };
+    static PaletteInit paletteInit;
+}
+
 namespace
 {
     juce::Typeface::Ptr typeface (Weight w)
@@ -28,12 +83,12 @@ void drawPanelBackground (juce::Graphics& g, juce::Rectangle<float> r, bool high
     g.setColour (colours::accent.withAlpha (highlighted ? 0.16f : 0.05f));
     g.drawRoundedRectangle (r.expanded (1.0f), corner + 1.0f, 2.0f);
     // black glass body with a faint teal lift at the top
-    juce::ColourGradient grad (juce::Colour (0xff0b1820), r.getX(), r.getY(), juce::Colour (0xff03070a), r.getX(), r.getY() + juce::jmin (r.getHeight(), 260.0f), false);
+    juce::ColourGradient grad (colours::panelTop, r.getX(), r.getY(), colours::panelBottom, r.getX(), r.getY() + juce::jmin (r.getHeight(), 260.0f), false);
     g.setGradientFill (grad);
     g.fillRoundedRectangle (r, corner);
     // rim: brighter along the top edge, fading down the sides
-    juce::ColourGradient rim (juce::Colour (0xff86b9d2).withAlpha (highlighted ? 1.0f : 0.9f), r.getX(), r.getY(),
-                              juce::Colour (0xff17262f), r.getX(), r.getY() + juce::jmin (r.getHeight(), 110.0f), false);
+    juce::ColourGradient rim (colours::panelRimTop.withAlpha (highlighted ? 1.0f : 0.9f), r.getX(), r.getY(),
+                              colours::panelRimBottom, r.getX(), r.getY() + juce::jmin (r.getHeight(), 110.0f), false);
     g.setGradientFill (rim);
     g.drawRoundedRectangle (r.reduced (0.5f), corner, 1.0f);
     // top sheen
@@ -45,10 +100,10 @@ void drawPanelBackground (juce::Graphics& g, juce::Rectangle<float> r, bool high
 
 void drawDisplayBackground (juce::Graphics& g, juce::Rectangle<float> r)
 {
-    juce::ColourGradient grad (juce::Colour (0xff04121a), r.getX(), r.getY(), juce::Colour (0xff010508), r.getX(), r.getBottom(), false);
+    juce::ColourGradient grad (colours::displayTop, r.getX(), r.getY(), colours::displayBottom, r.getX(), r.getBottom(), false);
     g.setGradientFill (grad);
     g.fillRoundedRectangle (r, 6.0f);
-    g.setColour (juce::Colour (0xff142530));
+    g.setColour (colours::displayBorder);
     g.drawRoundedRectangle (r.reduced (0.5f), 6.0f, 1.0f);
 }
 
@@ -69,7 +124,7 @@ void drawGlassControl (juce::Graphics& g, juce::Rectangle<float> r, bool selecte
         g.setColour (colours::accent.withAlpha (0.1f)); g.drawRoundedRectangle (r.expanded (3.0f), corner + 3.0f, 4.0f);
         g.setColour (colours::accent.withAlpha (0.2f)); g.drawRoundedRectangle (r.expanded (1.5f), corner + 1.5f, 2.2f);
         g.setColour (colours::accent.withAlpha (0.35f)); g.drawRoundedRectangle (r.expanded (0.6f), corner + 0.6f, 1.2f);
-        juce::ColourGradient grad (juce::Colour (0xff11587c), r.getX(), r.getY(), juce::Colour (0xff083049), r.getX(), r.getBottom(), false);
+        juce::ColourGradient grad (colours::selTop, r.getX(), r.getY(), colours::selBottom, r.getX(), r.getBottom(), false);
         g.setGradientFill (grad);
         g.fillRoundedRectangle (r, corner);
         g.setColour (colours::accent.withAlpha (0.95f));
@@ -78,10 +133,10 @@ void drawGlassControl (juce::Graphics& g, juce::Rectangle<float> r, bool selecte
         g.drawHorizontalLine ((int) r.getY() + 1, r.getX() + corner, r.getRight() - corner);
         return;
     }
-    juce::ColourGradient grad (juce::Colour (hover ? 0xff17303d : 0xff11222c), r.getX(), r.getY(), juce::Colour (0xff070f14), r.getX(), r.getBottom(), false);
+    juce::ColourGradient grad ((hover ? colours::btnHover : colours::btnTop), r.getX(), r.getY(), colours::btnBottom, r.getX(), r.getBottom(), false);
     g.setGradientFill (grad);
     g.fillRoundedRectangle (r, corner);
-    g.setColour (hover ? colours::borderBright : juce::Colour (0xff22394a));
+    g.setColour (hover ? colours::borderBright : colours::wellBorder);
     g.drawRoundedRectangle (r.reduced (0.5f), corner, 1.0f);
 }
 
@@ -107,7 +162,12 @@ DivinityLookAndFeel::DivinityLookAndFeel()
     regular = typeface (Weight::Regular);
     medium = typeface (Weight::Medium);
     semibold = typeface (Weight::SemiBold);
+    colours::loadSavedSkin();
+    applyPalette();
+}
 
+void DivinityLookAndFeel::applyPalette()
+{
     using namespace colours;
     setColour (juce::ResizableWindow::backgroundColourId, background);
     setColour (juce::Slider::textBoxTextColourId, text);
@@ -117,7 +177,7 @@ DivinityLookAndFeel::DivinityLookAndFeel()
     setColour (juce::ComboBox::backgroundColourId, panel2);
     setColour (juce::ComboBox::outlineColourId, border);
     setColour (juce::ComboBox::arrowColourId, textDim);
-    setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff071117));
+    setColour (juce::PopupMenu::backgroundColourId, colours::menuBg);
     setColour (juce::PopupMenu::textColourId, text);
     setColour (juce::PopupMenu::highlightedBackgroundColourId, accentDeep);
     setColour (juce::PopupMenu::highlightedTextColourId, text);
@@ -132,11 +192,11 @@ DivinityLookAndFeel::DivinityLookAndFeel()
     setColour (juce::TextEditor::highlightColourId, accentDeep);
     setColour (juce::CaretComponent::caretColourId, accent);
     setColour (juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
-    setColour (juce::AlertWindow::backgroundColourId, juce::Colour (0xff071117));
+    setColour (juce::AlertWindow::backgroundColourId, colours::menuBg);
     setColour (juce::AlertWindow::textColourId, text);
     setColour (juce::AlertWindow::outlineColourId, border);
     setColour (juce::ScrollBar::thumbColourId, borderBright);
-    setColour (juce::TooltipWindow::backgroundColourId, juce::Colour (0xf0071117));
+    setColour (juce::TooltipWindow::backgroundColourId, colours::menuBg.withAlpha (0.96f));
     setColour (juce::TooltipWindow::textColourId, text);
     setColour (juce::TooltipWindow::outlineColourId, border);
 }
@@ -163,7 +223,7 @@ void DivinityLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int
     // track
     juce::Path track;
     track.addCentredArc (c.x, c.y, trackR, trackR, 0.0f, startAngle, endAngle, true);
-    g.setColour (juce::Colour (0xff142632));
+    g.setColour (colours::trackBg);
     g.strokePath (track, juce::PathStrokeType (2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     // value arc (bipolar sliders draw from the centre): glowing cyan
@@ -195,10 +255,10 @@ void DivinityLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int
     auto body = juce::Rectangle<float> (bodyR * 2.0f, bodyR * 2.0f).withCentre (c);
     g.setColour (juce::Colours::black.withAlpha (0.6f));
     g.fillEllipse (body.translated (0.0f, 2.0f).expanded (1.5f));
-    juce::ColourGradient grad (juce::Colour (0xff3a434b), c.x - bodyR * 0.45f, c.y - bodyR * 0.9f, juce::Colour (0xff050709), c.x + bodyR * 0.3f, c.y + bodyR, true);
+    juce::ColourGradient grad (colours::knobTop, c.x - bodyR * 0.45f, c.y - bodyR * 0.9f, colours::knobBottom, c.x + bodyR * 0.3f, c.y + bodyR, true);
     g.setGradientFill (grad);
     g.fillEllipse (body);
-    juce::ColourGradient rim (juce::Colour (0xffa9bccb), c.x, body.getY(), juce::Colour (0xff0d1216), c.x, body.getBottom(), false);
+    juce::ColourGradient rim (colours::knobRimTop, c.x, body.getY(), colours::knobRimBottom, c.x, body.getBottom(), false);
     g.setGradientFill (rim);
     g.drawEllipse (body.reduced (0.6f), 1.2f);
     g.setColour (juce::Colours::white.withAlpha (0.06f));
@@ -220,9 +280,9 @@ void DivinityLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int
     {
         // number box (VOICES / GLIDE ...): text drawn by the textbox
         auto r = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (0.5f);
-        g.setColour (juce::Colour (0xff050c11));
+        g.setColour (colours::well);
         g.fillRoundedRectangle (r, 5.0f);
-        g.setColour (s.isMouseOverOrDragging() ? borderBright : juce::Colour (0xff22394a));
+        g.setColour (s.isMouseOverOrDragging() ? borderBright : colours::wellBorder);
         g.drawRoundedRectangle (r, 5.0f, 1.0f);
         return;
     }
@@ -231,7 +291,7 @@ void DivinityLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int
     {
         // thin amount bar (mod matrix): bipolar from centre
         auto r = juce::Rectangle<float> ((float) x + 4.0f, (float) y + h * 0.5f - 2.5f, (float) w - 8.0f, 5.0f);
-        g.setColour (juce::Colour (0xff1a2a35));
+        g.setColour (colours::trackBg);
         g.fillRoundedRectangle (r, 2.5f);
         const bool bipolar = s.getMinimum() < 0.0;
         const float zero = bipolar ? r.getCentreX() : r.getX();
@@ -257,8 +317,8 @@ void DivinityLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int
         auto r = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
         auto wheel = r.withSizeKeepingCentre (juce::jmin (26.0f, r.getWidth()), r.getHeight());
         // recessed slot
-        g.setColour (juce::Colour (0xff010203)); g.fillRoundedRectangle (wheel.expanded (3.0f), 6.0f);
-        g.setColour (juce::Colour (0xff22394a)); g.drawRoundedRectangle (wheel.expanded (3.0f).reduced (0.5f), 6.0f, 1.0f);
+        g.setColour (colours::well); g.fillRoundedRectangle (wheel.expanded (3.0f), 6.0f);
+        g.setColour (colours::wellBorder); g.drawRoundedRectangle (wheel.expanded (3.0f).reduced (0.5f), 6.0f, 1.0f);
         // glossy cylinder
         juce::ColourGradient grad (juce::Colour (0xff07090b), wheel.getX(), 0, juce::Colour (0xff07090b), wheel.getRight(), 0, false);
         grad.addColour (0.42, juce::Colour (0xff4a525a));

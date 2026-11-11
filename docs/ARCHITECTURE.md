@@ -117,6 +117,12 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 ### Guardian Angel (v0.3.0)
 - Fully offline. Answers questions from a knowledge base + every parameter's help text; builds sounds from plain-English descriptions (type + vibe words → factory base + SOUL/macro/mod adjustments); suggests one idea at a time with one-click DO IT; musically-safe randomiser (all outputs tested audible, finite and under the ceiling); explain mode (click any control); "make it brighter / wider / grittier..." tweaks. Every change is undoable.
 
+### v1.0.0 (UI 1.0 + night mode, mod drag, drawn LFOs, segment curves, more grit)
+- Skin: `ui::colours` are mutable tokens; `setNightMode()` swaps day (porcelain, default) / night (v0.7 palette), persisted in a PropertiesFile (`nightMode`). `DivinityLookAndFeel::applyPalette()` re-pushes JUCE colour IDs; editor re-tints labels.
+- Mod drag: `ModHandle` (DragAndDropContainer = editor) sends `mod:<source>`; `Knob` is a DragAndDropTarget that fills (or reuses) a mod-matrix slot (amount 50 %, LFO switched on).
+- New params (appended, defaults reproduce 0.9 sound exactly): `env*_a_curve/d_curve/r_curve`, `lfo*_pt1..16` + LFO shape `Custom`, `mb_low_x`, `mb_high_x`, `mb_{low,mid,high}_{gain,dthr,dratio,uthr,uamt}`; distortion types 5-11 (ADAA).
+- Default UI scale 1.15.
+
 ### v0.9.1 (one preset per core sound)
 - 0.9.0 drew 777 presets from ~14-18 SOURCES per category; the audio-fingerprint variety check counted reverb / LFO differences as "different", but by ear the same core sound returned every 8-10 presets. Now each SOURCE is used at most once per category (twice for a percussion sample, with different patterns), enforced both in the picker and in `buildFromRecipe`. 130 new core sounds (mostly built on the wavetable library); bank = 271.
 
