@@ -46,7 +46,7 @@ void XYPad::paint (juce::Graphics& g)
     const float r = compact ? 6.0f : 10.0f;
 
     // emotional field: warm violet toward euphoria, deep blue-grey toward melancholy, heat toward aggression
-    g.setColour (juce::Colour (0xff0c0d10));
+    g.setColour (colours::well);
     g.fillRoundedRectangle (a, r);
     const auto puckPos = juce::Point<float> (a.getX() + x * a.getWidth(), a.getBottom() - y * a.getHeight());
     g.setGradientFill (juce::ColourGradient (accentStrong.withAlpha (0.22f), puckPos.x, puckPos.y,
@@ -110,7 +110,7 @@ void XYPad::paint (juce::Graphics& g)
     const float pr = compact ? 9.0f : 15.0f;
     g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.45f), puckPos.x, puckPos.y, juce::Colours::transparentBlack, puckPos.x + pr * 3.0f, puckPos.y, true));
     g.fillEllipse (juce::Rectangle<float> (pr * 6.0f, pr * 6.0f).withCentre (puckPos));
-    g.setColour (juce::Colour (0xff15161b));
+    g.setColour (colours::well2);
     g.fillEllipse (juce::Rectangle<float> (pr * 2.0f, pr * 2.0f).withCentre (puckPos));
     g.setColour (accent);
     g.drawEllipse (juce::Rectangle<float> (pr * 2.0f, pr * 2.0f).withCentre (puckPos), compact ? 1.5f : 2.0f);

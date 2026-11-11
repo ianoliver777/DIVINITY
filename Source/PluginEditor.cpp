@@ -23,6 +23,27 @@ namespace
         else      { p.startNewSubPath (9, 5);  p.lineTo (16, 12); p.lineTo (9, 19); }
         return p;
     }
+    juce::Path moonIcon()
+    {
+        juce::Path p, cut;
+        p.addEllipse (4.0f, 4.0f, 16.0f, 16.0f);
+        juce::Path moon; moon.addPieSegment (4.0f, 4.0f, 16.0f, 16.0f, 0.0f, juce::MathConstants<float>::twoPi, 0.0f);
+        juce::Path m2; m2.startNewSubPath (15.5f, 4.6f);
+        m2.cubicTo (9.0f, 5.5f, 7.5f, 16.0f, 18.8f, 17.2f); m2.cubicTo (16.5f, 20.5f, 11.5f, 21.2f, 8.0f, 18.8f);
+        m2.cubicTo (3.0f, 15.5f, 3.2f, 7.2f, 9.0f, 4.8f); m2.cubicTo (11.0f, 4.0f, 13.5f, 4.0f, 15.5f, 4.6f);
+        return m2;
+    }
+    juce::Path sunIcon()
+    {
+        juce::Path p; p.addEllipse (8.0f, 8.0f, 8.0f, 8.0f);
+        for (int i = 0; i < 8; ++i)
+        {
+            const float a = i * juce::MathConstants<float>::pi / 4.0f;
+            p.startNewSubPath (12.0f + 6.5f * std::cos (a), 12.0f + 6.5f * std::sin (a));
+            p.lineTo (12.0f + 9.5f * std::cos (a), 12.0f + 9.5f * std::sin (a));
+        }
+        return p;
+    }
     juce::Path burger() { juce::Path p; for (int i = 0; i < 3; ++i) { p.startNewSubPath (3, 6.0f + i * 6.0f); p.lineTo (21, 6.0f + i * 6.0f); } return p; }
     juce::Path plus()   { juce::Path p; p.startNewSubPath (12, 5); p.lineTo (12, 19); p.startNewSubPath (5, 12); p.lineTo (19, 12); return p; }
     juce::Path folderIcon()
@@ -273,11 +294,13 @@ void KeyboardStrip::resized()
     scope.setBounds (1334, 8, 84, h - 16);
 }
 
+static void recolourLabels (juce::Component& c);
+
 //==============================================================================
 DivinityEditor::DivinityEditor (DivinityProcessor& p)
     : AudioProcessorEditor (p), proc (p),
       settings ("Settings", icons::gear()), help ("Help: click this, then any control, and Guardian Angel explains it", helpIcon()),
-      menu ("Menu", burger()),
+      menu ("Menu", burger()), nightToggle ("Night mode: switch between the light and the dark skin", moonIcon()),
       folder ("Import preset", folderIcon()), save ("Save preset", icons::save()),
       undo ("Undo (Cmd/Ctrl+Z)", undoIcon (false)), redo ("Redo (Cmd/Ctrl+Shift+Z)", undoIcon (true)),
       copy ("Save a copy of this sound", copyIcon()), favs ("Browse by category / favourites", starIcon()),
@@ -289,9 +312,12 @@ DivinityEditor::DivinityEditor (DivinityProcessor& p)
 {
     setLookAndFeel (&lnf);
     tooltips.setLookAndFeel (&lnf);
+    recolourLabels (*this);
+    nightToggle.setPath (ui::colours::isNightMode() ? sunIcon() : moonIcon());
     addAndMakeVisible (content);
 
-    for (auto* c : std::initializer_list<juce::Component*> { &settings, &help, &menu }) content.addAndMakeVisible (c);
+    for (auto* c : std::initializer_list<juce::Component*> { &settings, &help, &menu, &nightToggle }) content.addAndMakeVisible (c);
+    nightToggle.onClick = [this] { setNightMode (! ui::colours::isNightMode()); };
     settings.onClick = [this] { showMainMenu(); };
     menu.onClick = [this] { showMainMenu(); };
     help.onClick = [this] { startExplain(); };
@@ -431,6 +457,7 @@ void DivinityEditor::resized()
     constexpr int M = kBaseWidth;   // main column width (angel sits to its right)
 
     // header icons (top right of the main column)
+    nightToggle.setBounds (1268, 17, 34, 34);
     settings.setBounds (1313, 17, 34, 34);
     help.setBounds (1357, 17, 34, 34);
     menu.setBounds (1402, 17, 34, 34);
@@ -472,6 +499,7 @@ void DivinityEditor::resized()
 DivinityEditor::Content::Content (DivinityEditor& e) : owner (e)
 {
     band.setSource (juce::ImageCache::getFromMemory (DivinityAssets::header_band_png, DivinityAssets::header_band_pngSize));
+    logo.setSource (juce::ImageCache::getFromMemory (DivinityAssets::t7a_logo_h_png, DivinityAssets::t7a_logo_h_pngSize));
 }
 
 void DivinityEditor::Content::paintOverChildren (juce::Graphics& g)
@@ -508,8 +536,30 @@ void DivinityEditor::Content::paint (juce::Graphics& g)
     constexpr int M = kBaseWidth;
     g.fillAll (background);
 
-    // header art (logo, DIVINITY wordmark, mountains) from the v0.7 mockup, 2x resolution
-    if (band.isValid())
+    // 1.0 header: TRIPLE SEVEN AUDIO logo (left), the DIVINITY plaque (centre). Night mode keeps the v0.7 art.
+    if (! ui::colours::isNightMode())
+    {
+        if (logo.isValid())
+        {
+            juce::Graphics::ScopedSaveState ss (g);
+            auto img = logo.getImage();
+            const float h = 58.0f, w = h * (float) img.getWidth() / (float) img.getHeight();
+            g.setColour (text);
+            g.drawImage (img, { 22.0f, 14.0f, w, h }, juce::RectanglePlacement::stretchToFit, true);
+        }
+        // slanted porcelain plaque with the wordmark
+        juce::Path plaque;
+        const float px = 580.0f, py = 10.0f, pw = 460.0f, ph = 70.0f, sl = 22.0f;
+        plaque.startNewSubPath (px + sl, py); plaque.lineTo (px + pw, py); plaque.lineTo (px + pw - sl, py + ph); plaque.lineTo (px, py + ph); plaque.closeSubPath();
+        plaque = plaque.createPathWithRoundedCorners (14.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.10f)); g.fillPath (plaque, juce::AffineTransform::translation (0.0f, 4.0f));
+        g.setGradientFill (juce::ColourGradient (panelTop, 0, py, panelBottom, 0, py + ph, false)); g.fillPath (plaque);
+        g.setColour (border); g.strokePath (plaque, juce::PathStrokeType (1.0f));
+        g.setColour (text);
+        g.setFont (font (44.0f, Weight::Regular, 0.62f));
+        g.drawText ("DIVINITY", juce::Rectangle<float> (px + 10.0f, py + 6.0f, pw - 20.0f, ph - 8.0f), juce::Justification::centred, false);
+    }
+    else if (band.isValid())
     {
         band.draw (g, { 0.0f, 0.0f, (float) M, 152.0f });
         if (getWidth() > M)
@@ -525,11 +575,11 @@ void DivinityEditor::Content::paint (juce::Graphics& g)
     // stats (top right)
     g.setColour (text.withAlpha (0.92f));
     g.setFont (font (12.0f, Weight::Medium, 0.02f));
-    g.drawText (owner.cpuText, 1153, 20, 90, 15, juce::Justification::centredLeft);
-    g.drawText (owner.ramText, 1208, 20, 100, 15, juce::Justification::centredLeft);
-    g.drawText (owner.voicesText, 1153, 37, 160, 15, juce::Justification::centredLeft);
-    auto bar = juce::Rectangle<float> (1153.0f, 57.0f, 125.0f, 5.0f);
-    g.setColour (juce::Colour (0xff15232c)); g.fillRoundedRectangle (bar, 2.5f);
+    g.drawText (owner.cpuText, 1112, 20, 90, 15, juce::Justification::centredLeft);
+    g.drawText (owner.ramText, 1172, 20, 100, 15, juce::Justification::centredLeft);
+    g.drawText (owner.voicesText, 1112, 37, 150, 15, juce::Justification::centredLeft);
+    auto bar = juce::Rectangle<float> (1112.0f, 57.0f, 140.0f, 5.0f);
+    g.setColour (colours::meterBg); g.fillRoundedRectangle (bar, 2.5f);
     auto lit = bar.withWidth (juce::jmax (4.0f, bar.getWidth() * owner.voiceFill));
     g.setColour (accent.withAlpha (0.25f)); g.fillRoundedRectangle (lit.expanded (1.5f), 3.5f);
     g.setGradientFill (juce::ColourGradient (accentStrong, lit.getX(), 0, glow, lit.getRight(), 0, false));
@@ -539,7 +589,7 @@ void DivinityEditor::Content::paint (juce::Graphics& g)
     drawPanelBackground (g, { 14.0f, 153.0f, (float) M - 28.0f, 51.0f });
     const auto pf = owner.presetField.toFloat();
     drawGlassControl (g, pf, false, false, 7.0f);
-    g.setColour (juce::Colour (0xff22394a));
+    g.setColour (colours::wellBorder);
     for (int x : { 146, 258, 316 }) g.drawVerticalLine (x, 165.0f, 193.0f);
     g.drawVerticalLine (owner.arpButton.getX() - 16, 165.0f, 193.0f);
     g.drawVerticalLine (owner.voiceMode.getRight() + 16, 165.0f, 193.0f);
@@ -743,6 +793,32 @@ void DivinityEditor::importPreset()
 
 void DivinityEditor::setUiScale (float s) { setSize (juce::roundToInt (getBaseWidth() * s), juce::roundToInt (kBaseHeight * s)); }
 
+static void recolourLabels (juce::Component& c)
+{
+    // value boxes / text labels pick their colour up at creation: re-tint them for the current skin
+    if (auto* l = dynamic_cast<juce::Label*> (&c))
+    {
+        l->setColour (juce::Label::textColourId, ui::colours::text);
+        l->setColour (juce::TextEditor::textColourId, ui::colours::text);
+        l->setColour (juce::TextEditor::backgroundColourId, ui::colours::panel2);
+    }
+    if (auto* b = dynamic_cast<juce::TextButton*> (&c))
+        if (b->isColourSpecified (juce::TextButton::textColourOffId)) b->setColour (juce::TextButton::textColourOffId, ui::colours::text);
+    for (auto* ch : c.getChildren()) recolourLabels (*ch);
+}
+
+void DivinityEditor::setNightMode (bool night)
+{
+    ui::colours::setNightMode (night);
+    ui::colours::saveSkin (night);
+    lnf.applyPalette();
+    sendLookAndFeelChange();
+    recolourLabels (*this);
+    nightToggle.setPath (night ? sunIcon() : moonIcon());
+    content.repaint();
+    repaint();
+}
+
 void DivinityEditor::showMainMenu()
 {
     juce::PopupMenu m, size;
@@ -757,6 +833,7 @@ void DivinityEditor::showMainMenu()
     m.addSeparator();
     m.addSubMenu ("Interface size", size);
     m.addItem (6, "Guardian Angel tips", true, proc.uiAngelTips);
+    m.addItem (8, "Night mode", true, ui::colours::isNightMode());
     m.addItem (7, "MIDI panic (all notes off)");
     {
         juce::PopupMenu q, mpe, bend;
@@ -780,6 +857,7 @@ void DivinityEditor::showMainMenu()
     m.showMenuAsync (juce::PopupMenu::Options(), [this, scales] (int r)
     {
         auto& pm = proc.presets;
+        if (r == 8) { setNightMode (! ui::colours::isNightMode()); return; }
         if (r >= 10 && r < 17) { setUiScale (scales[r - 10]); return; }
         auto setParam = [this] (const juce::String& id, float plain)
         {

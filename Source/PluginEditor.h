@@ -35,7 +35,7 @@ private:
 };
 
 //==============================================================================
-class DivinityEditor : public juce::AudioProcessorEditor,
+class DivinityEditor : public juce::AudioProcessorEditor, public juce::DragAndDropContainer,
                        private juce::Timer,
                        private juce::ChangeListener
 {
@@ -63,7 +63,7 @@ private:
         void paintOverChildren (juce::Graphics&) override;
         DivinityEditor& owner;
         DivinityProcessor& proc() const { return owner.proc; }
-        ui::CrispImage band;
+        ui::CrispImage band, logo;
     };
 
     /** Explain mode: captures the next click and asks Guardian Angel to explain the control underneath. */
@@ -98,7 +98,11 @@ private:
     juce::TooltipWindow tooltips { &content, 600 };
 
     // header
-    ui::IconButton settings, help, menu;
+    ui::IconButton settings, help, menu, nightToggle;
+public:
+    /** Day (light, default) or night (black glass) skin; remembered per user. */
+    void setNightMode (bool night);
+private:
     juce::OwnedArray<juce::TextButton> tabs;
     juce::TextButton angelToggle { "ANGEL" };
 

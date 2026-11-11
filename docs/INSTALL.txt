@@ -40,6 +40,15 @@ Bitwig        Settings > Locations > Rescan
 Studio One    Options > Locations > VST Plug-ins > Reset Blocklist, then restart
 
 
+NEW IN 1.0.0
+- New light "porcelain" skin + NIGHT MODE toggle (moon icon, top right, or menu > Night mode). Your choice is remembered.
+- Drag modulation: grab the four-arrow handle next to an LFO / ENV / STEP / RANDOM title and drop it on any knob.
+- Draw LFOs: click and draw on the LFO display (shape switches to Custom).
+- Curve envelopes: drag up/down on an envelope segment to bend it, double-click to straighten.
+- Distortion: Fuzz, Diode, Overdrive, Tape, Half Rectify, Crunch, Square Fuzz added.
+- Multiband: move the Low/High splits and set Gain, Down Thr/Ratio, Up Thr/Ratio per band.
+- Bigger default window.
+
 NEW IN 0.9.1
 ------------
 - The wave bank is now 271 presets, and every one is built on its own

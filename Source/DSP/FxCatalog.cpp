@@ -11,7 +11,7 @@ const std::vector<FxDef>& fxCatalog()
     static const std::vector<FxDef> c {
         { "sat", "Saturation", "Warm, anti-aliased harmonic drive. A touch adds presence, a lot adds teeth.", ids::satOn,
           { { ids::satDrive, "Drive" }, { ids::satMix, "Mix" } }, {}, {} },
-        { "dist", "Distortion", "Five anti-aliased waveshapers from hard clip to wavefolding, with a tone control to tame the fizz.", distOn,
+        { "dist", "Distortion", "Twelve anti-aliased waveshapers, from tape and tube warmth to fuzz, diode and square-fuzz grit, with a tone control to tame the fizz.", distOn,
           { { distDrive, "Drive" }, { distTone, "Tone" }, { distMix, "Mix" } }, { distType }, {} },
         { "crush", "Bitcrusher", "Lo-fi on purpose: fewer bits and a lower sample rate for crunchy, digital grit.", crushOn,
           { { crushBits, "Bits" }, { crushDown, "Downsample" }, { crushMix, "Mix" } }, {}, {} },
@@ -21,8 +21,11 @@ const std::vector<FxDef>& fxCatalog()
         { "comp", "Compressor", "Evens out dynamics and adds punch. Mix below 100% for parallel compression.", compOn,
           { { compThresh, "Threshold" }, { compRatio, "Ratio" }, { compAttack, "Attack" }, { compRelease, "Release" },
             { compMakeup, "Makeup" }, { compMix, "Mix" } }, {}, {} },
-        { "mb", "Multiband", "Three-band upward + downward compression in the OTT style: loud gets tamed, quiet detail jumps forward.", mbOn,
-          { { mbDepth, "Depth" }, { mbTime, "Time" }, { mbOut, "Output", true } }, {}, {} },
+        { "mb", "Multiband", "Three-band upward + downward compression in the OTT style. Move the two crossovers, then set gain, downward and upward threshold/ratio per band, lows to highs.", mbOn,
+          { { mbDepth, "Depth" }, { mbTime, "Time" }, { mbOut, "Output", true }, { mbLowX, "Low Split" }, { mbHighX, "High Split" },
+            { mbBand (0, "gain"), "Gain", true }, { mbBand (0, "dthr"), "Down Thr" }, { mbBand (0, "dratio"), "Down Ratio" }, { mbBand (0, "uthr"), "Up Thr" }, { mbBand (0, "uamt"), "Up Ratio" },
+            { mbBand (1, "gain"), "Gain", true }, { mbBand (1, "dthr"), "Down Thr" }, { mbBand (1, "dratio"), "Down Ratio" }, { mbBand (1, "uthr"), "Up Thr" }, { mbBand (1, "uamt"), "Up Ratio" },
+            { mbBand (2, "gain"), "Gain", true }, { mbBand (2, "dthr"), "Down Thr" }, { mbBand (2, "dratio"), "Down Ratio" }, { mbBand (2, "uthr"), "Up Thr" }, { mbBand (2, "uamt"), "Up Ratio" } }, {}, {} },
         { "trans", "Transient", "Sharpen or soften the front of each note, and lift or shrink the body that follows.", transOn,
           { { transAttack, "Attack", true }, { transSustain, "Sustain", true } }, {}, {} },
         { "chorus", "Chorus", "Three drifting voices per side in a dimension-style stereo chorus: width and shimmer that still sums cleanly to mono.", ids::choOn,
@@ -96,7 +99,8 @@ void addFxRackParameters (juce::AudioProcessorValueTreeState::ParameterLayout& l
     auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("fxrack", "FX Rack", " | ");
 
     g->addChild (std::make_unique<APB> (pid (distOn), "Distortion On", false));
-    g->addChild (std::make_unique<APC> (pid (distType), "Distortion Type", juce::StringArray { "Hard Clip", "Sine Fold", "Tube", "Rectify", "Soft Cubic" }, 0));
+    g->addChild (std::make_unique<APC> (pid (distType), "Distortion Type", juce::StringArray { "Hard Clip", "Sine Fold", "Tube", "Rectify", "Soft Cubic",
+                                                                                          "Fuzz", "Diode", "Overdrive", "Tape", "Half Rectify", "Crunch", "Square Fuzz" }, 0));
     g->addChild (std::make_unique<APF> (pid (distDrive), "Distortion Drive", lin (0, 1), 0.35f, pct));
     g->addChild (std::make_unique<APF> (pid (distTone), "Distortion Tone", lin (0, 1), 0.7f, pct));
     g->addChild (std::make_unique<APF> (pid (distMix), "Distortion Mix", lin (0, 1), 1.0f, pct));

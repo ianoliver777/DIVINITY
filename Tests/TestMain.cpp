@@ -1443,6 +1443,18 @@ static void snapshotWarpUi (DivinityProcessor& p, const juce::File& dir)
     juce::FileOutputStream os (f);
     juce::PNGImageFormat().writeImageToStream (img, os);
     INFO ("wrote " << f.getFileName());
+    if (auto* de = dynamic_cast<DivinityEditor*> (ed.get()))
+    {
+        de->setNightMode (true);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        auto night = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+        auto nf = dir.getChildFile ("ui_create_night.png");
+        nf.deleteFile();
+        juce::FileOutputStream ns (nf);
+        juce::PNGImageFormat().writeImageToStream (night, ns);
+        de->setNightMode (false);
+        CHECK (night.getPixelAt (8, 300).getBrightness() < 0.35f && img.getPixelAt (8, 300).getBrightness() > 0.6f, "night mode toggles the skin dark / day is light");
+    }
 }
 
 static void snapshotEditor (DivinityProcessor& p, const juce::File& dir)
@@ -1849,6 +1861,64 @@ static juce::AudioBuffer<float> renderMidi (DivinityProcessor& p, double sr, int
     return out;
 }
 
+static void testVersion10 (DivinityProcessor& p)
+{
+    std::cout << "\n== v1.0 (new distortions, multiband bands, drawn LFO, segment curves)\n";
+    const std::vector<Note> chord { { 0.0, 0.9, 45, 0.9f }, { 0.0, 0.9, 52, 0.9f }, { 0.0, 0.9, 57, 0.9f } };
+    // new distortion types
+    cleanPatch (p); allFxOff (p);
+    auto dry = render (p, 48000, 256, 1.0, chord);
+    const char* newTypes[] = { "Fuzz", "Diode", "Overdrive", "Tape", "Half Rectify", "Crunch", "Square Fuzz" };
+    for (auto* t : newTypes)
+    {
+        cleanPatch (p); allFxOff (p);
+        setP (p, fxids::distOn, 1); setChoice (p, fxids::distType, t); setP (p, fxids::distDrive, 0.7f); setP (p, fxids::distMix, 1.0f);
+        auto w = render (p, 48000, 256, 1.0, chord);
+        CHECK (allFinite (w) && maxDiff (dry, w) > 0.01f && w.getMagnitude (0, w.getNumSamples()) < 4.0f, "distortion " << t << " is finite, bounded and audible");
+    }
+    // multiband: per-band gain and moving crossovers change the sound
+    cleanPatch (p); allFxOff (p);
+    setP (p, fxids::mbOn, 1);
+    auto mbA = render (p, 48000, 256, 1.0, chord);
+    setP (p, fxids::mbBand (2, "gain"), 12.0f); setP (p, fxids::mbLowX, 500.0f);
+    auto mbB = render (p, 48000, 256, 1.0, chord);
+    CHECK (allFinite (mbA) && allFinite (mbB) && maxDiff (mbA, mbB) > 0.01f, "multiband band gain / split change the sound");
+    setP (p, fxids::mbBand (2, "gain"), 0.0f); setP (p, fxids::mbLowX, 150.0f);
+    allFxOff (p);
+    // drawn LFO
+    auto lfoRun = [&p] (bool custom, bool flat)
+    {
+        cleanPatch (p);
+        setChoice (p, ids::osc (0, "engine"), "Analog");
+        setChoice (p, ids::osc (0, "wave"), "Saw");
+        setChoice (p, ids::filt (0, "type"), "Low Pass 12");
+        setP (p, ids::filt (0, "cutoff"), 400.0f);
+        setChoice (p, ids::mod (0, "src"), "LFO 1");
+        setChoice (p, ids::mod (0, "dst"), "Filter 1 Cutoff");
+        setP (p, ids::mod (0, "amt"), 0.6f);
+        setP (p, ids::lfo (0, "rate"), 2.0f);
+        setP (p, ids::lfo (0, "on"), 1.0f);
+        setChoice (p, ids::lfo (0, "shape"), custom ? "Custom" : "Sine");
+        for (int k = 0; k < kLfoPoints; ++k) setP (p, ids::lfoPoint (0, k), flat ? 0.0f : (k < 8 ? 1.0f : -1.0f));
+        return render (p, 48000, 512, 1.0, { { 0.0, 2.0, 45, 1.0f } });
+    };
+    auto drawn = lfoRun (true, false), flat = lfoRun (true, true);
+    CHECK (allFinite (drawn) && maxDiff (drawn, flat) > 0.01f, "drawn LFO shape modulates (diff " << maxDiff (drawn, flat) << ")");
+    for (int k = 0; k < kLfoPoints; ++k) setP (p, ids::lfoPoint (0, k), (float) std::sin (juce::MathConstants<double>::twoPi * k / kLfoPoints));
+    setChoice (p, ids::lfo (0, "shape"), "Sine");
+    // envelope segment curves
+    auto envRun = [&p] (float ac)
+    {
+        cleanPatch (p);
+        setP (p, ids::env (0, "attack"), 0.4f);
+        setP (p, ids::env (0, "a_curve"), ac);
+        return render (p, 48000, 256, 0.6, { { 0.0, 0.6, 57, 1.0f } });
+    };
+    auto e0 = envRun (0.0f), e1 = envRun (0.9f);
+    CHECK (allFinite (e1) && rmsDb (e1, 4800, 4800) < rmsDb (e0, 4800, 4800) - 1.0f, "attack curve bends the attack (" << rmsDb (e0, 4800, 4800) << " vs " << rmsDb (e1, 4800, 4800) << " dB)");
+    setP (p, ids::env (0, "a_curve"), 0.0f);
+}
+
 static void testVersion08 (DivinityProcessor& p)
 {
     std::cout << "\n== 0.8.0: warp / FM / sync, user wavetables, MPE, MIDI learn, quality\n";
@@ -2106,7 +2176,7 @@ int main (int argc, char** argv)
     {
         auto procOwner = std::make_unique<DivinityProcessor>();   // heap: the processor is ~350 KB (Windows stacks are 1 MB)
         auto& p = *procOwner;
-        testVersion08 (p);
+        testVersion08 (p); testVersion10 (p);
         snapshotWarpUi (p, outDir);
         std::cout << "\n" << (checks - failures) << " / " << checks << " checks passed\n";
         return failures == 0 ? 0 : 1;
@@ -2143,7 +2213,7 @@ int main (int argc, char** argv)
         testLongNotesAndSilence (p);
         testSoundEngine2 (p);
         testMidiGeneratorAndMeters (p);
-        testVersion08 (p);
+        testVersion08 (p); testVersion10 (p);
         testPerformance (p);
         renderPresetDemos (p, outDir.getChildFile ("preset-demos"));
         snapshotEditor (p, outDir);

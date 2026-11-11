@@ -243,8 +243,8 @@ void Knob::paint (juce::Graphics& g)
     if (valueStyle == 2)
     {
         auto pr = pill.toFloat().withSizeKeepingCentre (juce::jmin ((float) pill.getWidth() - 6.0f, 56.0f), 20.0f).translated (0.0f, 1.0f);
-        g.setColour (juce::Colour (0xff050c11)); g.fillRoundedRectangle (pr, 5.0f);
-        g.setColour (showingValue ? borderBright : juce::Colour (0xff22394a)); g.drawRoundedRectangle (pr.reduced (0.5f), 5.0f, 1.0f);
+        g.setColour (colours::well); g.fillRoundedRectangle (pr, 5.0f);
+        g.setColour (showingValue ? borderBright : colours::wellBorder); g.drawRoundedRectangle (pr.reduced (0.5f), 5.0f, 1.0f);
         g.setFont (font (12.0f, Weight::Medium));
         g.setColour (text);
         g.drawText (valueText(), pr.toNearestInt(), juce::Justification::centred, false);
@@ -277,6 +277,101 @@ void Knob::timerCallback()
     {
         const bool l = dp->isLearning (param.getParameterID());
         if (l != learning) { learning = l; repaint(); }
+    }
+}
+
+//==============================================================================
+bool Knob::isInterestedInDragSource (const SourceDetails& d)
+{
+    return dest != ModDest::None && d.description.toString().startsWith ("mod:");
+}
+
+void Knob::itemDropped (const SourceDetails& d)
+{
+    dropHover = false;
+    const auto name = d.description.toString().fromFirstOccurrenceOf ("mod:", false, false);
+    const int srcIdx = modSourceNames().indexOf (name);
+    if (srcIdx <= 0) { repaint(); return; }
+    auto setP = [this] (const juce::String& id, float v)
+    {
+        if (auto* p = apvts.getParameter (id))
+        {
+            p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (v)); p->endChangeGesture();
+        }
+    };
+    const int dstIdx = (int) dest;
+    int slotIdx = -1;
+    for (int i = 0; i < kNumModSlots && slotIdx < 0; ++i)   // already routed? just reuse that slot
+        if ((int) std::lround (apvts.getRawParameterValue (ids::mod (i, "src"))->load()) == srcIdx
+            && (int) std::lround (apvts.getRawParameterValue (ids::mod (i, "dst"))->load()) == dstIdx) slotIdx = i;
+    for (int i = 0; i < kNumModSlots && slotIdx < 0; ++i)
+        if (apvts.getRawParameterValue (ids::mod (i, "src"))->load() < 0.5f) slotIdx = i;
+    if (slotIdx < 0) { repaint(); return; }   // matrix full
+    setP (ids::mod (slotIdx, "src"), (float) srcIdx);
+    setP (ids::mod (slotIdx, "dst"), (float) dstIdx);
+    if (std::abs (apvts.getRawParameterValue (ids::mod (slotIdx, "amt"))->load()) < 0.01f) setP (ids::mod (slotIdx, "amt"), 0.5f);
+    if (name.startsWith ("LFO ")) setP (ids::lfo (name.getTrailingIntValue() - 1, "on"), 1.0f);
+    updateModulation();
+    repaint();
+}
+
+void Knob::paintOverChildren (juce::Graphics& g)
+{
+    if (! dropHover) return;
+    auto r = getLocalBounds().toFloat().reduced (2.0f);
+    g.setColour (accent.withAlpha (0.18f));
+    g.fillRoundedRectangle (r, 8.0f);
+    g.setColour (accent);
+    g.drawRoundedRectangle (r, 8.0f, 2.0f);
+}
+
+//==============================================================================
+ModHandle::ModHandle (std::function<juce::String()> s) : source (std::move (s))
+{
+    setTooltip ("Drag me onto any knob to modulate it");
+    setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+}
+
+void ModHandle::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (2.0f);
+    const float d = juce::jmin (r.getWidth(), r.getHeight());
+    auto c = juce::Rectangle<float> (d, d).withCentre (r.getCentre());
+    const bool over = isMouseOver (true) || dragging;
+    g.setColour (accent.withAlpha (over ? 0.35f : 0.16f));
+    g.fillEllipse (c);
+    g.setColour (accent);
+    g.drawEllipse (c.reduced (0.7f), 1.3f);
+    // four-way arrow glyph
+    juce::Path p; const auto cc = c.getCentre(); const float a = d * 0.30f, h = d * 0.11f;
+    p.startNewSubPath (cc.x - a, cc.y); p.lineTo (cc.x + a, cc.y);
+    p.startNewSubPath (cc.x, cc.y - a); p.lineTo (cc.x, cc.y + a);
+    for (auto dir : { juce::Point<float> (1, 0), juce::Point<float> (-1, 0), juce::Point<float> (0, 1), juce::Point<float> (0, -1) })
+    {
+        const auto tip = cc + dir * a; const juce::Point<float> perp (-dir.y, dir.x);
+        p.startNewSubPath (tip - dir * h + perp * h); p.lineTo (tip); p.lineTo (tip - dir * h - perp * h);
+    }
+    g.setColour (over ? glow : text);
+    g.strokePath (p, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
+void ModHandle::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragging || e.getDistanceFromDragStart() < 4 || ! source) return;
+    const auto name = source();
+    if (name.isEmpty()) return;
+    if (auto* c = juce::DragAndDropContainer::findParentDragContainerFor (this))
+    {
+        dragging = true;
+        juce::Image img (juce::Image::ARGB, 70, 22, true);
+        {
+            juce::Graphics gi (img);
+            gi.setColour (accent.withAlpha (0.92f)); gi.fillRoundedRectangle (0, 0, 70, 22, 11);
+            gi.setColour (onAccent); gi.setFont (font (11.0f, Weight::SemiBold, 0.06f));
+            gi.drawText (name.toUpperCase(), 0, 0, 70, 22, juce::Justification::centred);
+        }
+        c->startDragging ("mod:" + name, this, juce::ScaledImage (img), true);
+        repaint();
     }
 }
 
@@ -403,7 +498,8 @@ void SegmentedChoice::resized()
 NumberBox::NumberBox (APVTS& s, const juce::String& id) : attachment (s, id, slider)
 {
     slider.setSliderStyle (juce::Slider::LinearBarVertical);
-    slider.setTextBoxIsEditable (false);
+    slider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);   // value text painted here, always in the current skin colour
+    slider.onValueChange = [this] { repaint(); };
     slider.setMouseDragSensitivity (300);
     slider.setVelocityModeParameters (0.1, 1, 0.0, true, juce::ModifierKeys::shiftModifier);
     slider.setTooltip (helpTextFor (id) + "\n\nDrag up/down to change. Right-click to type a value.");
@@ -411,6 +507,13 @@ NumberBox::NumberBox (APVTS& s, const juce::String& id) : attachment (s, id, sli
     slider.setDoubleClickReturnValue (true, (double) p->convertFrom0to1 (p->getDefaultValue()));
     slider.onPopup = [this, p] { showParameterMenu (slider, *p); };
     addAndMakeVisible (slider);
+}
+
+void NumberBox::paintOverChildren (juce::Graphics& g)
+{
+    g.setColour (isEnabled() ? text : textFaint);
+    g.setFont (font (12.5f));
+    g.drawText (slider.getTextFromValue (slider.getValue()), getLocalBounds().reduced (4, 0), juce::Justification::centred, true);
 }
 
 //==============================================================================
@@ -446,12 +549,12 @@ void TabRow::resized()
 void TabRow::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    juce::ColourGradient grad (juce::Colour (0xff0e1d26), r.getX(), r.getY(), juce::Colour (0xff060d12), r.getX(), r.getBottom(), false);
+    juce::ColourGradient grad (colours::cardTop, r.getX(), r.getY(), colours::cardBottom, r.getX(), r.getBottom(), false);
     g.setGradientFill (grad);
     g.fillRoundedRectangle (r, 7.0f);
-    g.setColour (juce::Colour (0xff22394a));
+    g.setColour (colours::wellBorder);
     g.drawRoundedRectangle (r.reduced (0.5f), 7.0f, 1.0f);
-    g.setColour (juce::Colour (0xff1b2e3a));
+    g.setColour (colours::border);
     for (int i = 1; i < tabs.size(); ++i)
         if (i != selected && i - 1 != selected)
             g.drawVerticalLine (tabs[i]->getX(), r.getY() + 7.0f, r.getBottom() - 7.0f);
@@ -771,14 +874,14 @@ namespace
 
 EnvelopeDisplay::EnvelopeDisplay (APVTS& s, int e) : apvts (s), env (e)
 {
-    setTooltip ("Drag the points to shape the envelope. The knobs below show exact values.");
+    setTooltip ("Drag the points to shape the envelope. Drag up/down on a segment to bend its curve (double-click a segment to straighten it).");
     startTimerHz (30);
 }
 
 void EnvelopeDisplay::timerCallback()
 {
     float h = (float) env;
-    for (auto* n : { "attack", "decay", "sustain", "release", "curve" })
+    for (auto* n : { "attack", "decay", "sustain", "release", "curve", "a_curve", "d_curve", "r_curve" })
         h = h * 1.37f + apvts.getRawParameterValue (ids::env (env, n))->load();
     if (h != lastHash) { lastHash = h; repaint(); }
 }
@@ -802,17 +905,23 @@ EnvelopeDisplay::Geometry EnvelopeDisplay::geometry() const
     return geo;
 }
 
+static const char* kSegCurve[3] = { "a_curve", "d_curve", "r_curve" };
+
 void EnvelopeDisplay::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
     drawDisplayBackground (g, r);
     const auto geo = geometry();
-    const float curve = apvts.getRawParameterValue (ids::env (env, "curve"))->load();
-    const float aExp = std::pow (2.0f, curve * 2.0f), dExp = 3.0f * std::pow (2.0f, curve * 1.5f);
+    auto get = [this] (const char* n) { return apvts.getRawParameterValue (ids::env (env, n))->load(); };
+    const float curve = get ("curve");
+    auto cl = [] (float v) { return juce::jlimit (-2.0f, 2.0f, v); };
+    const float aExp = std::pow (2.0f, cl (curve + get ("a_curve")) * 2.0f);
+    const float dExp = 3.0f * std::pow (2.0f, cl (curve + get ("d_curve")) * 1.5f);
+    const float rExp = 3.0f * std::pow (2.0f, cl (curve + get ("r_curve")) * 1.5f);
 
     juce::Path p;
     p.startNewSubPath (geo.start);
-    const int N = 24;
+    const int N = 32;
     for (int i = 1; i <= N; ++i)
     {
         const float t = (float) i / N;
@@ -828,7 +937,7 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     for (int i = 1; i <= N; ++i)
     {
         const float t = (float) i / N;
-        const float lvl = std::pow (1.0f - t, dExp);
+        const float lvl = std::pow (1.0f - t, rExp);
         p.lineTo (geo.releaseStart.x + (geo.end.x - geo.releaseStart.x) * t, geo.end.y + (geo.releaseStart.y - geo.end.y) * lvl);
     }
 
@@ -837,6 +946,14 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
     g.setGradientFill (juce::ColourGradient (accent.withAlpha (0.32f), 0, geo.area.getY(), accent.withAlpha (0.02f), 0, geo.area.getBottom(), false));
     g.fillPath (fill);
     strokeGlow (g, p, 1.9f);
+
+    // small curve handles at segment midpoints
+    const juce::Point<float> mids[3] = { (geo.start + geo.peak) * 0.5f, (geo.peak + geo.decayEnd) * 0.5f, (geo.releaseStart + geo.end) * 0.5f };
+    for (int sgi = 0; sgi < 3; ++sgi)
+    {
+        g.setColour (accent.withAlpha (dragNode == 10 + sgi ? 0.9f : 0.45f));
+        g.drawEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre (mids[sgi]), 1.2f);
+    }
 
     for (auto pt : { geo.start, geo.peak, geo.decayEnd, geo.releaseStart, geo.end })
     {
@@ -847,6 +964,15 @@ void EnvelopeDisplay::paint (juce::Graphics& g)
         g.setColour (glow);
         g.fillEllipse (juce::Rectangle<float> (4.5f, 4.5f).withCentre (pt));
     }
+}
+
+int EnvelopeDisplay::segmentAt (juce::Point<float> pos) const
+{
+    const auto geo = geometry();
+    if (pos.x >= geo.start.x && pos.x < geo.peak.x) return 0;
+    if (pos.x >= geo.peak.x && pos.x < geo.decayEnd.x) return 1;
+    if (pos.x >= geo.releaseStart.x && pos.x <= geo.end.x + 4.0f) return 2;
+    return -1;
 }
 
 void EnvelopeDisplay::mouseDown (const juce::MouseEvent& e)
@@ -860,8 +986,20 @@ void EnvelopeDisplay::mouseDown (const juce::MouseEvent& e)
         const float dist = pts[i].getDistanceFrom (e.position);
         if (dist < best) { best = dist; dragNode = i; }
     }
-    for (auto* n : { "attack", "decay", "sustain", "release" })
-        if (dragNode >= 0) apvts.getParameter (ids::env (env, n))->beginChangeGesture();
+    if (dragNode >= 0)
+    {
+        for (auto* n : { "attack", "decay", "sustain", "release" })
+            apvts.getParameter (ids::env (env, n))->beginChangeGesture();
+        return;
+    }
+    const int sg = segmentAt (e.position);
+    if (sg >= 0)
+    {
+        dragNode = 10 + sg;
+        dragStartCurve = apvts.getRawParameterValue (ids::env (env, kSegCurve[sg]))->load();
+        apvts.getParameter (ids::env (env, kSegCurve[sg]))->beginChangeGesture();
+        repaint();
+    }
 }
 
 void EnvelopeDisplay::mouseDrag (const juce::MouseEvent& e)
@@ -874,6 +1012,11 @@ void EnvelopeDisplay::mouseDrag (const juce::MouseEvent& e)
         auto* p = apvts.getParameter (ids::env (env, n));
         p->setValueNotifyingHost (p->convertTo0to1 (v));
     };
+    if (dragNode >= 10)
+    {
+        set (kSegCurve[dragNode - 10], juce::jlimit (-1.0f, 1.0f, dragStartCurve + (float) e.getDistanceFromDragStartY() / 80.0f));
+        return;
+    }
     const float sustain = juce::jlimit (0.0f, 1.0f, (geo.area.getBottom() - e.position.y) / geo.area.getHeight());
     switch (dragNode)
     {
@@ -887,16 +1030,44 @@ void EnvelopeDisplay::mouseDrag (const juce::MouseEvent& e)
 
 void EnvelopeDisplay::mouseUp (const juce::MouseEvent&)
 {
-    if (dragNode >= 0)
+    if (dragNode >= 10)
+        apvts.getParameter (ids::env (env, kSegCurve[dragNode - 10]))->endChangeGesture();
+    else if (dragNode >= 0)
         for (auto* n : { "attack", "decay", "sustain", "release" })
             apvts.getParameter (ids::env (env, n))->endChangeGesture();
     dragNode = -1;
+    repaint();
+}
+
+void EnvelopeDisplay::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    const int sg = segmentAt (e.position);
+    if (sg < 0) return;
+    auto* p = apvts.getParameter (ids::env (env, kSegCurve[sg]));
+    p->beginChangeGesture(); p->setValueNotifyingHost (p->convertTo0to1 (0.0f)); p->endChangeGesture();
 }
 
 //==============================================================================
 // LfoDisplay
 //==============================================================================
-LfoDisplay::LfoDisplay (DivinityProcessor& p, int l) : proc (p), lfo (l) { startTimerHz (30); }
+static float lfoShapeValue (int shape, double ph)
+{
+    switch (shape)
+    {
+        case 0: return (float) std::sin (ph * juce::MathConstants<double>::twoPi);
+        case 1: return ph < 0.5 ? 1.0f : -1.0f;
+        case 2: return (float) (ph < 0.5 ? 4.0 * ph - 1.0 : 3.0 - 4.0 * ph);
+        case 4: return (float) (2.0 * ph - 1.0);
+        case 5: return (float) (1.0 - 2.0 * ph);
+        default: return 0.0f;
+    }
+}
+
+LfoDisplay::LfoDisplay (DivinityProcessor& p, int l) : proc (p), lfo (l)
+{
+    setTooltip ("Draw on the display to write your own LFO shape (switches the shape to Custom).");
+    startTimerHz (30);
+}
 
 void LfoDisplay::paint (juce::Graphics& g)
 {
@@ -908,29 +1079,50 @@ void LfoDisplay::paint (juce::Graphics& g)
     const float phase = s.getRawParameterValue (ids::lfo (lfo, "phase"))->load();
 
     auto area = r.reduced (10.0f, 10.0f);
-    const float mid = area.getCentreY(), amp = area.getHeight() * 0.45f * juce::jmax (0.08f, depth);
+    const float mid = area.getCentreY();
     juce::Path p;
-    const int points = 240;
-    dsp::Rng rng; rng.seed (77u + (uint32_t) lfo);
-    float held = rng.bipolar();
-    int lastStep = -1;
-    for (int i = 0; i <= points; ++i)
+    if (shape == 6)
     {
-        double ph = 2.0 * i / points + phase;
-        const int step = (int) std::floor (ph);
-        ph -= std::floor (ph);
-        float v = 0.0f;
-        switch (shape)
+        // custom: one cycle, full height, so drawing maps 1:1
+        const float amp = area.getHeight() * 0.45f;
+        float pts[kLfoPoints];
+        for (int k = 0; k < kLfoPoints; ++k) pts[k] = s.getRawParameterValue (ids::lfoPoint (lfo, k))->load();
+        g.setColour (textFaint.withAlpha (0.35f));
+        g.drawHorizontalLine ((int) mid, area.getX(), area.getRight());
+        for (int k = 0; k <= kLfoPoints; ++k)
         {
-            case 0: v = (float) std::sin (ph * juce::MathConstants<double>::twoPi); break;
-            case 1: v = ph < 0.5 ? 1.0f : -1.0f; break;
-            case 2: v = (float) (ph < 0.5 ? 4.0 * ph - 1.0 : 3.0 - 4.0 * ph); break;
-            default: if (step != lastStep) { held = rng.bipolar(); lastStep = step; } v = held; break;
+            const float x = area.getX() + area.getWidth() * (float) k / kLfoPoints;
+            const float y = mid - pts[k % kLfoPoints] * amp;
+            if (k == 0) p.startNewSubPath (x, y); else p.lineTo (x, y);
         }
-        const float x = area.getX() + area.getWidth() * (float) i / points;
-        if (i == 0) p.startNewSubPath (x, mid - v * amp); else p.lineTo (x, mid - v * amp);
+        strokeGlow (g, p, 1.9f);
+        for (int k = 0; k < kLfoPoints; ++k)
+        {
+            const float x = area.getX() + area.getWidth() * (float) k / kLfoPoints;
+            g.setColour (accent);
+            g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre ({ x, mid - pts[k] * amp }));
+        }
     }
-    strokeGlow (g, p, 1.9f);
+    else
+    {
+        const float amp = area.getHeight() * 0.45f * juce::jmax (0.08f, depth);
+        const int points = 240;
+        dsp::Rng rng; rng.seed (77u + (uint32_t) lfo);
+        float held = rng.bipolar();
+        int lastStep = -1;
+        for (int i = 0; i <= points; ++i)
+        {
+            double ph = 2.0 * i / points + phase;
+            const int step = (int) std::floor (ph);
+            ph -= std::floor (ph);
+            float v = 0.0f;
+            if (shape == 3) { if (step != lastStep) { held = rng.bipolar(); lastStep = step; } v = held; }
+            else v = lfoShapeValue (shape, ph);
+            const float x = area.getX() + area.getWidth() * (float) i / points;
+            if (i == 0) p.startNewSubPath (x, mid - v * amp); else p.lineTo (x, mid - v * amp);
+        }
+        strokeGlow (g, p, 1.9f);
+    }
 
     // live output marker
     const float live = juce::jlimit (-1.0f, 1.0f, proc.getLfoValue (lfo));
@@ -939,6 +1131,59 @@ void LfoDisplay::paint (juce::Graphics& g)
     g.fillEllipse (juce::Rectangle<float> (11.0f, 11.0f).withCentre ({ area.getRight() - 3.0f, y }));
     g.setColour (glow);
     g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre ({ area.getRight() - 3.0f, y }));
+}
+
+void LfoDisplay::mouseDown (const juce::MouseEvent& e)
+{
+    auto& s = proc.apvts;
+    auto* shapeP = s.getParameter (ids::lfo (lfo, "shape"));
+    const int shape = (int) std::lround (s.getRawParameterValue (ids::lfo (lfo, "shape"))->load());
+    for (int k = 0; k < kLfoPoints; ++k) s.getParameter (ids::lfoPoint (lfo, k))->beginChangeGesture();
+    if (shape != 6)
+    {
+        // seed the drawing from the current shape so the user edits what they see
+        for (int k = 0; k < kLfoPoints; ++k)
+        {
+            auto* pp = s.getParameter (ids::lfoPoint (lfo, k));
+            pp->setValueNotifyingHost (pp->convertTo0to1 (lfoShapeValue (shape == 3 ? 0 : shape, (double) k / kLfoPoints)));
+        }
+        shapeP->beginChangeGesture(); shapeP->setValueNotifyingHost (shapeP->convertTo0to1 (6.0f)); shapeP->endChangeGesture();
+    }
+    drawing = true;
+    drawAt (e.position, false);
+    lastDraw = e.position;
+}
+
+void LfoDisplay::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! drawing) return;
+    drawAt (e.position, true);
+    lastDraw = e.position;
+}
+
+void LfoDisplay::mouseUp (const juce::MouseEvent&)
+{
+    if (! drawing) return;
+    drawing = false;
+    for (int k = 0; k < kLfoPoints; ++k) proc.apvts.getParameter (ids::lfoPoint (lfo, k))->endChangeGesture();
+}
+
+void LfoDisplay::drawAt (juce::Point<float> pos, bool interpolate)
+{
+    auto area = getLocalBounds().toFloat().reduced (10.0f, 10.0f);
+    const float mid = area.getCentreY(), amp = area.getHeight() * 0.45f;
+    auto toK = [&] (float x) { return juce::jlimit (0, kLfoPoints - 1, (int) std::lround ((x - area.getX()) / area.getWidth() * kLfoPoints) % kLfoPoints); };
+    auto toV = [&] (float y) { return juce::jlimit (-1.0f, 1.0f, (mid - y) / amp); };
+    const int k1 = toK (pos.x), k0 = interpolate ? toK (lastDraw.x) : k1;
+    const float v1 = toV (pos.y), v0 = interpolate ? toV (lastDraw.y) : v1;
+    const int lo = juce::jmin (k0, k1), hi = juce::jmax (k0, k1);
+    for (int k = lo; k <= hi; ++k)
+    {
+        const float t = hi == lo ? 1.0f : (float) (k - k0) / (float) (k1 - k0);
+        auto* pp = proc.apvts.getParameter (ids::lfoPoint (lfo, k));
+        pp->setValueNotifyingHost (pp->convertTo0to1 (v0 + (v1 - v0) * t));
+    }
+    repaint();
 }
 
 //==============================================================================
@@ -1023,7 +1268,7 @@ void LevelMeter::paint (juce::Graphics& g)
         juce::Rectangle<float> bar = vertical
             ? juce::Rectangle<float> (bounds.getX() + ch * bounds.getWidth() * 0.55f, bounds.getY(), bounds.getWidth() * 0.4f, bounds.getHeight())
             : juce::Rectangle<float> (bounds.getX(), bounds.getY() + ch * bounds.getHeight() * 0.55f, bounds.getWidth(), bounds.getHeight() * 0.4f);
-        g.setColour (juce::Colour (0xff0b1a22));
+        g.setColour (colours::well2);
         g.fillRoundedRectangle (bar, 2.0f);
         auto lit = vertical ? bar.withTrimmedTop (bar.getHeight() * (1.0f - vals[ch])) : bar.withWidth (bar.getWidth() * vals[ch]);
         const bool hot = (ch == 0 ? l : r) > 0.97f;

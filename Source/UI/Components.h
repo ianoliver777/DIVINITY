@@ -23,6 +23,7 @@ class CrispImage
 {
 public:
     void setSource (juce::Image img) { source = std::move (img); cached = {}; }
+    const juce::Image& getImage() const noexcept { return source; }
     bool isValid() const { return source.isValid(); }
     int getWidth() const  { return source.getWidth(); }
     int getHeight() const { return source.getHeight(); }
@@ -86,9 +87,14 @@ void showParameterMenu (juce::Component& owner, juce::RangedAudioParameter& para
 
 //==============================================================================
 /** Rotary knob + caption, attached to a parameter. Caption shows the value while hovered or dragged. */
-class Knob : public juce::Component, private juce::Timer
+class Knob : public juce::Component, public juce::DragAndDropTarget, private juce::Timer
 {
 public:
+    bool isInterestedInDragSource (const SourceDetails&) override;
+    void itemDragEnter (const SourceDetails&) override { dropHover = true; repaint(); }
+    void itemDragExit (const SourceDetails&) override { dropHover = false; repaint(); }
+    void itemDropped (const SourceDetails&) override;
+    void paintOverChildren (juce::Graphics&) override;
     Knob (APVTS& apvts, const juce::String& paramID, const juce::String& caption,
           ModDest dest = ModDest::None, float modScale = 1.0f, bool bipolar = false);
 
@@ -113,10 +119,26 @@ private:
     juce::String caption;
     ModDest dest;
     float modScale, captionSize = 10.5f;
-    bool showingValue = false, learning = false;
+    bool showingValue = false, learning = false, dropHover = false;
     int valueStyle = 0, maxKnob = 1000;
     juce::String lastValueText;
     juce::String valueText() const;
+};
+
+//==============================================================================
+/** Drag this onto any knob to route a modulation source to it (adds a mod-matrix slot). */
+class ModHandle : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit ModHandle (std::function<juce::String()> source);
+    void paint (juce::Graphics&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override { dragging = false; }
+    void mouseEnter (const juce::MouseEvent&) override { repaint(); }
+    void mouseExit (const juce::MouseEvent&) override { repaint(); }
+private:
+    std::function<juce::String()> source;
+    bool dragging = false;
 };
 
 //==============================================================================
@@ -179,6 +201,7 @@ class NumberBox : public juce::Component
 public:
     NumberBox (APVTS& apvts, const juce::String& paramID);
     void resized() override { slider.setBounds (getLocalBounds()); }
+    void paintOverChildren (juce::Graphics&) override;
     juce::Slider& getSlider() { return slider; }
 private:
     FineSlider slider;
@@ -263,8 +286,11 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
 private:
     void timerCallback() override;
+    int segmentAt (juce::Point<float>) const;   // 0 attack, 1 decay, 2 release, -1 none
+    float dragStartCurve = 0.0f;
     struct Geometry { juce::Point<float> start, peak, decayEnd, releaseStart, end; float unit; juce::Rectangle<float> area; };
     Geometry geometry() const;
     APVTS& apvts;
@@ -273,16 +299,22 @@ private:
     float lastHash = -1.0f;
 };
 
-class LfoDisplay : public juce::Component, private juce::Timer
+class LfoDisplay : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
 {
 public:
     LfoDisplay (DivinityProcessor& p, int lfoIndex);
     void paint (juce::Graphics&) override;
     void setLfo (int i) { lfo = i; repaint(); }
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
 private:
     void timerCallback() override { repaint(); }
+    void drawAt (juce::Point<float>, bool interpolate);
     DivinityProcessor& proc;
     int lfo;
+    juce::Point<float> lastDraw;
+    bool drawing = false;
 };
 
 class ScopeDisplay : public juce::Component, private juce::Timer

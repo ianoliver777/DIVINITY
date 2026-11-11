@@ -166,13 +166,15 @@ public:
 
     void setSampleRate (double sr) noexcept { sampleRate = sr; }
 
-    void setParameters (float a, float d, float s, float r, float c) noexcept
+    /** c = overall curve; ac / dc / rc bend one segment on top of it (1.0: drawn on the envelope display). */
+    void setParameters (float a, float d, float s, float r, float c, float ac = 0.0f, float dc = 0.0f, float rc = 0.0f) noexcept
     {
         attack = juce::jmax (0.0005f, a); decay = juce::jmax (0.001f, d);
         sustain = juce::jlimit (0.0f, 1.0f, s); release = juce::jmax (0.001f, r);
         curve = juce::jlimit (-1.0f, 1.0f, c);
-        attackExp = std::pow (2.0f, curve * 2.0f);
-        decayExp  = 3.0f * std::pow (2.0f, curve * 1.5f);
+        attackExp = std::pow (2.0f, juce::jlimit (-2.0f, 2.0f, curve + ac) * 2.0f);
+        decayExp  = 3.0f * std::pow (2.0f, juce::jlimit (-2.0f, 2.0f, curve + dc) * 1.5f);
+        releaseExp = 3.0f * std::pow (2.0f, juce::jlimit (-2.0f, 2.0f, curve + rc) * 1.5f);
     }
 
     void noteOn() noexcept   { startLevel = level; progress = 0.0; stage = Stage::Attack; }
@@ -202,7 +204,7 @@ public:
             case Stage::Release:
                 progress += 1.0 / (release * sampleRate);
                 if (progress >= 1.0) { level = 0.0f; stage = Stage::Idle; }
-                else level = startLevel * std::pow (1.0f - (float) progress, decayExp);
+                else level = startLevel * std::pow (1.0f - (float) progress, releaseExp);
                 break;
         }
         return level;
@@ -211,7 +213,7 @@ public:
 private:
     double sampleRate = 44100.0, progress = 0.0;
     float attack = 0.01f, decay = 0.1f, sustain = 1.0f, release = 0.1f, curve = 0.0f;
-    float attackExp = 1.0f, decayExp = 3.0f, level = 0.0f, startLevel = 0.0f;
+    float attackExp = 1.0f, decayExp = 3.0f, releaseExp = 3.0f, level = 0.0f, startLevel = 0.0f;
     Stage stage = Stage::Idle;
 };
 
@@ -224,7 +226,7 @@ public:
 
     /** Advances by `seconds` and returns the bipolar output (-1..1). */
     float advance (int shape, double rateHz, double seconds, float smooth, double phaseOffset,
-                   bool locked, double lockedPhase) noexcept
+                   bool locked, double lockedPhase, const float* custom = nullptr, int customN = 0) noexcept
     {
         if (locked)
         {
@@ -247,6 +249,13 @@ public:
             case 2:  raw = (float) (p < 0.5 ? 4.0 * p - 1.0 : 3.0 - 4.0 * p); break;
             case 4:  raw = (float) (2.0 * p - 1.0); break;    // saw up
             case 5:  raw = (float) (1.0 - 2.0 * p); break;    // saw down
+            case 6:  // custom (drawn): linear between the drawn points, wrapping
+                if (custom != nullptr && customN > 1)
+                {
+                    const double x = p * customN; const int i0 = (int) x % customN; const float f = (float) (x - std::floor (x));
+                    raw = custom[i0] + f * (custom[(i0 + 1) % customN] - custom[i0]);
+                }
+                break;
             default: raw = held; break;
         }
         // Smooth: one-pole slew, time constant up to ~0.25 of a cycle (min 2 ms for de-clicking).

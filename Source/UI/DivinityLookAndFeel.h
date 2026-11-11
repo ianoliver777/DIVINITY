@@ -6,21 +6,19 @@ namespace divinity::ui
 {
 namespace colours
 {
-    // v0.7 "black glass + cyan" palette (sampled from the v0.7 mockup)
-    const juce::Colour background   { 0xff010205 };
-    const juce::Colour panel        { 0xff060c11 };
-    const juce::Colour card         { 0xff0b161d };
-    const juce::Colour panel2       { 0xff0f1d26 };
-    const juce::Colour border       { 0xff1c2f3b };
-    const juce::Colour borderBright { 0xff3a6278 };
-    const juce::Colour text         { 0xfff3f9fc };
-    const juce::Colour textDim      { 0xffb4c4cd };
-    const juce::Colour textFaint    { 0xff5b6f7c };
-    const juce::Colour accent       { 0xff3ccbff };   // glowing cyan
-    const juce::Colour accentStrong { 0xff1ba6ee };
-    const juce::Colour accentDeep   { 0xff0c4766 };
-    const juce::Colour modulation   { 0xffa8f2ff };
-    const juce::Colour glow         { 0xffbff6ff };   // hot core of glowing lines
+    // Mutable palette: DAY (the 1.0 light skin, default) or NIGHT (the v0.7 black-glass + cyan skin).
+    // Read at paint time everywhere, so switching repaints the whole UI in the other skin.
+    inline juce::Colour background, panel, card, panel2, border, borderBright, text, textDim, textFaint,
+                        accent, accentStrong, accentDeep, modulation, glow;
+    // surfaces that used to be hard-coded dark values
+    inline juce::Colour well, well2, wellBorder, panelTop, panelBottom, panelRimTop, panelRimBottom, displayTop, displayBottom,
+                        displayBorder, selTop, selBottom, btnTop, btnBottom, btnHover, menuBg, trackBg, knobTop, knobBottom,
+                        knobRimTop, knobRimBottom, meterBg, cardTop, cardBottom, onAccent;
+    void setNightMode (bool night);
+    bool isNightMode();
+    /** Loads the saved skin choice (per user, not per project). */
+    void loadSavedSkin();
+    void saveSkin (bool night);
 }
 
 enum class Weight { Regular, Medium, SemiBold };
@@ -43,6 +41,8 @@ class DivinityLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     DivinityLookAndFeel();
+    /** Re-applies the current palette (day / night) to the JUCE colour IDs. */
+    void applyPalette();
 
     juce::Typeface::Ptr getTypefaceForFont (const juce::Font&) override;
 

@@ -238,7 +238,7 @@ void StereoImager::paint (juce::Graphics& g)
     // correlation bar (-1 .. +1) and readouts
     const float by = a.getBottom() + 20.0f;
     auto bar = juce::Rectangle<float> (a.getX() + 110.0f, by + 2.0f, a.getWidth() - 220.0f, 6.0f);
-    g.setColour (juce::Colour (0xff15232c)); g.fillRoundedRectangle (bar, 3.0f);
+    g.setColour (colours::meterBg); g.fillRoundedRectangle (bar, 3.0f);
     const float cxBar = bar.getCentreX(), px = cxBar + juce::jlimit (-1.0f, 1.0f, correlation) * bar.getWidth() * 0.5f;
     const bool bad = correlation < 0.0f && level > 0.0f;
     auto lit = juce::Rectangle<float>::leftTopRightBottom (juce::jmin (cxBar, px), bar.getY(), juce::jmax (cxBar, px), bar.getBottom());
@@ -295,7 +295,7 @@ namespace
                 if (sel)
                 {
                     g.setColour (accent.withAlpha (0.16f)); g.drawRoundedRectangle (r.expanded (1.0f), 7.0f, 3.0f);
-                    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff11587c), 0, r.getY(), juce::Colour (0xff083049), 0, r.getBottom(), false));
+                    g.setGradientFill (juce::ColourGradient (colours::selTop, 0, r.getY(), colours::selBottom, 0, r.getBottom(), false));
                     g.fillRoundedRectangle (r, 6.0f);
                     g.setColour (accent); g.drawRoundedRectangle (r, 6.0f, 1.2f);
                 }
@@ -883,7 +883,7 @@ namespace
                 if (dragFrom == r && dragging) { g.setColour (accent.withAlpha (0.08f)); g.fillRoundedRectangle (row, 5.0f); continue; }
                 const bool on = proc.apvts.getRawParameterValue (cat[(size_t) idx].onID)->load() > 0.5f;
                 const bool sel = idx == selected;
-                g.setColour (sel ? juce::Colour (0xff0d2b52) : panel2.withAlpha (0.55f));
+                g.setColour (sel ? colours::selBottom : panel2.withAlpha (0.55f));
                 g.fillRoundedRectangle (row, 5.0f);
                 g.setColour (sel ? accent : border);
                 g.drawRoundedRectangle (row, 5.0f, sel ? 1.2f : 1.0f);
@@ -1020,6 +1020,26 @@ namespace
             g.setFont (font (10.5f, Weight::Medium, 0.12f));
             for (int i = 0; i < ctl.choices.size(); ++i)
                 g.drawText (ctl.choiceLabels[i], ctl.choices[i]->getX(), ctl.choices[i]->getY() - 18, 200, 16, juce::Justification::centredLeft);
+            if (isMultiband())
+            {
+                auto& s = ctl.knobs[0]->getSlider();
+                juce::ignoreUnused (s);
+                const auto lo = juce::String (juce::roundToInt (ctl.knobs[3]->getSlider().getValue())),
+                           hi = juce::String (juce::roundToInt (ctl.knobs[4]->getSlider().getValue()));
+                const juce::String names[4] = { "GLOBAL", "LOW", "MID", "HIGH" };
+                const juce::String ranges[4] = { "depth / time / splits", "below " + lo + " Hz", lo + " - " + hi + " Hz", "above " + hi + " Hz" };
+                for (int row = 0; row < 4; ++row)
+                {
+                    const int y = mbRowY (row);
+                    g.setColour (row == 0 ? textDim : accent);
+                    g.setFont (font (13.0f, Weight::SemiBold, 0.12f));
+                    g.drawText (names[row], 20, y + 18, 110, 18, juce::Justification::centredLeft);
+                    g.setColour (textFaint);
+                    g.setFont (font (10.5f, Weight::Medium));
+                    g.drawText (ranges[row], 20, y + 38, 120, 16, juce::Justification::centredLeft);
+                    if (row > 0) { g.setColour (border); g.drawHorizontalLine (y, 20.0f, (float) getWidth() - 20.0f); }
+                }
+            }
         }
         void resized() override
         {
@@ -1028,6 +1048,15 @@ namespace
             const int extrasY = 112;
             for (auto* c : ctl.choices) { c->setBounds (x, extrasY, 180, 30); x += 196; }
             for (auto* t : ctl.toggles) { t->setBounds (x, extrasY, 140, 30); x += 156; }
+            if (isMultiband())
+            {
+                for (int k = 0; k < ctl.knobs.size(); ++k)
+                {
+                    const int row = k < 5 ? 0 : 1 + (k - 5) / 5, col = k < 5 ? k : (k - 5) % 5;
+                    ctl.knobs[k]->setBounds (150 + col * 150, mbRowY (row), 140, 78);
+                }
+                return;
+            }
             const bool hasExtras = ! ctl.choices.isEmpty() || ! ctl.toggles.isEmpty();
             const int top = hasExtras ? 164 : 104, n = ctl.knobs.size();
             const int perRow = juce::jmin (n, 7), kw = juce::jmin (128, (getWidth() - 40) / juce::jmax (1, perRow));
@@ -1035,6 +1064,8 @@ namespace
                 ctl.knobs[k]->setBounds (20 + (k % perRow) * kw, top + (k / perRow) * 132, kw, 124);
         }
     private:
+        bool isMultiband() const { return juce::String (ctl.def.key) == "mb" && ctl.knobs.size() >= 20; }
+        static int mbRowY (int row) { return 92 + row * 81; }
         FxModuleControls ctl;
     };
 }
