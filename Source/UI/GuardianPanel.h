@@ -19,7 +19,7 @@ private:
     void timerCallback() override;
     float phase = 0.0f, talk = 0.0f;
     bool awake = true;
-    CrispImage frown;
+    CrispImage frown, frownNight;
 };
 
 //==============================================================================

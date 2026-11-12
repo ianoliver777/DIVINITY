@@ -10,6 +10,7 @@
 #include "DSP/Sampler.h"
 #include "Presets/PresetManager.h"
 #include "Midi/MidiPreview.h"
+#include "UserSettings.h"
 
 namespace divinity
 {
@@ -143,6 +144,9 @@ public:
     void startMidiLearn (const juce::String& paramID);
     void cancelMidiLearn() { learnParam.store (-1); }
     void forgetMidiMapping (const juce::String& paramID);
+    void clearAllMidiMappings();
+    bool midiLearnMode = false;                       // 1.1: UI "MIDI" mode - click a knob, move a controller
+    std::atomic<int> midiMapVersion { 0 };            // bumps whenever the CC map changes (knobs re-read their CC)
     int getMidiCcFor (const juce::String& paramID) const;              // -1 = not mapped
     bool isLearning (const juce::String& paramID) const;
     static inline const juce::Identifier midiMapProperty { "midiMap" };
@@ -156,7 +160,7 @@ public:
 
     // UI preference (not part of the sound): workspace & scale are stored with the session.
     juce::String uiWorkspace { "CREATE" };   // CREATE / EFFECTS / PLAY / SOUL / LAB
-    float uiScale = 1.15f;   // 1.0: opens a little bigger by default
+    float uiScale = settings::uiScale();   // 1.1: per-user (not per-project), opens at 125 % by default
     bool uiAngelOpen = false;   // 0.7: Guardian Angel starts tucked away (SHOW ANGEL)
     bool uiAngelTips = true;
 

@@ -117,6 +117,12 @@ Granular engine → Sample engine → Spectral engine (STFT, latency reported) �
 ### Guardian Angel (v0.3.0)
 - Fully offline. Answers questions from a knowledge base + every parameter's help text; builds sounds from plain-English descriptions (type + vibe words → factory base + SOUL/macro/mod adjustments); suggests one idea at a time with one-click DO IT; musically-safe randomiser (all outputs tested audible, finite and under the ceiling); explain mode (click any control); "make it brighter / wider / grittier..." tweaks. Every change is undoable.
 
+### v1.1.0 (teal skin, inverted night mode, MIDI map mode, warm bank, genre banks)
+- Skin: day palette sampled from the 1.1 reference; night = every neutral token inverted (R/B swapped to keep the cool tint), gradients kept lit from above, teal accents unchanged. Header art is bitmap: `divinity_plaque(_night).png` (cut from the reference), `t7a_logo_h.png` (alpha mask, tinted), `barbed_frown(_night).png` on the angel.
+- `Source/UserSettings.h`: one per-user PropertiesFile for skin, `uiScale` (default 1.25, clamped to the screen) and the global MIDI CC map (a project without its own map uses it).
+- MIDI map mode: `proc.midiLearnMode`; the editor listens to clicks on any `ui::Knob` and arms learn; knobs show `CC n` tags (`midiMapVersion`).
+- Presets: `applyWarmth()` in FactoryPresets.cpp (drift >= 0.3, saturation, warm EQ tilt, chorus on melodic categories; drums / FX untouched); `FactoryPresetsV11Genres.inc` adds 8 x 10 hand-designed presets. Tests play genre presets by the role their tags describe (`roleOf`).
+
 ### v1.0.0 (UI 1.0 + night mode, mod drag, drawn LFOs, segment curves, more grit)
 - Skin: `ui::colours` are mutable tokens; `setNightMode()` swaps day (porcelain, default) / night (v0.7 palette), persisted in a PropertiesFile (`nightMode`). `DivinityLookAndFeel::applyPalette()` re-pushes JUCE colour IDs; editor re-tints labels.
 - Mod drag: `ModHandle` (DragAndDropContainer = editor) sends `mod:<source>`; `Knob` is a DragAndDropTarget that fills (or reuses) a mod-matrix slot (amount 50 %, LFO switched on).

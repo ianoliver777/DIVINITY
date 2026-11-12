@@ -40,6 +40,13 @@ Bitwig        Settings > Locations > Rescan
 Studio One    Options > Locations > VST Plug-ins > Reset Blocklist, then restart
 
 
+NEW IN 1.1.0
+- New teal skin with the exact DIVINITY / TRIPLE SEVEN AUDIO artwork and the barbed-frown Guardian Angel. Night mode = the same skin inverted.
+- Opens bigger (125 %). Pick another size in the menu and DIVINITY remembers it.
+- MIDI mapping: click the MIDI button (next to HIDE ANGEL), click any knob, move a knob/fader on your controller. Each mapped knob shows its CC. Click MIDI again to finish. Mappings are saved for every DIVINITY instance; menu > "Clear all MIDI controller mappings" resets them. (Right-click a knob > MIDI learn still works too.)
+- Every factory sound re-voiced warmer and thicker.
+- 80 new presets: WAVE, TRAP, TECHNO, DUBSTEP, GARAGE, DARK GARAGE, DNB, CINEMATIC (10 each, 351 total).
+
 NEW IN 1.0.0
 - New light "porcelain" skin + NIGHT MODE toggle (moon icon, top right, or menu > Night mode). Your choice is remembered.
 - Drag modulation: grab the four-arrow handle next to an LFO / ENV / STEP / RANDOM title and drop it on any knob.

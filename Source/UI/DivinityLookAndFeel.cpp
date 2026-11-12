@@ -1,4 +1,5 @@
 #include "DivinityLookAndFeel.h"
+#include "../UserSettings.h"
 #include "DivinityAssets.h"
 
 namespace divinity::ui
@@ -10,47 +11,38 @@ namespace colours
     {
         nightNow = night;
         auto c = [] (juce::uint32 v) { return juce::Colour (v); };
+        // DAY = the 1.1 reference design: cool porcelain greys, charcoal type, teal selection.
+        background = c (0xffdcdde3); panel = c (0xffeceef2); card = c (0xfff4f5f8); panel2 = c (0xffe4e6eb);
+        border = c (0xffd0d4db); borderBright = c (0xffb5bbc4); text = c (0xff1d2023); textDim = c (0xff474c53);
+        textFaint = c (0xff878b92); accent = c (0xff3cc9c9); accentStrong = c (0xff1fa9ad); accentDeep = c (0xffbdeef0);
+        modulation = c (0xff2fbfc2); glow = c (0xff1f8f97);
+        well = c (0xffeef0f3); well2 = c (0xffe6e8ec); wellBorder = c (0xffcfd3da);
+        panelTop = c (0xfff4f5f8); panelBottom = c (0xffe3e5ea); panelRimTop = c (0xffffffff); panelRimBottom = c (0xffc6cad2);
+        displayTop = c (0xffe8eef1); displayBottom = c (0xffdbe4e9); displayBorder = c (0xffcdd5db);
+        selTop = c (0xff9af5f7); selBottom = c (0xff36cfcf); btnTop = c (0xfff8f9fb); btnBottom = c (0xffe2e4e9); btnHover = c (0xffffffff);
+        menuBg = c (0xfff4f5f8); trackBg = c (0xffd2d6dc); knobTop = c (0xffffffff); knobBottom = c (0xffd3d6dc);
+        knobRimTop = c (0xffffffff); knobRimBottom = c (0xffb6bac2); meterBg = c (0xffdfe2e7);
+        cardTop = c (0xfff6f7f9); cardBottom = c (0xffe6e8ec); onAccent = c (0xff0e2a2d);
         if (night)
         {
-            background = c (0xff010205); panel = c (0xff060c11); card = c (0xff0b161d); panel2 = c (0xff0f1d26);
-            border = c (0xff1c2f3b); borderBright = c (0xff3a6278); text = c (0xfff3f9fc); textDim = c (0xffb4c4cd);
-            textFaint = c (0xff5b6f7c); accent = c (0xff3ccbff); accentStrong = c (0xff1ba6ee); accentDeep = c (0xff0c4766);
-            modulation = c (0xffa8f2ff); glow = c (0xffbff6ff);
-            well = c (0xff050c11); well2 = c (0xff0b1a22); wellBorder = c (0xff22394a);
-            panelTop = c (0xff0b1820); panelBottom = c (0xff03070a); panelRimTop = c (0xff86b9d2); panelRimBottom = c (0xff17262f);
-            displayTop = c (0xff04121a); displayBottom = c (0xff010508); displayBorder = c (0xff142530);
-            selTop = c (0xff11587c); selBottom = c (0xff083049); btnTop = c (0xff11222c); btnBottom = c (0xff070f14); btnHover = c (0xff17303d);
-            menuBg = c (0xff071117); trackBg = c (0xff142632); knobTop = c (0xff3a434b); knobBottom = c (0xff050709);
-            knobRimTop = c (0xffa9bccb); knobRimBottom = c (0xff0d1216); meterBg = c (0xff15232c);
-            cardTop = c (0xff0e1d26); cardBottom = c (0xff060d12); onAccent = c (0xffffffff);
-        }
-        else
-        {
-            // DAY: warm porcelain panels, charcoal type, amber selection (the 1.0 reference design)
-            background = c (0xffece7e3); panel = c (0xfff6f3f0); card = c (0xfffbf9f7); panel2 = c (0xffefeae6);
-            border = c (0xffddd5cf); borderBright = c (0xffc4b9b0); text = c (0xff24232a); textDim = c (0xff4f4d57);
-            textFaint = c (0xff9b9599); accent = c (0xffe8962a); accentStrong = c (0xffd9821a); accentDeep = c (0xfffbe1b8);
-            modulation = c (0xffe8962a); glow = c (0xffd27a12);
-            well = c (0xfff3efeb); well2 = c (0xffeee9e4); wellBorder = c (0xffddd4cd);
-            panelTop = c (0xfffcfbf9); panelBottom = c (0xfff3efeb); panelRimTop = c (0xffffffff); panelRimBottom = c (0xffdcd3cc);
-            displayTop = c (0xfff6f2ee); displayBottom = c (0xfff0ebe6); displayBorder = c (0xffe0d8d1);
-            selTop = c (0xfffde6be); selBottom = c (0xfff8d08f); btnTop = c (0xfffdfcfb); btnBottom = c (0xfff0ebe7); btnHover = c (0xffffffff);
-            menuBg = c (0xfffbf9f7); trackBg = c (0xffe3dcd6); knobTop = c (0xffffffff); knobBottom = c (0xffe4ded8);
-            knobRimTop = c (0xffffffff); knobRimBottom = c (0xffc9c0b8); meterBg = c (0xffe6e0da);
-            cardTop = c (0xfffcfbf9); cardBottom = c (0xfff3efeb); onAccent = c (0xff24232a);
+            // NIGHT = the same skin inverted: every neutral flipped (R/B swapped so the cool tint survives),
+            // light-from-above gradients kept the right way up, teal accents unchanged.
+            auto inv = [] (juce::Colour x) { return juce::Colour ((juce::uint8) (255 - x.getBlue()), (juce::uint8) (255 - x.getGreen()), (juce::uint8) (255 - x.getRed()), x.getAlpha()); };
+            for (auto* t : { &background, &panel, &card, &panel2, &border, &borderBright, &text, &textDim, &textFaint,
+                             &well, &well2, &wellBorder, &panelTop, &panelBottom, &panelRimTop, &panelRimBottom,
+                             &displayTop, &displayBottom, &displayBorder, &btnTop, &btnBottom, &btnHover, &menuBg, &trackBg,
+                             &knobTop, &knobBottom, &knobRimTop, &knobRimBottom, &meterBg, &cardTop, &cardBottom })
+                *t = inv (*t);
+            for (auto pr : { std::pair { &panelTop, &panelBottom }, { &displayTop, &displayBottom }, { &btnTop, &btnBottom },
+                             { &knobTop, &knobBottom }, { &knobRimTop, &knobRimBottom }, { &cardTop, &cardBottom }, { &panelRimTop, &panelRimBottom } })
+                std::swap (*pr.first, *pr.second);
+            accentDeep = c (0xff0f4346); glow = c (0xff7ff0f0); modulation = c (0xff5fe0e0);
+            selTop = c (0xff5fe3e5); selBottom = c (0xff1c9ea2);
         }
     }
     bool isNightMode() { return nightNow; }
 
-    static juce::PropertiesFile& settingsFile()
-    {
-        static juce::PropertiesFile f ([] {
-            juce::PropertiesFile::Options o;
-            o.applicationName = "DIVINITY"; o.folderName = "TRIPLE SEVEN AUDIO"; o.filenameSuffix = ".settings";
-            o.osxLibrarySubFolder = "Application Support";
-            return o; }());
-        return f;
-    }
+    static juce::PropertiesFile& settingsFile() { return settings::file(); }
     void loadSavedSkin() { setNightMode (settingsFile().getBoolValue ("nightMode", false)); }
     void saveSkin (bool night) { settingsFile().setValue ("nightMode", night); settingsFile().saveIfNeeded(); }
 

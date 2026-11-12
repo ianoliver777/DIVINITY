@@ -23,6 +23,19 @@ namespace
         else      { p.startNewSubPath (9, 5);  p.lineTo (16, 12); p.lineTo (9, 19); }
         return p;
     }
+    juce::Path midiIcon()
+    {
+        // 5-pin DIN socket
+        juce::Path p; p.addEllipse (0, 0, 24, 24);
+        for (int i = 0; i < 5; ++i)
+        {
+            const float a = juce::MathConstants<float>::pi * (0.85f + 0.325f * (float) i);
+            p.addEllipse (12.0f + 7.0f * std::cos (a) - 1.4f, 12.0f + 7.0f * std::sin (a) - 1.4f, 2.8f, 2.8f);
+        }
+        p.addRectangle (10.5f, 1.5f, 3.0f, 3.0f);
+        return p;
+    }
+
     juce::Path moonIcon()
     {
         juce::Path p, cut;
@@ -133,7 +146,7 @@ namespace
 
     const juce::StringArray& presetCategories()
     {
-        static const juce::StringArray c { "REESE", "BASS", "LEAD", "SYNTH", "PAD", "TEXTURE", "SEQUENCE", "PERCUSSION", "FX" };
+        static const juce::StringArray c { "REESE", "BASS", "LEAD", "SYNTH", "PAD", "TEXTURE", "SEQUENCE", "PERCUSSION", "FX", "WAVE", "TRAP", "TECHNO", "DUBSTEP", "GARAGE", "DARK GARAGE", "DNB", "CINEMATIC" };
         return c;
     }
 }
@@ -301,6 +314,7 @@ DivinityEditor::DivinityEditor (DivinityProcessor& p)
     : AudioProcessorEditor (p), proc (p),
       settings ("Settings", icons::gear()), help ("Help: click this, then any control, and Guardian Angel explains it", helpIcon()),
       menu ("Menu", burger()), nightToggle ("Night mode: switch between the light and the dark skin", moonIcon()),
+      midiLearn ("MIDI map: turn on, click any knob, then move a knob / fader on your controller. Click again to finish. Mappings are saved for every DIVINITY instance.", midiIcon()),
       folder ("Import preset", folderIcon()), save ("Save preset", icons::save()),
       undo ("Undo (Cmd/Ctrl+Z)", undoIcon (false)), redo ("Redo (Cmd/Ctrl+Shift+Z)", undoIcon (true)),
       copy ("Save a copy of this sound", copyIcon()), favs ("Browse by category / favourites", starIcon()),
@@ -318,6 +332,15 @@ DivinityEditor::DivinityEditor (DivinityProcessor& p)
 
     for (auto* c : std::initializer_list<juce::Component*> { &settings, &help, &menu, &nightToggle }) content.addAndMakeVisible (c);
     nightToggle.onClick = [this] { setNightMode (! ui::colours::isNightMode()); };
+    content.addAndMakeVisible (midiLearn);
+    midiLearn.setClickingTogglesState (true);
+    midiLearn.onClick = [this]
+    {
+        proc.midiLearnMode = midiLearn.getToggleState();
+        if (! proc.midiLearnMode) proc.cancelMidiLearn();
+        content.repaint();
+    };
+    content.addMouseListener (this, true);
     settings.onClick = [this] { showMainMenu(); };
     menu.onClick = [this] { showMainMenu(); };
     help.onClick = [this] { startExplain(); };
@@ -394,7 +417,17 @@ DivinityEditor::DivinityEditor (DivinityProcessor& p)
     angel.setVisible (proc.uiAngelOpen);
     updateAngelToggleText();
     applySizeLimits();
-    setSize (juce::roundToInt (getBaseWidth() * proc.uiScale), juce::roundToInt (kBaseHeight * proc.uiScale));
+    {
+        // open at the saved size (125 % by default) but never bigger than the screen
+        float sc = proc.uiScale;
+        if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        {
+            const auto area = d->userArea;
+            const float fit = juce::jmin ((float) area.getWidth() / (float) getBaseWidth(), (float) area.getHeight() / (float) kBaseHeight) * 0.97f;
+            sc = juce::jmax (juce::jmin (sc, fit), juce::jmin (1.0f, sc));
+        }
+        setSize (juce::roundToInt (getBaseWidth() * sc), juce::roundToInt (kBaseHeight * sc));
+    }
     setWantsKeyboardFocus (true);
     timerCallback();
     startTimerHz (6);
@@ -402,12 +435,23 @@ DivinityEditor::DivinityEditor (DivinityProcessor& p)
 
 DivinityEditor::~DivinityEditor()
 {
+    settings::setUiScale (proc.uiScale);
+    proc.midiLearnMode = false;
+    proc.cancelMidiLearn();
     proc.presets.removeChangeListener (this);
     tooltips.setLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
 }
 
 void DivinityEditor::paint (juce::Graphics& g) { g.fillAll (background); }
+
+void DivinityEditor::mouseDown (const juce::MouseEvent& e)
+{
+    if (! proc.midiLearnMode || e.eventComponent == nullptr) return;
+    auto* k = dynamic_cast<ui::Knob*> (e.eventComponent);
+    if (k == nullptr) k = e.eventComponent->findParentComponentOfClass<ui::Knob>();
+    if (k != nullptr) proc.startMidiLearn (k->getParamID());
+}
 
 void DivinityEditor::startExplain()
 {
@@ -458,6 +502,7 @@ void DivinityEditor::resized()
 
     // header icons (top right of the main column)
     nightToggle.setBounds (1268, 17, 34, 34);
+    midiLearn.setBounds (1245, 99, 40, 40);
     settings.setBounds (1313, 17, 34, 34);
     help.setBounds (1357, 17, 34, 34);
     menu.setBounds (1402, 17, 34, 34);
@@ -498,7 +543,8 @@ void DivinityEditor::resized()
 //==============================================================================
 DivinityEditor::Content::Content (DivinityEditor& e) : owner (e)
 {
-    band.setSource (juce::ImageCache::getFromMemory (DivinityAssets::header_band_png, DivinityAssets::header_band_pngSize));
+    plaqueDay = juce::ImageCache::getFromMemory (DivinityAssets::divinity_plaque_png, DivinityAssets::divinity_plaque_pngSize);
+    plaqueNight = juce::ImageCache::getFromMemory (DivinityAssets::divinity_plaque_night_png, DivinityAssets::divinity_plaque_night_pngSize);
     logo.setSource (juce::ImageCache::getFromMemory (DivinityAssets::t7a_logo_h_png, DivinityAssets::t7a_logo_h_pngSize));
 }
 
@@ -536,40 +582,19 @@ void DivinityEditor::Content::paint (juce::Graphics& g)
     constexpr int M = kBaseWidth;
     g.fillAll (background);
 
-    // 1.0 header: TRIPLE SEVEN AUDIO logo (left), the DIVINITY plaque (centre). Night mode keeps the v0.7 art.
-    if (! ui::colours::isNightMode())
+    // 1.1 header: the TRIPLE SEVEN AUDIO logo (left) and the DIVINITY plaque artwork (centre), same in both skins
+    if (logo.isValid())
     {
-        if (logo.isValid())
-        {
-            juce::Graphics::ScopedSaveState ss (g);
-            auto img = logo.getImage();
-            const float h = 58.0f, w = h * (float) img.getWidth() / (float) img.getHeight();
-            g.setColour (text);
-            g.drawImage (img, { 22.0f, 14.0f, w, h }, juce::RectanglePlacement::stretchToFit, true);
-        }
-        // slanted porcelain plaque with the wordmark
-        juce::Path plaque;
-        const float px = 580.0f, py = 10.0f, pw = 460.0f, ph = 70.0f, sl = 22.0f;
-        plaque.startNewSubPath (px + sl, py); plaque.lineTo (px + pw, py); plaque.lineTo (px + pw - sl, py + ph); plaque.lineTo (px, py + ph); plaque.closeSubPath();
-        plaque = plaque.createPathWithRoundedCorners (14.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.10f)); g.fillPath (plaque, juce::AffineTransform::translation (0.0f, 4.0f));
-        g.setGradientFill (juce::ColourGradient (panelTop, 0, py, panelBottom, 0, py + ph, false)); g.fillPath (plaque);
-        g.setColour (border); g.strokePath (plaque, juce::PathStrokeType (1.0f));
+        juce::Graphics::ScopedSaveState ss (g);
+        auto img = logo.getImage();
+        const float h = 70.0f, w = h * (float) img.getWidth() / (float) img.getHeight();
         g.setColour (text);
-        g.setFont (font (44.0f, Weight::Regular, 0.62f));
-        g.drawText ("DIVINITY", juce::Rectangle<float> (px + 10.0f, py + 6.0f, pw - 20.0f, ph - 8.0f), juce::Justification::centred, false);
+        g.drawImage (img, { 24.0f, 12.0f, w, h }, juce::RectanglePlacement::stretchToFit, true);
     }
-    else if (band.isValid())
     {
-        band.draw (g, { 0.0f, 0.0f, (float) M, 152.0f });
-        if (getWidth() > M)
-        {
-            // Guardian Angel open: continue the night sky by mirroring the right edge
-            juce::Graphics::ScopedSaveState ss (g);
-            g.reduceClipRegion (M, 0, getWidth() - M, 152);
-            g.addTransform (juce::AffineTransform::scale (-1.0f, 1.0f).translated ((float) M * 2.0f, 0.0f));
-            band.draw (g, { 0.0f, 0.0f, (float) M, 152.0f });
-        }
+        const auto& art = ui::colours::isNightMode() ? plaqueNight : plaqueDay;
+        if (art.isValid())
+            g.drawImage (art, { 550.0f, 0.0f, 522.0f, 95.0f }, juce::RectanglePlacement::centred);
     }
 
     // stats (top right)
@@ -791,7 +816,7 @@ void DivinityEditor::importPreset()
     });
 }
 
-void DivinityEditor::setUiScale (float s) { setSize (juce::roundToInt (getBaseWidth() * s), juce::roundToInt (kBaseHeight * s)); }
+void DivinityEditor::setUiScale (float s) { setSize (juce::roundToInt (getBaseWidth() * s), juce::roundToInt (kBaseHeight * s)); settings::setUiScale (s); }
 
 static void recolourLabels (juce::Component& c)
 {
@@ -801,6 +826,11 @@ static void recolourLabels (juce::Component& c)
         l->setColour (juce::Label::textColourId, ui::colours::text);
         l->setColour (juce::TextEditor::textColourId, ui::colours::text);
         l->setColour (juce::TextEditor::backgroundColourId, ui::colours::panel2);
+    }
+    if (auto* te = dynamic_cast<juce::TextEditor*> (&c))
+    {
+        te->setColour (juce::TextEditor::textColourId, ui::colours::text);
+        te->applyColourToAllText (ui::colours::text);
     }
     if (auto* b = dynamic_cast<juce::TextButton*> (&c))
         if (b->isColourSpecified (juce::TextButton::textColourOffId)) b->setColour (juce::TextButton::textColourOffId, ui::colours::text);
@@ -822,7 +852,7 @@ void DivinityEditor::setNightMode (bool night)
 void DivinityEditor::showMainMenu()
 {
     juce::PopupMenu m, size;
-    const float scales[] = { 0.55f, 0.65f, 0.75f, 0.85f, 1.0f, 1.15f, 1.3f };
+    const float scales[] = { 0.65f, 0.75f, 0.85f, 1.0f, 1.15f, 1.25f, 1.4f };
     for (int i = 0; i < 7; ++i)
         size.addItem (10 + i, juce::String (juce::roundToInt (scales[i] * 100)) + "%", true, std::abs (proc.uiScale - scales[i]) < 0.02f);
     m.addItem (1, "Init patch");
@@ -835,6 +865,7 @@ void DivinityEditor::showMainMenu()
     m.addItem (6, "Guardian Angel tips", true, proc.uiAngelTips);
     m.addItem (8, "Night mode", true, ui::colours::isNightMode());
     m.addItem (7, "MIDI panic (all notes off)");
+    m.addItem (40, "Clear all MIDI controller mappings");
     {
         juce::PopupMenu q, mpe, bend;
         const int curQ = (int) std::lround (proc.apvts.getRawParameterValue (ids::quality)->load());
@@ -858,6 +889,7 @@ void DivinityEditor::showMainMenu()
     {
         auto& pm = proc.presets;
         if (r == 8) { setNightMode (! ui::colours::isNightMode()); return; }
+        if (r == 40) { proc.clearAllMidiMappings(); return; }
         if (r >= 10 && r < 17) { setUiScale (scales[r - 10]); return; }
         auto setParam = [this] (const juce::String& id, float plain)
         {

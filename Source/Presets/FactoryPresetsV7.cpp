@@ -163,6 +163,7 @@ namespace
     struct Spec { juce::String name, category, tags, description; Patch patch; };
 
     #include "FactoryPresetsV8Recipes.inc"
+    #include "FactoryPresetsV11Genres.inc"
 
     //==========================================================================
     FactoryPreset toFactoryPreset (Spec& s, double trim)
@@ -207,6 +208,7 @@ void addLibraryV7 (std::vector<FactoryPreset>& list)
     std::vector<Spec> specs;
     juce::StringArray used;
     for (auto& R : allRecipes()) buildFromRecipe (R, specs, used);
+    addGenreBanks (specs);   // 1.1: WAVE, TRAP, TECHNO, DUBSTEP, GARAGE, DARK GARAGE, DNB, CINEMATIC
     for (auto& s : specs) list.push_back (toFactoryPreset (s, levelTrim (s.name)));
 }
 

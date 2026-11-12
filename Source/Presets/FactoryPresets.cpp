@@ -1,5 +1,6 @@
 #include "PresetManager.h"
 #include "../DSP/SoulEngine.h"
+#include "../DSP/FxCatalog.h"
 
 namespace divinity
 {
@@ -55,13 +56,39 @@ void applySoundEngine2Finish (FactoryPreset& p)
     }
 }
 
+/** 1.1 "warm and thick" pass over the whole bank: analog drift, tape-style saturation, a warm EQ tilt
+    (more low-mids, softer top) and a gentle chorus on melodic sounds. Anything a preset already sets
+    is left alone; drums and FX keep their transients. */
+static void applyWarmth (FactoryPreset& p)
+{
+    const auto& c = p.category;
+    if (c == "PERCUSSION" || c == "FX") return;
+    auto value = [&p] (const juce::String& id) -> juce::var
+    {
+        juce::var v;
+        for (auto& [k, x] : p.values) if (k == id) v = x;
+        return v;
+    };
+    auto num = [&] (const juce::String& id, double def) { auto v = value (id); return v.isVoid() || v.isString() ? def : (double) v; };
+    const bool low = c == "BASS" || c == "REESE";
+    p.set (ids::analog, juce::jmax (num (ids::analog, 0.0), 0.3));
+    if (num (ids::satOn, 0) < 0.5) p.set (ids::satOn, 1).set (ids::satDrive, low ? 0.25 : 0.18).set (ids::satMix, 0.5);
+    if (num (fxids::eqOn, 0) < 0.5)
+        p.set (fxids::eqOn, 1).set (fxids::eqLowFreq, 140.0).set (fxids::eqLowGain, low ? 1.5 : 2.5)
+         .set (fxids::eqMidFreq, 800.0).set (fxids::eqMidGain, 0.0).set (fxids::eqHighFreq, 7000.0).set (fxids::eqHighGain, -2.5);
+    const bool melodic = c == "LEAD" || c == "SYNTH" || c == "PAD" || c == "TEXTURE" || c == "SEQUENCE";
+    if (melodic && num (ids::choOn, 0) < 0.5) p.set (ids::choOn, 1).set (ids::choRate, 0.25).set (ids::choDepth, 0.3).set (ids::choMix, 0.18);
+}
+
 /** SOUL ENGINE character per category (emotion mapping + Divine Intervention mode), then the finishing pass. */
 static void finishFactoryPreset (FactoryPreset& p)
 {
     struct SoulStyle { const char* cat; int mapping; const char* divine; };
     static const SoulStyle styles[] = {
         { "REESE", 2, "Shatter" }, { "BASS", 2, "Collapse" }, { "LEAD", 0, "Ascension" }, { "SYNTH", 4, "Bloom" },
-        { "PAD", 1, "Bloom" }, { "TEXTURE", 1, "Abyss" }, { "SEQUENCE", 0, "Bloom" }, { "PERCUSSION", 2, "Collapse" }, { "FX", 3, "Abyss" } };
+        { "PAD", 1, "Bloom" }, { "TEXTURE", 1, "Abyss" }, { "SEQUENCE", 0, "Bloom" }, { "PERCUSSION", 2, "Collapse" }, { "FX", 3, "Abyss" },
+        { "WAVE", 1, "Bloom" }, { "TRAP", 2, "Collapse" }, { "TECHNO", 0, "Ascension" }, { "DUBSTEP", 2, "Shatter" },
+        { "GARAGE", 4, "Bloom" }, { "DARK GARAGE", 1, "Abyss" }, { "DNB", 2, "Shatter" }, { "CINEMATIC", 3, "Abyss" } };
     for (auto& st : styles)
         if (p.category == st.cat)
         {
@@ -70,6 +97,7 @@ static void finishFactoryPreset (FactoryPreset& p)
                 p.set (ids::soul (t, "x"), m.w[t][0]).set (ids::soul (t, "y"), m.w[t][1]);
             p.choice (ids::divineMode, st.divine);
         }
+    applyWarmth (p);
     applySoundEngine2Finish (p);
 }
 
