@@ -146,3 +146,19 @@ if(DIVINITY_BUILD_TESTS)
         DivinityAssets ${DIVINITY_JUCE_MODULES}
         juce::juce_recommended_config_flags)
 endif()
+
+# ---------------------------------------------------------------------------
+# HOLY DIRT expansion pack generator: builds, renders, level-matches and exports
+# the 60-preset pack as .divpreset files (+ WAV previews with --wavs).
+# ---------------------------------------------------------------------------
+option(DIVINITY_BUILD_PACK_TOOLS "Build the expansion-pack generators" OFF)
+if(DIVINITY_BUILD_PACK_TOOLS)
+    juce_add_console_app(DivinityPackMaker PRODUCT_NAME "DivinityPackMaker")
+    target_sources(DivinityPackMaker PRIVATE Tools/HolyDirt/MakeHolyDirt.cpp ${DIVINITY_CORE_SOURCES})
+    target_include_directories(DivinityPackMaker PRIVATE Source)
+    target_compile_definitions(DivinityPackMaker PRIVATE ${DIVINITY_COMMON_DEFS}
+        JUCE_STANDALONE_APPLICATION=1 DIVINITY_TESTS=1 JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(DivinityPackMaker PRIVATE
+        DivinityAssets ${DIVINITY_JUCE_MODULES}
+        juce::juce_recommended_config_flags)
+endif()
