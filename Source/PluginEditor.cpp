@@ -827,6 +827,11 @@ static void recolourLabels (juce::Component& c)
         l->setColour (juce::TextEditor::textColourId, ui::colours::text);
         l->setColour (juce::TextEditor::backgroundColourId, ui::colours::panel2);
     }
+    if (auto* te = dynamic_cast<juce::TextEditor*> (&c))
+    {
+        te->setColour (juce::TextEditor::textColourId, ui::colours::text);
+        te->applyColourToAllText (ui::colours::text);
+    }
     if (auto* b = dynamic_cast<juce::TextButton*> (&c))
         if (b->isColourSpecified (juce::TextButton::textColourOffId)) b->setColour (juce::TextButton::textColourOffId, ui::colours::text);
     for (auto* ch : c.getChildren()) recolourLabels (*ch);

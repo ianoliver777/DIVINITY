@@ -38,9 +38,9 @@ static void addGenreBanks (std::vector<Spec>& out)
         { auto p = P(); p.wt (0, "Glass FM", 0.55, 0.7).wt (1, "Kalimba", 0.3, 0.45).tune (1, 1).filt (0, "Low Pass 12", 5200, 0.15)
             .env (0, 0.002, 0.6, 0.0, 0.7).delay ("1/8 D", 0.5, 0.35).reverb (0.85, 0.4, 0.4, 40.0);
           add (C, "Crystal Rain Pluck", "Pluck Wave Glass", "a glass-FM pluck doubled by kalimba an octave up into dotted-eighth delays", p); }
-        { auto p = P(); p.wt (0, "Vowel Sweep", 0.2, 0.75).uni (0, 4, 0.25, 0.6).sub ("Sine -1", 0.45).filt (0, "MG Low 24", 1100, 0.3, 0.4)
-            .env (0, 0.01, 0.6, 0.85, 0.35).mono (55).lfoSync (0, "Sine", "1/2", 1.0).mod ("LFO 1", "Osc A WT Pos", 0.4).dist ("Tape", 0.35, 0.5); bassSpace (p);
-          add (C, "Weeping Vowel Bass", "Bass Wave Vowel Mono", "a vowel-table bass that slowly says 'oo-ah' every half bar, over a sine sub", p); }
+        { auto p = P(); p.wt (0, "Vowel Sweep", 0.6, 0.8).uni (0, 2, 0.1, 0.5).tune (0, 1).sub ("Triangle -1", 0.5).filt (0, "Formant", 1200, 0.45, 0.3)
+            .env (0, 0.01, 0.6, 0.85, 0.35).mono (55).lfoSync (0, "Triangle", "1/4", 1.0).mod ("LFO 1", "Osc A WT Pos", 0.6).dist ("Overdrive", 0.3, 0.4); bassSpace (p);
+          add (C, "Weeping Vowel Bass", "Bass Wave Vowel Mono", "a vowel-table bass an octave up through a formant filter, saying 'oo-ah' every beat over a triangle sub", p); }
         { auto p = P(); p.wt (0, "String Ensemble", 0.5, 0.8).uni (0, 6, 0.2, 1.0).filt (0, "Low Pass 12", 2400, 0.1).env (0, 0.6, 1.0, 0.9, 2.0)
             .sat (0.3, 0.6).eq (2.0, 600, 1.0, -3.0); padSpace (p);
           add (C, "Ethereal Strings", "Strings Wave Warm Wide", "a six-voice string ensemble, warmed with tape and a rounded top", p); }
@@ -97,7 +97,7 @@ static void addGenreBanks (std::vector<Spec>& out)
           add (C, "Acid Rumble Bass", "Bass Techno Acid", "a resonant ladder saw with a snappy filter envelope over a sub: the rolling techno bass", p); }
         { auto p = P(); p.an (0, "Square", 0.8).filt (0, "Low Pass 24", 500, 0.75, 0.4, 0.5).env (0, 0.002, 0.2, 0.3, 0.1).env (1, 0.0, 0.22, 0.0, 0.1)
             .mod ("ENV 2", "Filter 1 Cutoff", 0.65).mono (45).dist ("Diode", 0.4, 0.5).delay ("1/8 D", 0.35, 0.15).reverb (0.4, 0.6, 0.1);
-          add (C, "303 Squelch", "Bass Techno Acid Mono", "a square-wave acid line: high resonance, filter envelope, diode grit and slides", p); }
+          add (C, "Acid Squelch Line", "Bass Techno Acid Mono", "a square-wave acid line: high resonance, filter envelope, diode grit and slides", p); }
         { auto p = P(); p.wt (0, "Odd Harmonics", 0.5, 0.8).uni (0, 3, 0.12, 0.8).filt (0, "Band Pass", 1300, 0.4).env (0, 0.002, 0.18, 0.0, 0.2)
             .delay ("1/8 D", 0.55, 0.32).reverb (0.75, 0.4, 0.3, 20.0);
           add (C, "Warehouse Stab", "Stab Techno Chord", "a band-passed hollow chord stab into a long dotted delay", p); }
@@ -167,7 +167,7 @@ static void addGenreBanks (std::vector<Spec>& out)
         const char* C = "GARAGE";
         { auto p = P(); p.wt (0, "Organ Gospel", 0.4, 0.8).filt (0, "Low Pass 12", 3000, 0.2).env (0, 0.002, 0.3, 0.2, 0.25)
             .chorus (0.35, 0.4, 0.25).delay ("1/8 D", 0.35, 0.18).reverb (0.6, 0.5, 0.2);
-          add (C, "2-Step Organ Stab", "Stab Garage Organ", "a short gospel-organ chord stab with swing-friendly delays", p); }
+          add (C, "Two-Step Organ Stab", "Stab Garage Organ", "a short gospel-organ chord stab with swing-friendly delays", p); }
         { auto p = P(); p.an (0, "Sine", 0.85).tight (0, 0.25).an (1, "Triangle", 0.35).tune (1, 1).sub ("Sine -1", 0.2).filt (0, "Low Pass 12", 800, 0.15)
             .env (0, 0.002, 0.45, 0.6, 0.2).mono (60).sat (0.3).reverb (0.3, 0.7, 0.1);
           add (C, "Speed Garage Sub", "Bass Garage Sub Mono", "a bouncy sine + triangle sub bass with glide", p); }

@@ -206,14 +206,12 @@ private:
 void GuardianPanel::Bubble::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat().reduced (1.0f);
-    g.setColour (juce::Colour (0xf20a1426));
+    g.setGradientFill (juce::ColourGradient (colours::cardTop, 0, r.getY(), colours::cardBottom, 0, r.getBottom(), false));
     g.fillRoundedRectangle (r, 10.0f);
-    g.setColour (accent.withAlpha (0.18f));
-    g.drawRoundedRectangle (r.expanded (1.0f), 11.0f, 3.0f);
-    g.setColour (accent.withAlpha (0.75f));
-    g.drawRoundedRectangle (r, 10.0f, 1.2f);
-    g.setColour (accent);
-    g.setFont (font (10.5f, Weight::SemiBold, 0.2f));
+    g.setColour (colours::border);
+    g.drawRoundedRectangle (r, 10.0f, 1.0f);
+    g.setColour (colours::text);
+    g.setFont (font (12.5f, Weight::SemiBold, 0.06f));
     g.drawText ("GUARDIAN ANGEL", 12, 6, 150, 16, juce::Justification::centredLeft);
 }
 
