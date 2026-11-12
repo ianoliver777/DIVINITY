@@ -12,6 +12,7 @@ using namespace colours;
 AngelArt::AngelArt()
 {
     frown.setSource (juce::ImageCache::getFromMemory (DivinityAssets::barbed_frown_png, DivinityAssets::barbed_frown_pngSize));
+    frownNight.setSource (juce::ImageCache::getFromMemory (DivinityAssets::barbed_frown_night_png, DivinityAssets::barbed_frown_night_pngSize));
     setInterceptsMouseClicks (false, false);
     startTimerHz (30);
 }
@@ -56,8 +57,8 @@ namespace
 
     void plushFill (juce::Graphics& g, const juce::Path& p, juce::Point<float> light, float radius)
     {
-        juce::ColourGradient grad (juce::Colour (0xfff6f8fc), light.x, light.y, juce::Colour (0xff7d8aa1), light.x + radius, light.y + radius, true);
-        grad.addColour (0.55, juce::Colour (0xffc7d0de));
+        juce::ColourGradient grad (colours::knobTop, light.x, light.y, colours::knobBottom, light.x + radius, light.y + radius, true);
+        grad.addColour (0.55, colours::card);
         g.setGradientFill (grad);
         g.fillPath (p);
     }
@@ -87,11 +88,13 @@ void AngelArt::paint (juce::Graphics& g)
         auto w = wing (left);
         g.setColour (accent.withAlpha (0.25f * alpha));
         g.strokePath (w, juce::PathStrokeType (5.0f));
-        juce::ColourGradient wg (juce::Colour (0xfff2f5fb).withMultipliedAlpha (alpha), left ? 80.0f : 170.0f, 210,
-                                 juce::Colour (0xff8b9ab3).withMultipliedAlpha (alpha), left ? 12.0f : 238.0f, 250, false);
+        juce::ColourGradient wg (colours::card.withMultipliedAlpha (alpha), left ? 80.0f : 170.0f, 210,
+                                 colours::panel2.withMultipliedAlpha (alpha), left ? 12.0f : 238.0f, 250, false);
         g.setGradientFill (wg);
         g.fillPath (w);
-        g.setColour (juce::Colour (0xff6f7f99).withAlpha (0.6f * alpha));
+        g.setColour (colours::text.withAlpha (0.75f * alpha));
+        g.strokePath (w, juce::PathStrokeType (2.2f));
+        g.setColour (colours::textDim.withAlpha (0.6f * alpha));
         g.strokePath (wingFeathers (left), juce::PathStrokeType (1.2f));
     }
 
@@ -102,23 +105,26 @@ void AngelArt::paint (juce::Graphics& g)
     plushFill (g, arms, { 80, 220 }, 40);
     juce::Path feet; feet.addEllipse (84, 266, 38, 26); feet.addEllipse (128, 266, 38, 26);
     plushFill (g, feet, { 96, 270 }, 40);
-    g.setColour (juce::Colour (0xff5b6880).withAlpha (0.5f * alpha));
-    g.strokePath (body, juce::PathStrokeType (1.0f));
+    g.setColour (colours::text.withAlpha (0.75f * alpha));
+    g.strokePath (body, juce::PathStrokeType (2.2f));
+    g.strokePath (arms, juce::PathStrokeType (1.8f));
+    g.strokePath (feet, juce::PathStrokeType (1.8f));
 
     // head: the barbed frown (wire ring, barbed eyes, barbed frown), drawn exactly from the artwork
     {
         const juce::Point<float> hc (125, 126);
-        // dark face so the wire reads against the wings and body
-        g.setColour (juce::Colour (0xff0a1322).withAlpha (alpha));
+        // porcelain face (inverted at night) with the attached barbed frown on it
+        g.setColour (colours::card.withAlpha (alpha));
         g.fillEllipse (hc.x - 70.0f, hc.y - 70.0f, 140.0f, 140.0f);
         g.setColour (accent.withAlpha ((0.10f + 0.12f * glow) * alpha));
         g.drawEllipse (hc.x - 74.0f, hc.y - 74.0f, 148.0f, 148.0f, 6.0f);
-        if (frown.isValid())
+        auto& face = colours::isNightMode() ? frownNight : frown;
+        if (face.isValid())
         {
             // a gentle "speaking" pulse while Guardian Angel talks
             const float pulse = 1.0f + 0.025f * talk * (0.5f + 0.5f * std::sin (phase * 22.0f));
             const float size = 156.0f * pulse;
-            frown.draw (g, { hc.x - size * 0.5f, hc.y - size * 0.5f, size, size }, alpha);
+            face.draw (g, { hc.x - size * 0.5f, hc.y - size * 0.5f, size, size }, alpha);
         }
     }
     g.restoreState();
@@ -130,8 +136,8 @@ void AngelArt::paint (juce::Graphics& g)
     g.strokePath (halo, juce::PathStrokeType (14.0f));
     g.setColour (accent.withAlpha ((0.35f + 0.3f * glow) * alpha));
     g.strokePath (halo, juce::PathStrokeType (6.0f));
-    g.setColour (juce::Colour (0xfff2fbff).withAlpha (alpha));
-    g.strokePath (halo, juce::PathStrokeType (2.4f));
+    g.setColour (colours::text.withAlpha (0.8f * alpha));
+    g.strokePath (halo, juce::PathStrokeType (2.0f));
 
     // twinkle
     const float tw = std::pow (juce::jmax (0.0f, std::sin (phase * 0.9f)), 24.0f);

@@ -95,6 +95,7 @@ public:
     void itemDragExit (const SourceDetails&) override { dropHover = false; repaint(); }
     void itemDropped (const SourceDetails&) override;
     void paintOverChildren (juce::Graphics&) override;
+    juce::String getParamID() const { return param.getParameterID(); }
     Knob (APVTS& apvts, const juce::String& paramID, const juce::String& caption,
           ModDest dest = ModDest::None, float modScale = 1.0f, bool bipolar = false);
 
@@ -119,7 +120,8 @@ private:
     juce::String caption;
     ModDest dest;
     float modScale, captionSize = 10.5f;
-    bool showingValue = false, learning = false, dropHover = false;
+    bool showingValue = false, learning = false, dropHover = false, learnMode = false;
+    int mappedCc = -1, seenMapVersion = -1;
     int valueStyle = 0, maxKnob = 1000;
     juce::String lastValueText;
     juce::String valueText() const;

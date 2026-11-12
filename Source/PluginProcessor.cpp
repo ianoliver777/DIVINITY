@@ -19,6 +19,8 @@ DivinityProcessor::DivinityProcessor()
     presets.loadPreset (0);
     undo.clearUndoHistory();
     for (auto& c : ccMap) c.store (-1);
+    applyMidiMapString (settings::midiMap());
+    apvts.state.setProperty (midiMapProperty, midiMapString(), nullptr);
     startTimer (100);
 }
 
@@ -77,7 +79,13 @@ int DivinityProcessor::getMidiCcFor (const juce::String& paramID) const
 void DivinityProcessor::forgetMidiMapping (const juce::String& paramID)
 {
     const int cc = getMidiCcFor (paramID);
-    if (cc >= 0) { ccMap[(size_t) cc].store (-1); apvts.state.setProperty (midiMapProperty, midiMapString(), nullptr); }
+    if (cc >= 0) { ccMap[(size_t) cc].store (-1); midiMapDirty.store (true); }
+}
+
+void DivinityProcessor::clearAllMidiMappings()
+{
+    for (auto& c : ccMap) c.store (-1);
+    midiMapDirty.store (true);
 }
 
 juce::String DivinityProcessor::midiMapString() const
@@ -106,6 +114,7 @@ void DivinityProcessor::applyMidiMapString (const juce::String& s)
         for (int i = 0; i < ps.size(); ++i)
             if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (ps[i]); rp != nullptr && rp->getParameterID() == id) { ccMap[(size_t) cc].store (i); break; }
     }
+    ++midiMapVersion;
 }
 
 //==============================================================================
@@ -145,7 +154,12 @@ void DivinityProcessor::timerCallback()
         for (auto& t : userTables) t.collectGarbage();
     }
     if (midiMapDirty.exchange (false))
-        apvts.state.setProperty (midiMapProperty, midiMapString(), nullptr);
+    {
+        const auto m = midiMapString();
+        apvts.state.setProperty (midiMapProperty, m, nullptr);
+        settings::setMidiMap (m);            // your controller mappings follow you into every DIVINITY instance
+        ++midiMapVersion;
+    }
     // quality switches need the engine re-prepared at the new rate: do it here with audio suspended
     const int want = wantedQuality();
     const bool hqNow = runningQuality.load() == (int) Quality::HQ, hqWant = want == (int) Quality::HQ;
@@ -376,13 +390,16 @@ void DivinityProcessor::setStateInformation (const void* data, int sizeInBytes)
         apvts.state.setProperty (userSampleProperty, path, nullptr);
         for (int o = 0; o < kNumOscs; ++o)
             apvts.state.setProperty (userTableProperty (o), params->getStringAttribute (userTableProperty (o).toString()), nullptr);
-        apvts.state.setProperty (midiMapProperty, params->getStringAttribute (midiMapProperty.toString()), nullptr);
+        {
+            // a project without its own mappings keeps your global controller map
+            const auto m = params->getStringAttribute (midiMapProperty.toString());
+            apvts.state.setProperty (midiMapProperty, m.isNotEmpty() ? m : settings::midiMap(), nullptr);
+        }
     }
 
     setFxOrder (juce::StringArray::fromTokens (params->getStringAttribute (fxOrderProperty.toString(), defaultFxOrder().joinIntoString (",")), ",", ""), false);
     uiWorkspace = xml->getStringAttribute ("uiWorkspace", "CREATE");
     if (! juce::StringArray { "CREATE", "EFFECTS", "PLAY", "SOUL", "LAB" }.contains (uiWorkspace)) uiWorkspace = "CREATE";
-    uiScale = (float) juce::jlimit (0.5, 2.0, xml->getDoubleAttribute ("uiScale", 1.0));
     uiAngelTips = xml->getBoolAttribute ("uiAngelTips", true);
     uiAngelOpen = xml->getBoolAttribute ("uiAngelOpen", false);
     presets.setCurrentFromState (xml->getStringAttribute ("presetName", "Init"), xml->getBoolAttribute ("presetModified", false));

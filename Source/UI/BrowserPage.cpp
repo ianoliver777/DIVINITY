@@ -10,7 +10,7 @@ namespace
 {
     const juce::StringArray& browserCategories()
     {
-        static const juce::StringArray c { "ALL", "REESE", "BASS", "LEAD", "SYNTH", "PAD", "TEXTURE", "SEQUENCE", "PERCUSSION", "FX", "FAVOURITES", "USER" };
+        static const juce::StringArray c { "ALL", "REESE", "BASS", "LEAD", "SYNTH", "PAD", "TEXTURE", "SEQUENCE", "PERCUSSION", "FX", "WAVE", "TRAP", "TECHNO", "DUBSTEP", "GARAGE", "DARK GARAGE", "DNB", "CINEMATIC", "FAVOURITES", "USER" };
         return c;
     }
 

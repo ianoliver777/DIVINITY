@@ -277,6 +277,13 @@ void Knob::timerCallback()
     {
         const bool l = dp->isLearning (param.getParameterID());
         if (l != learning) { learning = l; repaint(); }
+        if (dp->midiLearnMode != learnMode) { learnMode = dp->midiLearnMode; repaint(); }
+        if (const int v = dp->midiMapVersion.load(); v != seenMapVersion)
+        {
+            seenMapVersion = v;
+            const int cc = dp->getMidiCcFor (param.getParameterID());
+            if (cc != mappedCc) { mappedCc = cc; repaint(); }
+        }
     }
 }
 
@@ -317,6 +324,27 @@ void Knob::itemDropped (const SourceDetails& d)
 
 void Knob::paintOverChildren (juce::Graphics& g)
 {
+    if (learnMode || mappedCc >= 0)
+    {
+        auto r = getLocalBounds().toFloat().reduced (2.0f);
+        if (learnMode)
+        {
+            g.setColour (accent.withAlpha (learning ? 0.28f : 0.08f));
+            g.fillRoundedRectangle (r, 8.0f);
+            g.setColour (accent.withAlpha (learning ? 1.0f : 0.55f));
+            g.drawRoundedRectangle (r, 8.0f, learning ? 2.0f : 1.0f);
+        }
+        if (mappedCc >= 0)
+        {
+            const juce::String t ("CC " + juce::String (mappedCc));
+            auto tag = juce::Rectangle<float> (38.0f, 14.0f).withPosition (r.getRight() - 38.0f, r.getY());
+            g.setColour (accent);
+            g.fillRoundedRectangle (tag, 7.0f);
+            g.setColour (onAccent);
+            g.setFont (font (9.5f, Weight::SemiBold));
+            g.drawText (t, tag, juce::Justification::centred, false);
+        }
+    }
     if (! dropHover) return;
     auto r = getLocalBounds().toFloat().reduced (2.0f);
     g.setColour (accent.withAlpha (0.18f));

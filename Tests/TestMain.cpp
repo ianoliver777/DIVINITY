@@ -266,6 +266,22 @@ static float beatingAmount (DivinityProcessor& p, const FactoryPreset& fp)
     return cv[cv.size() / 2];
 }
 
+/** 1.1 genre banks (WAVE, TRAP ...) are mixed: play each preset like the base category its tags describe. */
+static juce::String roleOf (const juce::String& cat, const juce::String& tags)
+{
+    static const juce::StringArray base { "REESE", "BASS", "LEAD", "SYNTH", "PAD", "TEXTURE", "SEQUENCE", "PERCUSSION", "FX" };
+    if (base.contains (cat)) return cat;
+    const auto t = juce::StringArray::fromTokens (tags, " ,", "");
+    if (t.contains ("Loop")) return "PERCUSSION";
+    if (t.contains ("FX")) return "FX";
+    if (t.contains ("Bass") || t.contains ("808") || t.contains ("Sub")) return "BASS";
+    if (t.contains ("Lead") || t.contains ("Flute")) return "LEAD";
+    if (t.contains ("Sequence") || t.contains ("Arp")) return "SEQUENCE";
+    if (t.contains ("Texture") || t.contains ("Drone")) return "TEXTURE";
+    if (t.contains ("Pad") || t.contains ("Strings") || t.contains ("Choir") || t.contains ("Organ") || t.contains ("Brass")) return "PAD";
+    return "SYNTH";
+}
+
 /** Renders one preset and checks every word in its name that makes a measurable promise.
     Returns "claim: why" for each broken promise; `tally` (optional) counts pass / fail per claim. */
 static juce::StringArray claimFailures (DivinityProcessor& p, const FactoryPreset& fp, std::map<juce::String, std::pair<int, int>>* tally = nullptr,
@@ -273,11 +289,12 @@ static juce::StringArray claimFailures (DivinityProcessor& p, const FactoryPrese
 {
     const double sr = 48000;
     const auto& c = fp.category;
+    const auto role = roleOf (c, fp.tags);
     p.presets.applyFactoryPreset (fp);
     std::vector<Note> notes;
-    const double hold = (c == "SEQUENCE" || c == "PERCUSSION" || c == "FX" || c == "TEXTURE") ? 3.0 : 2.0;
-    const int key = c == "REESE" || c == "BASS" ? 36 : c == "LEAD" ? 72 : 60;
-    if (c == "SEQUENCE") notes = { { 0.0, hold, 60, 0.9f }, { 0.0, hold, 63, 0.9f }, { 0.0, hold, 67, 0.9f } };
+    const double hold = (role == "SEQUENCE" || role == "PERCUSSION" || role == "FX" || role == "TEXTURE") ? 3.0 : 2.0;
+    const int key = role == "REESE" || role == "BASS" ? 36 : role == "LEAD" ? 72 : 60;
+    if (role == "SEQUENCE") notes = { { 0.0, hold, 60, 0.9f }, { 0.0, hold, 63, 0.9f }, { 0.0, hold, 67, 0.9f } };
     else notes = { { 0.0, hold, key, 0.9f } };
     auto b = render (p, sr, 256, hold + 2.0, notes);
     HeldAnalysis a = analyseHeld (b, sr, hold);
@@ -392,10 +409,12 @@ static void testFactoryPresets (DivinityProcessor& p)
                             empty += fp.name.trim().isEmpty(); perCat[fp.category]++; }
     CHECK (dupes == 0 && empty == 0, "factory preset names are unique and non-empty");
     const std::pair<const char*, int> want[] = { { "REESE", 40 }, { "BASS", 30 }, { "LEAD", 35 }, { "SYNTH", 35 }, { "PAD", 35 },
-                                                 { "TEXTURE", 25 }, { "SEQUENCE", 30 }, { "PERCUSSION", 16 }, { "FX", 25 } };
-    bool counts = perCat.size() == 9;
+                                                 { "TEXTURE", 25 }, { "SEQUENCE", 30 }, { "PERCUSSION", 16 }, { "FX", 25 },
+                                                 { "WAVE", 10 }, { "TRAP", 10 }, { "TECHNO", 10 }, { "DUBSTEP", 10 },
+                                                 { "GARAGE", 10 }, { "DARK GARAGE", 10 }, { "DNB", 10 }, { "CINEMATIC", 10 } };
+    bool counts = perCat.size() == 17;
     for (auto& [c, n] : want) { counts &= perCat[c] == n; std::cout << "  " << c << " " << perCat[c] << "\n"; }
-    CHECK (list.size() == 271 && counts, "271 factory presets in the nine categories (" << (int) list.size() << ")");
+    CHECK (list.size() == 351 && counts, "351 factory presets: nine sound categories + eight genre banks (" << (int) list.size() << ")");
 
     // LFOs are off unless the sound routes them; percussion loops run the step sequencer in TRIGGER mode
     int lfoWrong = 0, percWrong = 0;
@@ -1359,7 +1378,7 @@ static void renderPresetDemos (DivinityProcessor& p, const juce::File& dir)
         p.presets.loadPreset (i);
         const auto cat = list[i].category;
         const bool arpPatch = p.apvts.getRawParameterValue (arpids::on)->load() > 0.5f;
-        const auto phrase = phraseFor (cat, arpPatch);
+        const auto phrase = phraseFor (roleOf (cat, list[i].tags), arpPatch);
         auto b = render (p, 48000, 256, 4.5, phrase);
         const float peak = juce::Decibels::gainToDecibels (b.getMagnitude (0, b.getNumSamples()), -120.0f);
         const float rms = juce::Decibels::gainToDecibels (b.getRMSLevel (0, 0, (int) (2.5 * 48000)), -120.0f);
@@ -2133,7 +2152,7 @@ static void writeLevelTrims (DivinityProcessor& p, const juce::File& incFile)
         if (! list[i].isFactory) continue;
         p.presets.loadPreset (i);
         const bool arpPatch = p.apvts.getRawParameterValue (arpids::on)->load() > 0.5f;
-        auto b = render (p, 48000, 256, 4.5, phraseFor (list[i].category, arpPatch));
+        auto b = render (p, 48000, 256, 4.5, phraseFor (roleOf (list[i].category, list[i].tags), arpPatch));
         const float rms = juce::Decibels::gainToDecibels (b.getRMSLevel (0, 0, (int) (2.5 * 48000)), -120.0f);
         const double trim = juce::jlimit (-24.0, 18.0, current[list[i].name] + (-18.0 - rms));
         worst = std::max (worst, std::abs (-18.0f - rms));

@@ -47,6 +47,7 @@ public:
 
     explicit DivinityEditor (DivinityProcessor&);
     ~DivinityEditor() override;
+    void mouseDown (const juce::MouseEvent&) override;   // MIDI-learn mode: click a knob to arm it
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -63,7 +64,8 @@ private:
         void paintOverChildren (juce::Graphics&) override;
         DivinityEditor& owner;
         DivinityProcessor& proc() const { return owner.proc; }
-        ui::CrispImage band, logo;
+        ui::CrispImage logo;
+        juce::Image plaqueDay, plaqueNight;
     };
 
     /** Explain mode: captures the next click and asks Guardian Angel to explain the control underneath. */
@@ -98,7 +100,7 @@ private:
     juce::TooltipWindow tooltips { &content, 600 };
 
     // header
-    ui::IconButton settings, help, menu, nightToggle;
+    ui::IconButton settings, help, menu, nightToggle, midiLearn;
 public:
     /** Day (light, default) or night (black glass) skin; remembered per user. */
     void setNightMode (bool night);
