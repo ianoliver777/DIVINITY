@@ -142,9 +142,9 @@ static void addGenreBanks (std::vector<Spec>& out)
         { auto p = P(); p.an (0, "Sine", 0.95).tight (0, 0.25).sub ("Sine -1", 0.3).filt (0, "Low Pass 12", 300, 0.1).env (0, 0.005, 0.5, 1.0, 0.2)
             .mono (0, false).sat (0.2).reverb (0.3, 0.7, 0.1);
           add (C, "Clean Sub Drop", "Sub Bass Dubstep Mono", "a pure, round sine sub for the drop", p); }
-        { auto p = P(); p.wt (0, "Fuzz Tri", 0.5, 0.85).uni (0, 4, 0.3, 0.5).sub ("Sine -1", 0.45).filt (0, "Comb +", 600, 0.55, 0.3)
-            .env (0, 0.002, 0.35, 0.85, 0.2).mono (12).lfoSync (0, "Square", "1/16", 1.0).mod ("LFO 1", "Filter 1 Cutoff", 0.35).dist ("Rectify", 0.35, 0.4).ott (0.45); bassSpace (p);
-          add (C, "Metallic Screech", "Bass Dubstep Comb", "a comb-filtered fuzz triangle chopped in sixteenths: screechy and metallic", p); }
+        { auto p = P(); p.wt (0, "Odd Harmonics", 0.7, 0.8).uni (0, 2, 0.1, 0.4).tune (0, 1).sub ("Sine -1", 0.4).filt (0, "Comb +", 1800, 0.6, 0.3)
+            .env (0, 0.002, 0.35, 0.85, 0.2).mono (12).lfoSync (0, "Square", "1/16", 1.0).mod ("LFO 1", "Filter 1 Cutoff", 0.5).dist ("Rectify", 0.35, 0.4).ott (0.45); bassSpace (p);
+          add (C, "Metallic Screech", "Bass Dubstep Comb", "an octave-up odd-harmonic tone through a comb filter, chopped in sixteenths: screechy and metallic", p); }
         { auto p = P(); p.an (0, "Saw", 0.8).uni (0, 5, 0.25, 0.9).filt (0, "MG Low 24", 3000, 0.2).env (0, 0.005, 0.3, 0.7, 0.4)
             .mono (40).dist ("Overdrive", 0.3, 0.35); leadSpace (p);
           add (C, "Melodic Super Lead", "Lead Dubstep Melodic", "a five-voice supersaw lead for melodic dubstep", p); }
@@ -284,8 +284,9 @@ static void addGenreBanks (std::vector<Spec>& out)
         { auto p = P(); p.wt (0, "Music Box", 0.4, 0.75).filt (0, "Low Pass 12", 5000, 0.1).env (0, 0.002, 1.6, 0.0, 1.6)
             .delay ("1/4", 0.35, 0.22).reverb (0.88, 0.4, 0.45, 30.0).chorus (0.2, 0.3, 0.2);
           add (C, "Haunted Music Box", "Bell Cinematic Music Box", "a fragile music box in a big reverb: horror and fairy-tale", p); }
-        { auto p = P(); p.wt (0, "Hollow Organ", 0.3, 0.75).wt (1, "Pipe Organ", 0.5, 0.5).tune (1, -1).filt (0, "Low Pass 12", 3000, 0.1).env (0, 0.6, 1.0, 1.0, 2.5); padSpace (p);
-          add (C, "Gothic Organ", "Organ Cinematic Gothic", "a hollow organ with a pipe organ an octave below", p); }
+        { auto p = P(); p.wt (0, "Organ Gospel", 0.6, 0.75).wt (1, "Pipe Organ", 0.5, 0.45).tune (0, 1).filt (0, "Low Pass 12", 7000, 0.1).env (0, 0.04, 1.0, 1.0, 2.0)
+            .chorus (0.6, 0.5, 0.3).reverb (0.92, 0.4, 0.5, 40.0);
+          add (C, "Gothic Organ", "Organ Cinematic Gothic", "a bright, high organ over a pipe organ, with a fast rotary-style chorus in a vast room", p); }
         { auto p = P(); p.noise ("Pink", 0.6).set (ids::osc (0, "on"), 0).filt (0, "Low Pass 12", 300, 0.3).env (0, 4.0, 0.5, 1.0, 1.5)
             .env (1, 4.0, 0.1, 1.0, 0.5).mod ("ENV 2", "Filter 1 Cutoff", 0.9).reverb (0.9, 0.35, 0.45, 30.0);
           add (C, "Tension Riser", "FX Cinematic Riser", "pink noise rising from a low-pass up over four seconds", p); }
